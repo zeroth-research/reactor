@@ -5,7 +5,7 @@ the claim the flags ask (`claim_from_flags`).
 from __future__ import annotations
 
 from .settings import Settings
-from ..core.certificate import Certificate, Claim
+from ..parse import Certificate, Claim
 from .. import parse
 
 

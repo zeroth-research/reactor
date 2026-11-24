@@ -9,7 +9,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..core.errors import Refused
+from ..errors import Refused
 from .templates import render
 
 

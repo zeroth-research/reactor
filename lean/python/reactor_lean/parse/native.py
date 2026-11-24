@@ -7,23 +7,64 @@ module's own wires (`ModuleWires`): `s{i}` is `X`
 of the `i`th controlled variable, `e{i}` the `i`th input awaited in the
 round and `el{i}` the one latched before it. What it makes of one is a
 `Formula`. `NativeParser` reads them one at a time, and `read_predicates`
-a claim's and a certificate's together, as `proof.render` prints them.
+a claim's and a certificate's together (`Claim`, `Certificate`), as
+`proof.render` prints them.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from reactor import Word, X
 
-from ..core.certificate import Certificate, Claim
-from ..core.errors import PredicateRefused, Unreadable
+from ..errors import PredicateRefused, Unreadable
 from ..lowering.sorts import wire_shape
 from ..lowering.values import decimal_fraction
 from ..lowering.wires import ModuleWires
 from . import dsl
 from .formula import Builder, Formula, family
 from .smtlib import Elaborator, Lit, Matrix, Scope, read_smtlib
+
+
+# ══════════════════════════════════════════════════════════════════════
+# What is claimed of a module, and what certifies it
+# ══════════════════════════════════════════════════════════════════════
+# Predicates as text over the state `s0..` and the inputs `e0..` (awaited)
+# and `el0..` (latched): what `read_predicates` reads.
+
+
+@dataclass(frozen=True)
+class Claim:
+    """The property a certificate proves, under which rule and assumptions.
+
+    `kind` is the proof rule, and so what `prp` means:
+
+      "buchi"  -- `G (F prp)`, `rule_buchi`: an invariant and a ranking
+                  function that drops on every step off `prp`. `--buchi`.
+      "safety" -- `G prp`, `rule_globally`: an invariant that implies
+                  `prp`, and no ranking. `--safety`.
+
+    `init_pre` / `update_pre` constrain the inputs `init` and `update` see.
+    """
+
+    prp: str | None = None
+    kind: Literal["safety", "buchi"] = "buchi"
+    init_pre: str | None = None
+    update_pre: str | None = None
+
+
+@dataclass(frozen=True)
+class Certificate:
+    """The predicates that prove a `Claim`. A safety one has no ranking."""
+
+    inv: str | None = None
+    ranking: str | None = None
+
+
+# ══════════════════════════════════════════════════════════════════════
+# The names a predicate reads the module's wires by
+# ══════════════════════════════════════════════════════════════════════
 
 
 def _prefixed(wires: ModuleWires) -> list[tuple[str, list]]:

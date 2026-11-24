@@ -8,7 +8,7 @@ from reactor_lean.codegen.context import LeanContext
 from reactor_lean.project.scaffold import create_project
 from reactor_lean.cli.certificate import render
 from reactor_lean.proof.render import certificate_files
-from reactor_lean.core.certificate import Certificate, Claim
+from reactor_lean.parse import Certificate, Claim
 from testdata import TESTS, fixture
 
 OUTPUT_DIR = TESTS / "LeanTests"

@@ -7,7 +7,7 @@ from __future__ import annotations
 import torch
 
 from reactor import Bool, Int, Real, Term, Wire, Word
-from ..core.errors import Refused
+from ..errors import Refused
 from ..lowering.sorts import Sort, is_scalar_tensor, dtype_to_lean_type, is_constant_name, itype_name, lean_elem_type, mat_mk, wire_shape
 from ..lowering.values import decimal_fraction
 

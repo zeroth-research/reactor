@@ -14,8 +14,8 @@ import torch
 
 from reactor import Module, Term, Var, X, Int, Real, tensor
 from reactor_lean.proof.render import LeanCertificate
-from reactor_lean.core.certificate import Certificate, Claim
-from reactor_lean.core.errors import PredicateRefused
+from reactor_lean.parse import Certificate, Claim
+from reactor_lean.errors import PredicateRefused
 from reactor_lean.parse.native import read_predicates
 from reactor_lean.cli.certificate import render
 from reactor_lean.proof.from_ir import ir_to_lean_nat

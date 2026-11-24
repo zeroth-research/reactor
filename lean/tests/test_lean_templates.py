@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from reactor_lean.core.errors import Refused
+from reactor_lean.errors import Refused
 from reactor_lean.project.lake_cache import (
     LAKE_CACHE_ENV,
     cached_manifest,
@@ -286,7 +286,7 @@ def test_the_certificate_is_one_text_for_each_kind_of_property():
     certificate, or `Module.lean`. Unproved, `Proofs.lean` states the
     obligations of the property's kind and nothing else."""
     from reactor_lean.codegen.context import LeanContext
-    from reactor_lean.core.certificate import Certificate, Claim
+    from reactor_lean.parse import Certificate, Claim
     from reactor_lean.parse import load_module
     from reactor_lean.project.names import (
         CERTIFICATE, DATA, MODULE, PROOFS, cert_file,
@@ -324,7 +324,7 @@ def test_each_obligation_is_stated_alike_in_both_files():
     """`Certificate.lean` takes each obligation's proof from `Proofs.lean`
     with `exact`, which checks the statements agree; they are written to,
     so that the check is a formality rather than a unification."""
-    from reactor_lean.core.certificate import Claim
+    from reactor_lean.parse import Claim
     from reactor_lean.project.names import CERTIFICATE, PROOFS, cert_file
     from reactor_lean.cli.certificate import render
     from reactor_lean.proof.render import certificate_files

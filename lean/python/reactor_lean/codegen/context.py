@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from reactor import Module, Real, Var, Wire
 
-from ..core.errors import Refused
+from ..errors import Refused
 from ..lowering.elements import product_accessor
 from ..lowering.wires import ModuleWires
 from .literals import ConstantRegistry

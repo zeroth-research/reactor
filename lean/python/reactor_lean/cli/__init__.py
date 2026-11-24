@@ -72,7 +72,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..core.errors import Refused
+from ..errors import Refused
 from ..project.lake_cache import lake_cache
 from ..project.lakefile import reactlib_checkout
 from .certificate import lean_context, render

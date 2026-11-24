@@ -9,7 +9,7 @@ from typing import Any
 import reactor.reactor as _ext
 from reactor import Bool, Int, Real, Word, Wire
 
-from ..core.errors import Refused
+from ..errors import Refused
 
 # A sort of `reactor.tensor.sort`: `Bool`, `Int`, `Real` or `Word`.
 Sort = Any

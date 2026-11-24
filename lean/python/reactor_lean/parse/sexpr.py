@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from ..core.errors import Unreadable
+from ..errors import Unreadable
 
 
 @dataclass(frozen=True)

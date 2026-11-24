@@ -12,9 +12,10 @@ syntax first (`dsl`), and SMT-LIB for text that is no Python (`sexpr` and
 """
 
 from .module import InputError, Named, Problem, load, load_module
+from .native import Certificate, Claim
 from .names import ClaimError, Names, to_internal
 
 __all__ = [
-    "ClaimError", "InputError", "Named", "Names", "Problem", "load",
-    "load_module", "to_internal",
+    "Certificate", "Claim", "ClaimError", "InputError", "Named", "Names",
+    "Problem", "load", "load_module", "to_internal",
 ]

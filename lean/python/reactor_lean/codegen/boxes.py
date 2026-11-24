@@ -4,7 +4,7 @@ names (`lowering.ops.box_for`) and the layers compose as
 `Relational.Circ` circuits."""
 
 from __future__ import annotations
-from reactor_lean.core.errors import Refused
+from reactor_lean.errors import Refused
 from reactor_lean.lowering.sorts import (
     dtype_shape,
     dtype_to_lean_type,

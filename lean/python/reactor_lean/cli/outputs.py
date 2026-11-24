@@ -10,7 +10,7 @@ from pathlib import Path
 from .settings import Settings
 from ..codegen.context import LeanContext
 from ..codegen.encodings import ModuleToLean4
-from ..core.errors import Refused
+from ..errors import Refused
 from ..project.scaffold import ENCODINGS, Layout, create_project, write_encoding
 from ..proof.render import (
     LeanCertificate,

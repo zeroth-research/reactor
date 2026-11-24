@@ -29,7 +29,7 @@ import os
 from collections.abc import Iterable
 from pathlib import Path
 
-from ..core.errors import Refused
+from ..errors import Refused
 from .lakefile import Require
 
 LAKE_CACHE_ENV = "REACTOR_LAKE_CACHE"

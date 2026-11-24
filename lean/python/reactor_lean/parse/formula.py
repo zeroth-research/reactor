@@ -20,7 +20,7 @@ import torch
 
 from reactor import Bool, Int, Real, Term, Wire, Word, tensor
 
-from ..core.errors import Unreadable
+from ..errors import Unreadable
 from ..lowering.values import decimal_fraction
 
 # The shape of every term a predicate builds.

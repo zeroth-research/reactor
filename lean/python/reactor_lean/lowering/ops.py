@@ -41,7 +41,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Union
 
-from ..core.errors import Refused
+from ..errors import Refused
 from .sorts import THEORIES, itype_name, mat_mk, theory_of
 
 

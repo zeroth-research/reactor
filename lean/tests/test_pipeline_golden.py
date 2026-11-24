@@ -27,7 +27,7 @@ from reactor_lean.proof.render import (
     generate_proofs_lean,
     generate_standalone_cert_lean,
 )
-from reactor_lean.core.certificate import Certificate, Claim
+from reactor_lean.parse import Certificate, Claim
 from reactor_lean.cli.certificate import render
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.project.lake_cache import LAKE_CACHE_ENV

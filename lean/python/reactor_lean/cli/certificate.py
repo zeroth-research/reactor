@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from ..codegen.context import LeanContext
 from ..codegen.terms import lean_gaps
-from ..core.certificate import Certificate, Claim
-from ..core.errors import Refused
+from ..parse import Certificate, Claim
+from ..errors import Refused
 from ..parse.native import read_predicates
 from ..proof.render import LeanCertificate, render_certificate
 

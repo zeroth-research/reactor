@@ -28,7 +28,7 @@ from fractions import Fraction
 
 from reactor import Bool, Int, Real, Word, tensor
 
-from ..core.errors import Unreadable
+from ..errors import Unreadable
 from ..lowering.sorts import wire_shape
 from .formula import SCALAR, Builder, Formula, element, family
 from .sexpr import Atom, read, show

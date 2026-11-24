@@ -27,22 +27,22 @@ LEAN = PKG_ROOT / "python" / "reactor_lean"
 # Every module of the package.
 PACKAGE = sorted(LEAN.rglob("*.py"))
 
-# Each layer is the package `reactor_lean.<layer>` and everything under it, and
+# Each layer is the module or package `reactor_lean.<layer>` and everything under it, and
 # maps to the layers it may import besides itself. A module no layer names
 # is not checked, but a checked module may import it only through a layer.
 LAYERS: dict[str, frozenset[str]] = {
-    "core": frozenset(),
-    "lowering": frozenset({"core"}),
-    "codegen": frozenset({"core", "lowering"}),
+    "errors": frozenset(),
+    "lowering": frozenset({"errors"}),
+    "codegen": frozenset({"errors", "lowering"}),
     # Reading the module file, and a claim's names and predicates.
-    "parse": frozenset({"core", "lowering"}),
+    "parse": frozenset({"errors", "lowering"}),
     # The project on disk. It writes the certificate's files as the text it
     # is handed, so it sits below `proof`, which renders them.
-    "project": frozenset({"core", "lowering", "codegen"}),
-    "proof": frozenset({"core", "lowering", "codegen", "project", "parse"}),
+    "project": frozenset({"errors", "lowering", "codegen"}),
+    "proof": frozenset({"errors", "lowering", "codegen", "project", "parse"}),
     # `uv run reactor`: the command line, and every stage, in order.
     "cli": frozenset({
-        "core", "lowering", "codegen", "project", "proof", "parse"}),
+        "errors", "lowering", "codegen", "project", "proof", "parse"}),
 }
 
 
@@ -78,9 +78,9 @@ class Import(NamedTuple):
 
     @property
     def target(self) -> str:
-        """The module this import loads: `from reactor_lean.core import errors`
-        loads `reactor_lean.core.errors`, and so does `from reactor_lean.core.errors
-        import Refused`."""
+        """The module this import loads: `from reactor_lean.parse import native`
+        loads `reactor_lean.parse.native`, and so does `from reactor_lean.parse.native
+        import Claim`."""
         if self.name and f"{self.module}.{self.name}" in MODULES:
             return f"{self.module}.{self.name}"
         return self.module

@@ -10,7 +10,7 @@ import pytest
 import torch
 
 from reactor import Bool, Int, Module, Real, Term, Var, Word, X, tensor
-from reactor_lean.core.errors import Unreadable
+from reactor_lean.errors import Unreadable
 from reactor_lean.lowering.sorts import itype_name, theory_of
 from reactor_lean.parse.formula import family
 from reactor_lean.lowering.wires import ModuleWires

@@ -18,7 +18,7 @@ from __future__ import annotations
 from reactor import Wire
 
 from ..codegen.literals import lean_literal, lean_real
-from ..core.errors import Refused
+from ..errors import Refused
 from ..lowering.sorts import itype_name, theory_of, wire_shape
 from ..parse.formula import family
 from .bindings import Bindings, build_var_map, with_lets

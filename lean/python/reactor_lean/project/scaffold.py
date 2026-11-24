@@ -15,7 +15,7 @@ from reactor import Module
 
 from ..codegen.context import LeanContext
 from ..codegen.encodings import ModuleToLean4
-from ..core.errors import Refused
+from ..errors import Refused
 from .names import LINTERS_OFF, SYSTEM_LAYOUT, Layout
 from .templates import render
 from .lake_cache import lake_cache, use_lake_cache

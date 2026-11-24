@@ -1,10 +1,10 @@
-"""The certificate types (`reactor_lean.core.certificate`)."""
+"""The claim and certificate types (`reactor_lean.parse`)."""
 
 from dataclasses import FrozenInstanceError
 
 import pytest
 
-from reactor_lean.core.certificate import Certificate, Claim
+from reactor_lean.parse import Certificate, Claim
 
 
 def test_the_types_are_values():

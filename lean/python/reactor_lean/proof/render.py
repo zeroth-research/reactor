@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 from reactor_lean.codegen.encodings import ModuleToLean4
 from reactor_lean.codegen.terms import extl_native_type, product_type
-from reactor_lean.core.errors import PredicateRefused, Refused
+from reactor_lean.errors import PredicateRefused, Refused
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.project.names import (
     CERTIFICATE, DATA, MODULE, PROOFS, cert_file,

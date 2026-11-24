@@ -175,10 +175,10 @@ layer.
 
 | Package | What it holds |
 |------|------|
-| `core/` | The vocabulary every layer is written in, importing nothing of `reactor_lean`: `certificate` (`Claim`, and `Certificate` as SMT-LIB), `errors` (`Refused`, the error a run is refused with) |
+| `errors` | `Refused`, the error a run is refused with, which every layer raises; it imports nothing of `reactor_lean` |
 | `lowering/` | What every backend reads of a module besides its terms: `sorts` (sorts and shapes of wires, and the Lean types they print as), `elements` (tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares), `values` (a constant as the exact number every backend states), `ops` (the op table: one row per theory variant, one column per backend) |
 | `codegen/` | The module as Lean text: `context` (`LeanContext`, what every encoding of one module shares), `literals` (constants as Lean text, `ConstantRegistry`), `terms` (term lists → functional `let`-binding bodies, and `lean_gaps`), `boxes` (term lists → `Box` circuit layers), `encodings/` (`ModuleToLean4` and one module per encoding: `functional`, `circuit`, `scalar`, `relational`; `skeleton`, the shape every relational encoding has, and `common`, what the scalar ones share) |
-| `parse/` | Reading the input: `module` (`load`, the module file as a `Problem`; `Named`, a module with names for its variables), `names` (a claim's names, translated to the internal ones and back), and a predicate's text: `dsl` (the Python predicate syntax), `sexpr` and `smtlib` (SMT-LIB into reactor's terms), `formula` (`Formula`, a predicate in reactor's terms), `native` (the parser: `NativeParser`, `read_predicates`) |
+| `parse/` | Reading the input: `Claim` and `Certificate` (what is claimed of the module and what certifies it, as text), `module` (`load`, the module file as a `Problem`; `Named`, a module with names for its variables), `names` (a claim's names, translated to the internal ones and back), and a predicate's text: `dsl` (the Python predicate syntax), `sexpr` and `smtlib` (SMT-LIB into reactor's terms), `formula` (`Formula`, a predicate in reactor's terms), `native` (the parser: `NativeParser`, `read_predicates`) |
 | `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `lake_cache` (the built packages it can share), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table), the certificate's files as the text it is handed |
 | `proof/` | The certificate as Lean: `render` (`render_certificate`, `LeanCertificate`, the project's `certificate_files` and the `--cert-file` one), `from_ir` (a `parse.Formula` printed as Lean) |
 | `cli/` | `uv run reactor`: `main` runs the stages in order -- `parse_args` (the command line: `parser`, the flags, one `add_*` per group; `checks`, the rules about which go together; `settings`, `Settings`, what they are read into), `claim` (the module and what is to be proved of it), `certificate` (the module's Lean form, the certificate rendered), `outputs` (the project, `--cert-file`) |
@@ -379,7 +379,7 @@ module encoding.  The predicates are SMT-LIB over `s0..`, `e0..`, `el0..`
 (internally; on the command line the same variables are spelled
 `(X @intf.0)`, `(X @extl.0)`, `@extl.0`, see "Writing a claim on the command
 line" below)
-(`core.certificate.Claim` and `core.certificate.Certificate`). `read_predicates`
+(`parse.Claim` and `parse.Certificate`). `read_predicates`
 parses them against the module, and `render_certificate` prints them as
 Lean `fun` expressions into a `LeanCertificate`; it is the only place they
 are printed. A predicate that is `None` becomes a `True` / `sorry`
