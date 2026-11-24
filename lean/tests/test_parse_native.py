@@ -10,12 +10,13 @@ from __future__ import annotations
 import pytest
 
 from reactor_lean.core.errors import PredicateRefused, Unreadable
+from reactor_lean.lowering.wires import ModuleWires
 from reactor_lean.parse import load_module
 from reactor_lean.lowering.sorts import itype_name, theory_of
 from reactor_lean.parse import dsl
 from reactor_lean.parse.formula import Builder
 from reactor_lean.parse.native import (
-    ModuleWires, NativeParser, namespace, parse_predicate,
+    NativeParser, namespace, parse_predicate, scope_of,
 )
 from reactor_lean.parse.smtlib import Elaborator
 from testdata import MODS
@@ -28,7 +29,7 @@ def _wires(name: str) -> ModuleWires:
 def _shape(formula, wires: ModuleWires):
     """`formula` as nested tuples: each term's op and payload over its
     reads, and a variable by its name."""
-    names = {w.id: n for n, w in wires.scope().names.items()}
+    names = {w.id: n for n, w in scope_of(wires).names.items()}
     by_wire = {t.write[0].id: t for t in formula.terms}
 
     def go(w):
@@ -88,7 +89,7 @@ def test_the_python_syntax_builds_the_smtlib_it_means(mod, python, smtlib):
 )
 def test_python_outside_the_syntax_is_not_read(src):
     wires = _wires("m_countdown")
-    ns = namespace(Elaborator(wires.scope(), Builder()), wires)
+    ns = namespace(Elaborator(scope_of(wires), Builder()), wires)
     with pytest.raises((dsl.NotPredicate, SyntaxError)):
         dsl.evaluate(src, ns)
 

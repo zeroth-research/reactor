@@ -5,10 +5,11 @@ reads its inputs from stdin and prints its state each round.
 from __future__ import annotations
 
 
-from reactor import Module, Wire, X
+from reactor import Module, Wire
 
 from ..core.errors import Refused
 from ..lowering.sorts import flat_element_type, mat_mk, wire_shape
+from ..lowering.wires import ModuleWires
 from ..codegen.terms import build_tuple, product_type
 from .names import (
     LINTERS_OFF,
@@ -61,8 +62,8 @@ def _elem_shower(elem: str, wire: Wire) -> str:
 
 def generate_main_lean(module: Module) -> str:
     """Generate Main.lean source that runs init/update in a stdin/stdout loop."""
-    extl_next = [X(v) for v in module.extl]
-    ctrl_next = [X(v) for v in module.ctrl]
+    wires = ModuleWires.of(module)
+    extl_next, ctrl_next = wires.extl_next, wires.ctrl_next
 
     total_extl_tokens = sum(_token_count(w) for w in extl_next)
 

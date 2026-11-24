@@ -40,8 +40,7 @@ def lean_gaps(ctx) -> list[str]:
     Asked before anything is generated, which is the whole point. The same
     module met during codegen raises about a missing table cell, half way
     through a file, for a run that may never have wanted the functional
-    encoding -- and that is what the limit matrix's only `GEN-FAIL` was. A
-    module that generates has nothing to report here, because an operator
+    encoding. A module that generates has nothing to report here, because an operator
     with no matrix form has no emitter in the other two Lean columns either
     (:func:`lowering.ops.lean_gap`), so this cannot refuse anything that works.
     """

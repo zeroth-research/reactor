@@ -11,13 +11,6 @@ emit:
 | `scalar` | `codegen.terms.translate_terms_scalar` | args -> Lean expr (bare)     |
 | `box`    | `codegen.boxes.translate_terms_circ`     | a `Box` combinator name      |
 
-These were six dicts and an if/elif chain — one per backend, doubled for the
-bit-vector forms — with nothing relating them. A test can see a *dead* key (one no
-theory defines) but not a *missing* one, so a variant no Lean emitter
-handled went unnoticed until a module used it: every unsigned and signed
-bit-vector comparison died at project generation in `No Lean expression
-mapping for: ULt`.
-
 A row is one op of one or more theories, and it must say something about
 every column. A cell is either an emitter or one of
 

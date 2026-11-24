@@ -20,35 +20,22 @@ from ..core.certificate import Certificate, Claim
 from ..core.errors import PredicateRefused, Unreadable
 from ..lowering.sorts import wire_shape
 from ..lowering.values import decimal_fraction
+from ..lowering.wires import ModuleWires
 from . import dsl
 from .formula import Builder, Formula, family
 from .smtlib import Elaborator, Lit, Matrix, Scope, read_smtlib
 
 
-@dataclass(frozen=True)
-class ModuleWires:
-    """The wires a predicate is read over, and printed over."""
+def _prefixed(wires: ModuleWires) -> list[tuple[str, list]]:
+    """Each name's prefix, with the wires it numbers."""
+    return [("s", wires.ctrl_next), ("e", wires.extl_next),
+            ("el", wires.extl_latched)]
 
-    ctrl_next: list
-    extl_next: list
-    extl_latched: list
 
-    @staticmethod
-    def of(module) -> "ModuleWires":
-        return ModuleWires(
-            ctrl_next=[X(v) for v in module.ctrl],
-            extl_next=[X(v) for v in module.extl],
-            extl_latched=list(module.extl),
-        )
-
-    def named(self) -> list[tuple[str, list]]:
-        """Each name's prefix, with the wires it numbers."""
-        return [("s", self.ctrl_next), ("e", self.extl_next),
-                ("el", self.extl_latched)]
-
-    def scope(self) -> Scope:
-        return Scope({f"{prefix}{i}": w for prefix, wires in self.named()
-                      for i, w in enumerate(wires)})
+def scope_of(wires: ModuleWires) -> Scope:
+    """The names a predicate reads the module's wires by."""
+    return Scope({f"{prefix}{i}": w for prefix, ws in _prefixed(wires)
+                  for i, w in enumerate(ws)})
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -186,7 +173,7 @@ def namespace(x: Elaborator, wires: ModuleWires) -> dict:
         "True": _Term(x, x.b.boolean(True)),
         "False": _Term(x, x.b.boolean(False)),
     }
-    for prefix, ws in wires.named():
+    for prefix, ws in _prefixed(wires):
         for i, w in enumerate(ws):
             shape = wire_shape(w)
             ns[f"{prefix}{i}"] = _Var(x, x.scope.lookup(f"{prefix}{i}"),
@@ -207,7 +194,7 @@ def parse_predicate(wires: ModuleWires, src: str) -> Formula:
     is no Python. Text that is the syntax and wrong in it is refused in the
     syntax's terms; anything else raised is a bug, and is left to say so."""
     b = Builder()
-    x = Elaborator(wires.scope(), b)
+    x = Elaborator(scope_of(wires), b)
     try:
         result = dsl.evaluate(src, namespace(x, wires))
     except (SyntaxError, dsl.NotPredicate):

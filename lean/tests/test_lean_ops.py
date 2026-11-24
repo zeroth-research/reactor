@@ -26,6 +26,7 @@ from reactor_lean.lowering.sorts import THEORIES, itype_name, theory_of
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.codegen.terms import lean_gaps
 from reactor_lean.lowering import ops
+from testdata import all_encodings
 from reactor_lean.lowering.ops import (
     COLUMNS,
     OPS,
@@ -574,7 +575,7 @@ def test_scale_is_written_as_the_affine_map_diag_c():
     x = Var(Int([2, 1]))
     init = [Term(tensor.int.Const(torch.ones(2, 1, dtype=torch.int64)), [X(x)])]
     update = [Term(tensor.int.Scale(torch.tensor([[2], [3]])), [X(x)], [x])]
-    lean = ModuleToLean4(Module.sequential([x], init, update)).to_lean()
+    lean = all_encodings(Module.sequential([x], init, update))
     assert "matVecAffine 2 ([[(2 : Int), (0 : Int)], [(0 : Int), (3 : Int)]]" in lean
     assert "Box.linear 2" in lean
 

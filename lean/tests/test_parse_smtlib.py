@@ -13,7 +13,8 @@ from reactor import Bool, Int, Module, Real, Term, Var, Word, X, tensor
 from reactor_lean.core.errors import Unreadable
 from reactor_lean.lowering.sorts import itype_name, theory_of
 from reactor_lean.parse.formula import family
-from reactor_lean.parse.native import ModuleWires
+from reactor_lean.lowering.wires import ModuleWires
+from reactor_lean.parse.native import scope_of
 from reactor_lean.parse.smtlib import Scope, read_smtlib
 
 
@@ -43,7 +44,7 @@ MODULE = _mixed()
 
 
 def _scope() -> Scope:
-    return ModuleWires.of(MODULE).scope()
+    return scope_of(ModuleWires.of(MODULE))
 
 
 def _ops(src: str) -> list[str]:

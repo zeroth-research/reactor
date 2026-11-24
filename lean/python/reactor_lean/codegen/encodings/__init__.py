@@ -107,28 +107,3 @@ class ModuleToLean4:
         """Generate the matrix-domain relational encoding inside ``namespace Rel``."""
         return _atom_to_lean_mat_rel(self.ctx)
 
-
-    # ------------------------------------------------------------------
-    # Combined output
-    # ------------------------------------------------------------------
-
-    def to_lean(
-        self, circuit: bool = True, scalar: bool = True, rel: bool = True
-    ) -> str:
-        """Return all enabled encodings joined by blank lines.
-
-        ``circuit=True`` appends the circuit (Box algebra) encoding and its
-        equivalence theorems.  ``scalar=True`` appends the scalar namespace
-        (``Scalar.init``/``update``, ``unpack_*``, ``pack``) and the
-        composition theorems.  ``rel=True`` appends the relational namespace
-        (``ScalarRel.effect_i``, ``ScalarRel.R_i``, ``ScalarRel.TransRel``, ``ScalarRel.InitCond``).
-        All default to True; pass ``False`` to omit.
-        """
-        parts = [self.to_lean_functional()]
-        if circuit:
-            parts.append(self.to_lean_circ())
-        if scalar:
-            parts.append(self.to_lean_scalar())
-        if rel:
-            parts.append(self.to_lean_rel())
-        return "\n\n".join(parts)

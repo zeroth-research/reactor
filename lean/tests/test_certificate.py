@@ -15,13 +15,5 @@ def test_the_types_are_values():
             setattr(value, field, "x")
 
 
-def test_the_kind_is_the_proof_rule():
-    assert Claim().kind == "buchi" and not Claim().is_safety
-    assert Claim(prp="(<= s0 9)", kind="safety").is_safety
-
-
-def test_an_empty_certificate_has_neither_predicate():
-    assert Certificate().empty
-    assert Certificate(inv="", ranking="").empty
-    assert not Certificate(inv="(>= s0 0)").empty
-    assert not Certificate(ranking="s0").empty
+def test_a_claim_is_buchi_unless_it_says_safety():
+    assert Claim().kind == "buchi"

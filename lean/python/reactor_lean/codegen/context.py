@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from reactor import Module, Real, Var, Wire, X
+from reactor import Module, Real, Var, Wire
 from ..lowering.elements import product_accessor
+from ..lowering.wires import ModuleWires
 from .literals import ConstantRegistry
 
 
@@ -25,10 +26,11 @@ class LeanContext:
         self.module = module
         self.atom = atoms[0]
 
-        self.extl_latched: list[Var] = list(module.extl)
-        self.extl_next: list[Wire] = [X(v) for v in module.extl]
-        self.ctrl_latched: list[Var] = list(module.ctrl)
-        self.ctrl_next: list[Wire] = [X(v) for v in module.ctrl]
+        wires = ModuleWires.of(module)
+        self.extl_latched: list[Var] = wires.extl_latched
+        self.extl_next: list[Wire] = wires.extl_next
+        self.ctrl_latched: list[Var] = wires.ctrl_latched
+        self.ctrl_next: list[Wire] = wires.ctrl_next
 
         self.constants = ConstantRegistry()
         for term in self.atom.init:

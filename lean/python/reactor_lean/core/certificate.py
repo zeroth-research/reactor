@@ -35,10 +35,6 @@ class Claim:
     init_pre: str | None = None
     update_pre: str | None = None
 
-    @property
-    def is_safety(self) -> bool:
-        return self.kind == "safety"
-
 
 @dataclass(frozen=True)
 class Certificate:
@@ -46,7 +42,3 @@ class Certificate:
 
     inv: str | None = None
     ranking: str | None = None
-
-    @property
-    def empty(self) -> bool:
-        return not (self.inv or self.ranking)

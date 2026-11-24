@@ -22,6 +22,16 @@ def fixture(name: str):
     return load_module(FIXTURES / f"{name}.py")
 
 
+def all_encodings(module) -> str:
+    """The functional encoding, the circuit, the scalar and the
+    scalar-relational one of `module`, as one text."""
+    from reactor_lean import ModuleToLean4
+
+    m2l = ModuleToLean4(module)
+    return "\n\n".join([m2l.to_lean_functional(), m2l.to_lean_circ(),
+                        m2l.to_lean_scalar(), m2l.to_lean_rel()])
+
+
 def relu(e: str, cmp: str = ">=") -> str:
     """`max(e, 0)` in SMT-LIB, the test written with `cmp`."""
     return f"(ite ({cmp} {e} 0) {e} 0)"

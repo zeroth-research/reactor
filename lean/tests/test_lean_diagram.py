@@ -8,7 +8,7 @@ from reactor_lean.lowering.sorts import itype_name
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.proof.render import certificate_files
 from reactor_lean.project.main_lean import generate_main_lean
-from testdata import fixture
+from testdata import all_encodings, fixture
 
 
 def test_itype_name_strips_prefix():
@@ -51,7 +51,7 @@ def _make_matrix_module():
 
 def test_twobitcounter_generates_lean():
     m = _make_twobitcounter()
-    lean = ModuleToLean4(m).to_lean()
+    lean = all_encodings(m)
 
     assert "def init" in lean
     assert "def update" in lean
@@ -59,7 +59,7 @@ def test_twobitcounter_generates_lean():
 
 def test_twobitcounter_has_inlined_scalars():
     m = _make_twobitcounter()
-    lean = ModuleToLean4(m).to_lean()
+    lean = all_encodings(m)
 
     # Scalar Bool constants are inlined as Matrix-typed literals, not top-level defs
     assert "def c0" not in lean
@@ -68,7 +68,7 @@ def test_twobitcounter_has_inlined_scalars():
 
 def test_twobitcounter_update_has_let_bindings():
     m = _make_twobitcounter()
-    lean = ModuleToLean4(m).to_lean()
+    lean = all_encodings(m)
 
     assert "let x0" in lean
     assert "let x1" in lean
@@ -76,7 +76,7 @@ def test_twobitcounter_update_has_let_bindings():
 
 def test_twobitcounter_update_has_expected_ops():
     m = _make_twobitcounter()
-    lean = ModuleToLean4(m).to_lean()
+    lean = all_encodings(m)
 
     assert "!" in lean  # not
     assert "if " in lean  # ite
@@ -85,7 +85,7 @@ def test_twobitcounter_update_has_expected_ops():
 
 def test_twobitcounter_init_signature():
     m = _make_twobitcounter()
-    lean = ModuleToLean4(m).to_lean()
+    lean = all_encodings(m)
 
     assert (
         "def init (extl_n: (Matrix (Fin 1) (Fin 1) Bool)) : (Matrix (Fin 1) (Fin 1) Bool) × (Matrix (Fin 1) (Fin 1) Bool)" in lean
@@ -94,7 +94,7 @@ def test_twobitcounter_init_signature():
 
 def test_twobitcounter_update_signature():
     m = _make_twobitcounter()
-    lean = ModuleToLean4(m).to_lean()
+    lean = all_encodings(m)
 
     assert (
         "def update (ctrl: (Matrix (Fin 1) (Fin 1) Bool) × (Matrix (Fin 1) (Fin 1) Bool)) (extl_l: (Matrix (Fin 1) (Fin 1) Bool)) (extl_n: (Matrix (Fin 1) (Fin 1) Bool)) : (Matrix (Fin 1) (Fin 1) Bool) × (Matrix (Fin 1) (Fin 1) Bool)"
@@ -104,7 +104,7 @@ def test_twobitcounter_update_signature():
 
 def test_twobitcounter_output_tuple():
     m = _make_twobitcounter()
-    lean = ModuleToLean4(m).to_lean()
+    lean = all_encodings(m)
 
     # Output should be a plain tuple like (x1, x4)
     assert "(x1, x4)" in lean
@@ -115,7 +115,7 @@ def test_twobitcounter_output_tuple():
 
 def test_matrix_module_generates_lean():
     m = _make_matrix_module()
-    lean = ModuleToLean4(m).to_lean()
+    lean = all_encodings(m)
 
     assert "def init" in lean
     assert "def update" in lean
@@ -123,7 +123,7 @@ def test_matrix_module_generates_lean():
 
 def test_matrix_module_has_matrix_types():
     m = _make_matrix_module()
-    lean = ModuleToLean4(m).to_lean()
+    lean = all_encodings(m)
 
     # The state (3×1) and external input (2×1) matrix types appear in the
     # signatures / let-bindings. A and B are baked into the Linear op and
@@ -134,7 +134,7 @@ def test_matrix_module_has_matrix_types():
 
 def test_matrix_module_uses_matvecaffine():
     m = _make_matrix_module()
-    lean = ModuleToLean4(m).to_lean()
+    lean = all_encodings(m)
 
     # Linear is emitted in the reflected form over list literals: matVecAffine
     # on the native path, Box.linear on the circuit path — neither uses the
@@ -147,14 +147,14 @@ def test_matrix_module_uses_matvecaffine():
 
 def test_matrix_init_signature():
     m = _make_matrix_module()
-    lean = ModuleToLean4(m).to_lean()
+    lean = all_encodings(m)
 
     assert "def init (extl_n: (Matrix (Fin 2) (Fin 1) Int)) : (Matrix (Fin 3) (Fin 1) Int)" in lean
 
 
 def test_matrix_update_signature():
     m = _make_matrix_module()
-    lean = ModuleToLean4(m).to_lean()
+    lean = all_encodings(m)
 
     assert (
         "def update (ctrl: (Matrix (Fin 3) (Fin 1) Int)) (extl_l: (Matrix (Fin 2) (Fin 1) Int)) (extl_n: (Matrix (Fin 2) (Fin 1) Int)) : (Matrix (Fin 3) (Fin 1) Int)"
@@ -510,7 +510,7 @@ def test_stateless_module_defines_init_and_update_as_unit():
         "def update (ctrl: Unit) (extl_l: Unit) (extl_n: Unit) : Unit :=\n  ()\n"
         in func
     )
-    assert "sorry" not in m2l.to_lean() + m2l.to_lean_mat_rel()
+    assert "sorry" not in all_encodings(m2l.module) + m2l.to_lean_mat_rel()
 
 
 def test_unbound_block_output_raises():

@@ -357,7 +357,6 @@ The main entry point.  Accepts a `Module` or a pre-built `LeanContext`.
 | `to_lean_mat_rel()` | `namespace Rel`, the matrix-domain relational encoding (`System/Rel.lean`) |
 | `to_lean_scalar()` | `namespace Scalar` block + equivalence theorems (`System/Scalar.lean`) |
 | `to_lean_rel()` | `namespace ScalarRel`, the scalar-relational encoding (`System/ScalarRel.lean`) |
-| `to_lean(circuit=True, scalar=True, rel=True)` | Functional, then each enabled one of circuit, scalar and scalar-relational, joined (never `Rel`); used by tests |
 | `to_lean_equiv_theorems()` | `init_circ_eq` / `update_circ_eq` theorems |
 | `to_lean_scalar_equiv()` | `init_scalar_eq` / `update_scalar_eq` theorems |
 
@@ -642,8 +641,8 @@ so does a row no theory backs.
    `ModuleToLean4` (`codegen/encodings/__init__.py`) that calls it.
 3. Optionally add an equivalence theorem connecting the new encoding to the
    existing functional one.
-4. Wire it into `to_lean()`, and give it a row in `ENCODINGS`
-   (`project/scaffold.py`) to be written into the project.
+4. Give it a row in `ENCODINGS` (`project/scaffold.py`) to be written into
+   the project.
 
 If the new encoding is *relational* — a per-slot body def, a per-slot
 relation, and a conjunction over them — do not spell that shape a fourth
