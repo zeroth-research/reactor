@@ -40,6 +40,7 @@ module-name = "reactor.reactor"
 
 [dependency-groups]
 dev = [
+    "casadi>=3.6",
     "pytest>=9.0.2",
 ]
 # The operations may hold `jax.Array`s, alike with torch tensors; JAX is needed only
