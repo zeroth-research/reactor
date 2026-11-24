@@ -233,7 +233,10 @@
 //!    condition, then `hi`, then `lo`, then the split itself; at an end, its
 //!    values, then the end itself. A node comes after its arguments. So two
 //!    isomorphic arms become equal arrays.
-//! 5. *Spans:* an empty list is always [`Span::EMPTY`].
+//! 5. *Spans:* the empty list of a node or a route (its arguments, binders
+//!    or values) is always [`Span::EMPTY`]. The spans of an arm are not
+//!    lists but its place in the arrays, so an arm without nodes has an
+//!    empty span that starts where its nodes would.
 //!
 //! Splits are **not ordered** yet, as in an ordered decision diagram: two
 //! programs that test independent conditions in different orders give

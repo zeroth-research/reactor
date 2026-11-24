@@ -41,8 +41,10 @@ pub enum Op {
     Or,
     /// `I → B`: the constant `false`, also opaque.
     False,
-    /// `D → B`: draws a boolean. The only non-deterministic operation.
+    /// `D → B`: draws a boolean from a distribution. Non-deterministic.
     Sample,
+    /// `I → B`: flips a fair coin. Non-deterministic.
+    Flip,
     /// `B → I ⊕ I`: not an operation a tape accepts, since its codomain is a
     /// sum. Only used to test that it is rejected.
     Choice,
@@ -58,6 +60,7 @@ impl Op {
             Op::Or => (vec![B, B], vec![B]),
             Op::False => (vec![], vec![B]),
             Op::Sample => (vec![D], vec![B]),
+            Op::Flip => (vec![], vec![B]),
             Op::Choice => (vec![B], vec![]),
         }
     }
@@ -78,7 +81,7 @@ impl Boundary<Sort> for Op {
 
 impl Operation<Sort> for Op {
     fn is_deterministic(&self) -> bool {
-        !matches!(self, Op::Sample)
+        !matches!(self, Op::Sample | Op::Flip)
     }
 }
 
@@ -93,6 +96,7 @@ impl fmt::Display for Op {
             Op::Or => f.write_str("or"),
             Op::False => f.write_str("false"),
             Op::Sample => f.write_str("sample"),
+            Op::Flip => f.write_str("flip"),
             Op::Choice => f.write_str("choice"),
         }
     }

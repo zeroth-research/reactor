@@ -406,6 +406,65 @@ fn the_same_draw_at_different_depths_is_two_nodes() -> Result<(), String> {
 }
 
 #[test]
+fn freezing_a_frozen_tape_gives_it_back() -> Result<(), String> {
+    // Found by random testing. On both sides of a split on c, flip a and b,
+    // and split on a. The two hi-hi paths join, and flip once more there.
+    // The two hi-hi ends become one route only once the flips of both sides
+    // are merged, which an analysis made before the merge does not see: it
+    // bound the last flip at the root.
+    let mut b = Builder::new(B);
+    let flip = b.lift(Op::Flip)?; // I → B
+    let side = |b: &mut Builder<Sort, Op>, keep_lo: bool| -> Result<Draft, String> {
+        let second = b.whisker(m(&[B]), flip, m(&[])); // a ↦ a, b
+        let order = b.cross(m(&[B]), m(&[B])); // a, b ↦ b, a
+        let case = b.case(m(&[B])); // b, a ↦ b ⊕ b
+        let keep = b.id(poly(&[&[B]])); // B → B
+        let lo = if keep_lo {
+            keep
+        } else {
+            b.discard(m(&[B])) // B → I
+        };
+        let branches = b.sum(keep, lo);
+        let side = b.compose(flip, second)?;
+        let side = b.compose(side, order)?;
+        let side = b.compose(side, case)?;
+        b.compose(side, branches) // I → B ⊕ B, or I → B ⊕ I
+    };
+    let hi = side(&mut b, true)?; // I → B ⊕ B
+    let lo = side(&mut b, false)?; // I → B ⊕ I
+    let case = b.case(m(&[])); // B → I ⊕ I
+    let both = b.sum(hi, lo); // I ⊕ I → B ⊕ B ⊕ B ⊕ I
+    let order = {
+        let first = b.id(poly(&[&[B]])); // B → B
+        let swap = b.swap(poly(&[&[B]]), poly(&[&[B]])); // B ⊕ B → B ⊕ B
+        let last = b.id(poly(&[&[]])); // I → I
+        let order = b.sum(first, swap);
+        b.sum(order, last) // hi-hi, hi-lo, lo-hi, lo-lo ↦ hi-hi, lo-hi, hi-lo, lo-lo
+    };
+    let join = {
+        let hi_hi = b.merge(poly(&[&[B]])); // B ⊕ B → B
+        let rest = b.id(poly(&[&[B], &[]])); // B ⊕ I → B ⊕ I
+        b.sum(hi_hi, rest) // B ⊕ B ⊕ B ⊕ I → B ⊕ B ⊕ I
+    };
+    let draw = {
+        let flip_again = b.whisker(m(&[B]), flip, m(&[])); // b ↦ b, flip
+        let rest = b.id(poly(&[&[B], &[]])); // B ⊕ I → B ⊕ I
+        b.sum(flip_again, rest) // B ⊕ B ⊕ I → (B ⊗ B) ⊕ B ⊕ I
+    };
+    let whole = b.compose(case, both)?;
+    let whole = b.compose(whole, order)?;
+    let whole = b.compose(whole, join)?;
+    let whole = b.compose(whole, draw)?; // B → (B ⊗ B) ⊕ B ⊕ I
+
+    let tape = b.freeze(whole);
+    // only the flips a and b are drawn before the split on c
+    assert_eq!(tape.arm(0).root().binds().len(), 2);
+    let again = b.import(&tape)?;
+    assert_eq!(b.freeze(again), tape);
+    Ok(())
+}
+
+#[test]
 fn rejects_misfits() -> Result<(), String> {
     let mut b = Builder::new(B);
     let gt0 = b.lift(Op::Gt0)?; // R → B
@@ -413,6 +472,16 @@ fn rejects_misfits() -> Result<(), String> {
     assert!(b.compose(gt0, lt).unwrap_err().contains("cannot feed"));
     assert!(b.wiring(m(&[R]), &[1]).unwrap_err().contains("no input 1"));
     Ok(())
+}
+
+#[test]
+#[should_panic(expected = "another builder")]
+fn rejects_drafts_of_another_builder() {
+    let mut first: Builder<Sort, Op> = Builder::new(B);
+    let mut second: Builder<Sort, Op> = Builder::new(B);
+    let _ = first.lift(Op::Gt0); // the first draft of `first`
+    let foreign = second.lift(Op::Sample).unwrap(); // the first draft of `second`
+    first.freeze(foreign);
 }
 
 #[test]

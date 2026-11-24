@@ -22,11 +22,15 @@
 //!
 //! Hash-consing can make draws equal that were different in the draft: two
 //! draws of the same operation, with the same arguments and level, on two
-//! paths. Then a split may get two equal children, and a draw may be bound at
-//! two routes. Both are fixed by another pass, on the emitted arm, until
-//! nothing changes. Every such pass merges draws or removes a split, so this
-//! terminates. This is what makes `case ; (f ⊕ f) ; merge` and `f` equal even
-//! when `f` samples.
+//! paths. Then a split may get two equal children, a draw may be bound at
+//! two routes, and two different routes of the arm may become one emitted
+//! route. In each case the analysis of step 1, made on the arm before the
+//! merge, may be out of date: a draw's binder may no longer be the lowest
+//! route dominating its uses. So another pass is made, on the emitted arm,
+//! until nothing is merged. Every such pass merges draws or routes, or
+//! removes a split, so this terminates. This is what makes
+//! `case ; (f ⊕ f) ; merge` and `f` equal even when `f` samples, and what
+//! makes freezing a frozen tape again give it back.
 
 use super::build::{Arena, SKind, SRoute, push_span};
 use super::{Arm, Node, NodeId, NodeKind, Operation, Route, RouteId, Span, Tape, TapeParts, Value};
@@ -490,6 +494,8 @@ struct Emitter<'a, O> {
     route_memo: HashMap<(usize, Option<u32>, Vec<u32>), RouteId>,
     /// The route binding each emitted draw.
     bound_at: HashMap<NodeId, RouteId>,
+    /// The route of the arm each emitted route was emitted for.
+    sources: HashMap<RouteId, usize>,
     /// Whether another pass is needed.
     changed: bool,
 }
@@ -512,6 +518,7 @@ impl<'a, O: Clone + Eq + Hash> Emitter<'a, O> {
             node_memo: HashMap::new(),
             route_memo: HashMap::new(),
             bound_at: HashMap::new(),
+            sources: HashMap::new(),
             changed: false,
         }
     }
@@ -663,6 +670,12 @@ impl<'a, O: Clone + Eq + Hash> Emitter<'a, O> {
                 }
             }
         };
+        if let Some(other) = self.sources.insert(id, r)
+            && other != r
+        {
+            // two routes of the arm became one: the analysis is out of date
+            self.changed = true;
+        }
         self.route_memo.insert(key, id);
         id
     }

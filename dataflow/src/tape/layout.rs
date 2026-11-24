@@ -25,9 +25,10 @@ pub struct Arm {
 
 /// The raw arrays of a [`Tape`], with public fields.
 ///
-/// This is how a tape is put together (by hand for now, by the builder
-/// later) and taken apart: fill in a `TapeParts`, then
-/// [`Tape::new`] checks that it is well formed. See the
+/// This is how a tape is put together by hand, and taken apart: fill in a
+/// `TapeParts`, then [`Tape::new`] checks that it is well formed. (To put
+/// tapes together from combinators, in normal form, use a
+/// [`Builder`](super::Builder).) See the
 /// [module documentation](super) for the meaning of each array and an
 /// example.
 #[derive(Clone, Debug, PartialEq, Eq)]

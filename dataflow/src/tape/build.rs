@@ -28,13 +28,21 @@ use base::boundary::{Boundary, Mono, Poly};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// A handle to a draft: a tape under construction in a [`Builder`].
 ///
-/// A draft is only meaningful for the builder that created it. Its boundary
-/// is available through [`Builder::draft`].
+/// A draft is only meaningful for the builder that created it, which it
+/// records: using it with another builder panics. Its boundary is available
+/// through [`Builder::draft`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Draft(u32);
+pub struct Draft {
+    builder: u64,
+    index: u32,
+}
+
+/// The id of the next builder, so that each builder has its own.
+static NEXT_BUILDER: AtomicU64 = AtomicU64::new(0);
 
 /// What a scratch node computes.
 #[derive(Clone, Debug)]
@@ -117,8 +125,10 @@ struct DraftData<S> {
 ///
 /// Combinators check the boundaries of their arguments and fail with a
 /// message if they do not fit.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Builder<S, O> {
+    /// This builder's id, recorded in its drafts.
+    id: u64,
     boolean: S,
     arena: Arena<O>,
     drafts: Vec<DraftData<S>>,
@@ -334,6 +344,7 @@ where
     /// An empty builder, for tapes whose tests read the sort `boolean`.
     pub fn new(boolean: S) -> Self {
         Self {
+            id: NEXT_BUILDER.fetch_add(1, Ordering::Relaxed),
             boolean,
             arena: Arena {
                 nodes: Vec::new(),
@@ -357,7 +368,7 @@ where
     /// # Panics
     /// If `draft` was not created by this builder.
     pub fn draft(&self, draft: Draft) -> DraftRef<'_, S> {
-        let data = &self.drafts[draft.0 as usize];
+        let data = self.data(draft);
         DraftRef {
             dom: &data.dom,
             cod: &data.cod,
@@ -365,7 +376,11 @@ where
     }
 
     fn data(&self, draft: Draft) -> &DraftData<S> {
-        &self.drafts[draft.0 as usize]
+        assert_eq!(
+            draft.builder, self.id,
+            "the draft was created by another builder"
+        );
+        &self.drafts[draft.index as usize]
     }
 
     fn arms_of(&self, draft: Draft) -> Vec<DraftArm> {
@@ -375,7 +390,10 @@ where
     fn add(&mut self, dom: Poly<S>, cod: Poly<S>, arms: Vec<DraftArm>) -> Draft {
         let arms = push_span(&mut self.draft_arms, arms);
         self.drafts.push(DraftData { dom, cod, arms });
-        Draft(self.drafts.len() as u32 - 1)
+        Draft {
+            builder: self.id,
+            index: self.drafts.len() as u32 - 1,
+        }
     }
 
     /// A draft `inputs → cod` with a single arm, whose root is

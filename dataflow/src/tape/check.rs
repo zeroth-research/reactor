@@ -34,7 +34,7 @@ where
             return Err(format!("arm {j}: its nodes must start at n{next_node}"));
         }
         if arm.routes.start as usize != next_route {
-            return Err(format!("arm {j}: its routes must start at d{next_route}"));
+            return Err(format!("arm {j}: its routes must start at r{next_route}"));
         }
         if arm.routes.is_empty() {
             return Err(format!("arm {j} has no routes"));
