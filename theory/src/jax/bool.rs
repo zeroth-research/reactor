@@ -68,6 +68,8 @@ impl<'py> IntoPyObject<'py> for crate::tensor::bool::Prop<Array> {
             Prop::Ne(op) => op.into_pyobject(py).map(Bound::into_any),
             Prop::All(op) => op.into_pyobject(py).map(Bound::into_any),
             Prop::Ite(op) => op.into_pyobject(py).map(Bound::into_any),
+            Prop::Implies(op) => op.into_pyobject(py).map(Bound::into_any),
+            Prop::Get(op) => op.into_pyobject(py).map(Bound::into_any),
         }
     }
 }

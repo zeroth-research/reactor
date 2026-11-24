@@ -463,3 +463,39 @@ def test_int_div_mod_are_euclidean(x, y, q, r):
     args = [torch.tensor([[x]], dtype=torch.int64), torch.tensor([[y]], dtype=torch.int64)]
     assert eval_itype(tensor.int.Div([1, 1]), args)[0].item() == q
     assert eval_itype(tensor.int.Mod([1, 1]), args)[0].item() == r
+
+
+def test_implies_is_pointwise():
+    a = torch.tensor([[True, True, False, False]])
+    b = torch.tensor([[True, False, True, False]])
+    assert eval_itype(tensor.bool.Implies([1, 4]), [a, b])[0].tolist() == [[True, False, True, True]]
+
+
+def test_get_reads_one_entry_as_1x1():
+    m = torch.tensor([[1, 2, 3], [4, 5, 6]], dtype=torch.int64)
+    got = eval_itype(tensor.int.Get(1, 2, [2, 3]), [m])[0]
+    assert got.shape == (1, 1) and got.item() == 6
+    assert eval_itype(tensor.real.Get(0, 1, [1, 2]), [torch.tensor([[.5, 1.5]])])[0].item() == 1.5
+    assert eval_itype(tensor.bool.Get(1, 0, [2, 1]), [torch.tensor([[False], [True]])])[0].item() is True
+    assert eval_itype(tensor.word.Get(0, 0, 8, [1, 2]), [_w(0xAB, 1)])[0].item() == 0xAB
+
+
+def test_get_rejects_an_entry_outside_the_matrix():
+    with pytest.raises(ValueError):
+        tensor.int.Get(2, 0, [2, 3])
+
+
+def test_casts_between_sorts():
+    i = torch.tensor([[-3, 4]], dtype=torch.int64)
+    got = eval_itype(tensor.cast.ToReal([1, 2]), [i])[0]
+    assert got.is_floating_point() and got.tolist() == [[-3., 4.]]
+    # to_int is the floor
+    assert eval_itype(tensor.cast.ToInt([1, 2]), [torch.tensor([[-2.5, 2.5]])])[0].tolist() == [[-3, 2]]
+    # a word is its unsigned value
+    assert eval_itype(tensor.cast.UbvToInt(8, [1, 1]), [_w(0xFB)])[0].tolist() == [[0xFB]]
+
+
+def test_casts_check_the_sorts_of_their_wires():
+    with pytest.raises(Exception):
+        Term(tensor.cast.ToReal([1, 1]), [Wire(Int([1, 1]))], [Wire(Real([1, 1]))])
+    Term(tensor.cast.ToReal([1, 1]), [Wire(Real([1, 1]))], [Wire(Int([1, 1]))])

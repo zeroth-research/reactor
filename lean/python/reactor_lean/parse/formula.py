@@ -18,7 +18,7 @@ from fractions import Fraction
 
 import torch
 
-from reactor import BV, LIA, LRA, BitVec, Bool, Int, Real, Term, Wire
+from reactor import Bool, Int, Real, Term, Wire, Word, tensor
 
 from ..core.errors import Unreadable
 from ..lowering.values import decimal_fraction
@@ -52,7 +52,7 @@ def family(sort) -> str:
             return "Int"
         case Real(_):
             return "Real"
-        case BitVec(w, _):
+        case Word(w, _):
             return f"(_ BitVec {w})"
     raise ValueError(f"no sort family for {sort}")
 
@@ -66,8 +66,8 @@ def element(sort):
             return Int(SCALAR)
         case Real(_):
             return Real(SCALAR)
-        case BitVec(w, _):
-            return BitVec(w, SCALAR)
+        case Word(w, _):
+            return Word(w, SCALAR)
     raise ValueError(f"no element sort for {sort}")
 
 
@@ -86,11 +86,13 @@ class Builder:
 
     def apply(self, op, reads: list, sort, key: object = None) -> Wire:
         """The wire `op` writes from `reads`, of `sort`: built the first time
-        this op is applied to these wires, and the same wire after. `key`
-        names the op where its class does not: a constant's value, `Get`'s
-        element."""
-        memo_key = (key if key is not None else type(op).__name__,
-                    tuple(w.id for w in reads))
+        this op is applied to these wires, and the same wire after. The op is
+        told by its class and sizes; `key` names it where those do not, as a
+        constant's value."""
+        if key is None:
+            key = (type(op), *(getattr(op, a) for a in type(op).__match_args__))
+            key = tuple(tuple(k) if isinstance(k, list) else k for k in key)
+        memo_key = (key, tuple(w.id for w in reads))
         hit = self._memo.get(memo_key)
         if hit is not None:
             return hit
@@ -102,14 +104,14 @@ class Builder:
     # --- constants --------------------------------------------------------
 
     def boolean(self, value: bool) -> Wire:
-        return self.apply(LIA.Bool(torch.tensor([[bool(value)]])), [],
+        return self.apply(tensor.bool.Const(torch.tensor([[bool(value)]])), [],
                           Bool(SCALAR), key=("Bool", bool(value)))
 
     def integer(self, value: int) -> Wire:
         if not -(1 << 63) <= value < 1 << 63:
             raise Unreadable(f"`{value}` does not fit the 64 bits an Int "
                              f"constant of reactor's terms holds")
-        return self.apply(LIA.Int(torch.tensor([[value]], dtype=torch.int64)),
+        return self.apply(tensor.int.Const(torch.tensor([[value]], dtype=torch.int64)),
                           [], Int(SCALAR), key=("Int", value))
 
     def real(self, value: Fraction) -> Wire:
@@ -118,7 +120,7 @@ class Builder:
             raise Unreadable(f"`{value}` is no float that reads back as "
                              f"itself, and a Real constant of reactor's "
                              f"terms is a float")
-        return self.apply(LRA.Real(torch.tensor([[f]], dtype=torch.float64)),
+        return self.apply(tensor.real.Const(torch.tensor([[f]], dtype=torch.float64)),
                           [], Real(SCALAR), key=("Real", value))
 
     def bitvec(self, width: int, value: int) -> Wire:
@@ -127,5 +129,5 @@ class Builder:
             raise Unreadable(f"`{value}` at {width} bits: a bit-vector constant "
                              f"of reactor's terms is 1 to 64 bits wide, and "
                              f"held in 64 signed ones")
-        return self.apply(BV.Const(torch.tensor([[value]], dtype=torch.int64)),
-                          [], BitVec(width, SCALAR), key=("BV", width, value))
+        return self.apply(tensor.word.Const(torch.tensor([[value]], dtype=torch.int64), width),
+                          [], Word(width, SCALAR), key=("BV", width, value))

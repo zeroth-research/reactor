@@ -39,6 +39,9 @@ two's complement, and [`unsigned`], reading them in binary.
 | [`Eq`](struct@Eq) | `=` | | | |
 | [`Ne`] | `distinct` | | | |
 | [`Ite`] | `ite` | | | |
+| [`Get`] | — | | | |
+
+[`Get`] reads one entry of a matrix, and so is no pointwise operation.
 
 `=` and `distinct` belong to the SMT-LIB2 Core theory, which every logic
 includes, at the sort `(_ BitVec width)`; all the others belong to the
@@ -208,6 +211,18 @@ pub struct Xnor {
     shape: [usize; 2],
 }
 
+/// The entry in row `row` and column `col` of an `[m, n]` matrix of
+/// `width`-bit words, as `Get(row, col, width, [m, n])`, written as a
+/// `[1, 1]` matrix.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
+pub struct Get {
+    row: usize,
+    col: usize,
+    width: usize,
+    shape: [usize; 2],
+}
+
 /// Pointwise two's-complement negation `-x`, modulo `2^width`, as
 /// `Neg(width, [m, n])`; the minimum signed word is its own negation.
 ///
@@ -334,6 +349,7 @@ pub enum BV<T> {
     Xnor(Xnor),
     Neg(Neg),
     Ite(Ite),
+    Get(Get),
     Add(Add),
     Sub(Sub),
     Mul(Mul),
@@ -380,6 +396,7 @@ where
             BV::Nor(op) => BV::Nor(*op),
             BV::Xnor(op) => BV::Xnor(*op),
             BV::Neg(op) => BV::Neg(*op),
+            BV::Get(op) => BV::Get(*op),
             BV::Ite(op) => BV::Ite(*op),
             BV::Add(op) => BV::Add(*op),
             BV::Sub(op) => BV::Sub(*op),
@@ -426,6 +443,7 @@ impl<T: fmt::Display> fmt::Display for BV<T> {
             BV::Nor(op) => op.fmt(f),
             BV::Xnor(op) => op.fmt(f),
             BV::Neg(op) => op.fmt(f),
+            BV::Get(op) => op.fmt(f),
             BV::Ite(op) => op.fmt(f),
             BV::Add(op) => op.fmt(f),
             BV::Sub(op) => op.fmt(f),
@@ -472,6 +490,7 @@ impl<T: Tensor> Boundary<Sort> for BV<T> {
             BV::Nor(op) => op.dom(),
             BV::Xnor(op) => op.dom(),
             BV::Neg(op) => op.dom(),
+            BV::Get(op) => op.dom(),
             BV::Ite(op) => op.dom(),
             BV::Add(op) => op.dom(),
             BV::Sub(op) => op.dom(),
@@ -516,6 +535,7 @@ impl<T: Tensor> Boundary<Sort> for BV<T> {
             BV::Nor(op) => op.cod(),
             BV::Xnor(op) => op.cod(),
             BV::Neg(op) => op.cod(),
+            BV::Get(op) => op.cod(),
             BV::Ite(op) => op.cod(),
             BV::Add(op) => op.cod(),
             BV::Sub(op) => op.cod(),
@@ -673,6 +693,16 @@ impl Boundary<Sort> for Neg {
     }
 }
 
+impl Boundary<Sort> for Get {
+    fn dom(&self) -> Poly<Sort> {
+        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        mono![Word::new_unchecked(self.width, [1, 1]).into()].into()
+    }
+}
+
 impl Boundary<Sort> for Add {
     fn dom(&self) -> Poly<Sort> {
         mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
@@ -822,6 +852,12 @@ impl fmt::Display for Xnor {
 impl fmt::Display for Neg {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Neg")
+    }
+}
+
+impl fmt::Display for Get {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Get[{}][{}]", self.row, self.col)
     }
 }
 
@@ -1940,6 +1976,9 @@ where
         if let Ok(op) = ob.extract::<Neg>() {
             return Ok(BV::Neg(op));
         }
+        if let Ok(op) = ob.extract::<Get>() {
+            return Ok(BV::Get(op));
+        }
         if let Ok(op) = ob.extract::<Ite>() {
             return Ok(BV::Ite(op));
         }
@@ -2348,6 +2387,55 @@ impl Neg {
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("width", "shape")
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Get {
+    /// Fails unless `width` is positive, and `row` and `col` index an entry
+    /// of an `[m, n]` matrix.
+    #[cfg_attr(feature = "pyo3", new)]
+    #[cfg_attr(feature = "pyo3", pyo3(signature = (row, col, width, shape, /)))]
+    pub fn new(
+        row: usize,
+        col: usize,
+        width: usize,
+        shape: [usize; 2],
+    ) -> Result<Self, crate::Error> {
+        check_width(width)?;
+        super::check_entry(row, col, shape)?;
+        Ok(Get {
+            row,
+            col,
+            width,
+            shape,
+        })
+    }
+
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str, &'static str, &'static str) {
+        ("row", "col", "width", "shape")
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn row(&self) -> usize {
+        self.row
+    }
+
+    #[cfg_attr(feature = "pyo3", getter)]
+    pub fn col(&self) -> usize {
+        self.col
     }
 
     #[cfg_attr(feature = "pyo3", getter)]

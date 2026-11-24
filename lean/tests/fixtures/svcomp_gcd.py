@@ -9,7 +9,7 @@ Python semantics:
 Invariant: a >= 1 and b >= 1
 Ranking: a + b - 2 (when a != b; decreases because we subtract the smaller)
 """
-from reactor import Module, Int, LIA, Var, X
+from reactor import Module, Int, Var, X
 from reactor.analyzer import convert_method
 
 
@@ -29,8 +29,8 @@ def update(old_a, old_b):
 def module() -> Module:
     a = Var(Int([1, 1]))
     b = Var(Int([1, 1]))
-    init_terms = convert_method(init, {}, [X(a), X(b)], theory=LIA)
+    init_terms = convert_method(init, {}, [X(a), X(b)], number=Int)
     update_terms = convert_method(
-        update, {"old_a": a, "old_b": b}, [X(a), X(b)], theory=LIA
+        update, {"old_a": a, "old_b": b}, [X(a), X(b)], number=Int
     )
     return Module.sequential([a, b], init_terms, update_terms)

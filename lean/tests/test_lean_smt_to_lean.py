@@ -16,7 +16,7 @@ import sys
 import pytest
 import torch
 
-from reactor import Module, Term, Var, X, LIA, LRA, Int, Real
+from reactor import Module, Term, Var, X, Int, Real, tensor
 from reactor_lean.proof.render import LeanCertificate
 from reactor_lean.core.certificate import Certificate, Claim
 from reactor_lean.core.errors import PredicateRefused
@@ -39,8 +39,8 @@ def _int_module() -> Module:
     x = Var(Int([1, 1]))
     return Module.sequential(
         [x],
-        [Term(LIA.Int(torch.tensor([[0]])), [X(x)])],
-        [Term(LIA.Id(), [X(x)], [x])],
+        [Term(tensor.int.Const(torch.tensor([[0]])), [X(x)])],
+        [Term(tensor.Skip(Int([1, 1])), [X(x)], [x])],
     )
 
 
@@ -48,8 +48,8 @@ def _real_module() -> Module:
     x = Var(Real([1, 1]))
     return Module.sequential(
         [x],
-        [Term(LRA.Real(torch.tensor([[0.0]])), [X(x)])],
-        [Term(LRA.Id(), [X(x)], [x])],
+        [Term(tensor.real.Const(torch.tensor([[0.0]])), [X(x)])],
+        [Term(tensor.Skip(Real([1, 1])), [X(x)], [x])],
     )
 
 

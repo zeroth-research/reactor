@@ -8,6 +8,7 @@ IType operation to its Lean equivalent.
 """
 
 from __future__ import annotations
+from reactor_lean.core.errors import Refused
 from reactor_lean.lowering.sorts import (
     dtype_shape,
     dtype_to_lean_type,
@@ -22,7 +23,7 @@ from reactor_lean.codegen.literals import (
 )
 
 from reactor_lean.codegen.terms import check_argmax_output
-from reactor_lean.lowering.ops import box_for
+from reactor_lean.lowering.ops import box_for, entrywise_shape
 
 from dataclasses import dataclass
 
@@ -68,13 +69,28 @@ def native_to_vt(param: str, n_wires: int) -> str:
 
 
 def _linear_box(term: Term) -> str:
-    """Box for a baked-constant LIA/LRA `Linear` op: `Box.linear m A b` (x ↦ A·x + b).
+    """Box for a baked-constant `Linear` op, or a `Scale` one as `diag(c)·x`
+    (`literals.affine_tensors`): `Box.linear m A b` (x ↦ A·x + b).
 
     A and b are emitted as list literals; `Box.linear` applies the reflected
     `matVecAffine` (see `Relational.Mat`). Column output only (batch = 1).
     """
     out_m, a_lit, b_lit, _ = linear_list_literals(term)
     return f"(Box.linear {out_m} {a_lit} {b_lit})"
+
+
+def _box(term: Term) -> str:
+    """The op's Box: an `entrywise` op larger than 1×1 has none, its Box
+    reading 1×1 operands."""
+    shape = entrywise_shape(term.itype)
+    if shape is not None:
+        name = itype_name(term.itype)
+        article = "an" if name[0] in "AEIOU" else "a"
+        raise Refused(
+            f"no Box for {article} `{name}` of shape {shape}: its Box reads "
+            "1×1 matrices"
+        )
+    return box_for(term.itype)
 
 
 def _get_box(term: Term) -> str:
@@ -330,12 +346,12 @@ def translate_terms_circ(
                                 dtype_shape(term.write[0].dtype),
                             )
                         )
-                    elif name == "Linear":
+                    elif name in ("Linear", "Scale"):
                         boxes.append(_linear_box(term))
                     elif name == "Get":
                         boxes.append(_get_box(term))
                     else:
-                        boxes.append(box_for(term.itype))
+                        boxes.append(_box(term))
                     in_ty.extend([dtype_to_lean_type(u) for u in term.read])
                     out_ty.extend([dtype_to_lean_type(u) for u in term.write])
         assert boxes

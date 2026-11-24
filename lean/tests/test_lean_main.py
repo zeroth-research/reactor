@@ -9,7 +9,7 @@ that agreement, so the loop drifted from the signatures it calls.
 import torch
 import pytest
 
-from reactor import Term, Module, Int, Bool, BitVec, Real, LIA, LRA, BV, Var, X
+from reactor import Term, Module, Int, Bool, Word, Real, Var, X, tensor
 from reactor_lean.project.main_lean import generate_main_lean
 from reactor_lean.codegen.encodings import ModuleToLean4
 
@@ -18,8 +18,8 @@ def _module_with_extl():
     """State plus a genuine external input, so extl_l/extl_n are non-trivial."""
     s = Var(Int([1, 1]))
     e = Var(Int([1, 1]))
-    init = [Term(LIA.Linear(torch.tensor([[1]]), torch.tensor([[0]])), [X(s)], [X(e)])]
-    update = [Term(LIA.Add(), [X(s)], [s, X(e)])]
+    init = [Term(tensor.int.Linear(torch.tensor([[1]]), torch.tensor([[0]])), [X(s)], [X(e)])]
+    update = [Term(tensor.int.Add([1, 1]), [X(s)], [s, X(e)])]
     return Module.sequential([s, e], init, update)
 
 
@@ -27,8 +27,8 @@ def _module_without_extl():
     s = Var(Int([1, 1]))
     return Module.sequential(
         [s],
-        [Term(LIA.Int(torch.tensor([[0]])), [X(s)])],
-        [Term(LIA.Id(), [X(s)], [s])],
+        [Term(tensor.int.Const(torch.tensor([[0]])), [X(s)])],
+        [Term(tensor.Skip(Int([1, 1])), [X(s)], [s])],
     )
 
 
@@ -37,10 +37,10 @@ def _two_ctrl_module():
     a = Var(Int([1, 1]))
     b = Var(Int([1, 1]))
     init = [
-        Term(LIA.Int(torch.tensor([[1]])), [X(a)]),
-        Term(LIA.Int(torch.tensor([[2]])), [X(b)]),
+        Term(tensor.int.Const(torch.tensor([[1]])), [X(a)]),
+        Term(tensor.int.Const(torch.tensor([[2]])), [X(b)]),
     ]
-    update = [Term(LIA.Id(), [X(a)], [a]), Term(LIA.Id(), [X(b)], [b])]
+    update = [Term(tensor.Skip(Int([1, 1])), [X(a)], [a]), Term(tensor.Skip(Int([1, 1])), [X(b)], [b])]
     return Module.sequential([a, b], init, update)
 
 
@@ -83,10 +83,10 @@ def _heterogeneous_module():
     b = Var(Bool([1, 1]))
     n = Var(Int([1, 1]))
     init = [
-        Term(LIA.Bool(torch.tensor([[True]])), [X(b)]),
-        Term(LIA.Int(torch.tensor([[7]])), [X(n)]),
+        Term(tensor.bool.Const(torch.tensor([[True]])), [X(b)]),
+        Term(tensor.int.Const(torch.tensor([[7]])), [X(n)]),
     ]
-    update = [Term(LIA.Id(), [X(b)], [b]), Term(LIA.Id(), [X(n)], [n])]
+    update = [Term(tensor.Skip(Bool([1, 1])), [X(b)], [b]), Term(tensor.Skip(Int([1, 1])), [X(n)], [n])]
     return Module.sequential([b, n], init, update)
 
 
@@ -108,8 +108,8 @@ def test_parse_extl_builds_the_tuple_in_declaration_order():
     e0 = Var(Bool([1, 1]))
     e1 = Var(Int([1, 1]))
     s = Var(Int([1, 1]))
-    init = [Term(LIA.Int(torch.tensor([[0]])), [X(s)])]
-    update = [Term(LIA.Ite(), [X(s)], [X(e0), X(e1), s])]
+    init = [Term(tensor.int.Const(torch.tensor([[0]])), [X(s)])]
+    update = [Term(tensor.int.Ite([1, 1]), [X(s)], [X(e0), X(e1), s])]
     module = Module.sequential([s, e0, e1], init, update)
 
     main = generate_main_lean(module)
@@ -150,10 +150,10 @@ def test_bool_ctrl_is_shown_as_bool():
 
 def test_bitvec_extl_is_parsed_as_bitvec():
     """A BitVec input wire must build a BitVec array, not an Int one."""
-    b = Var(BitVec(8, [1, 1]))
-    s = Var(BitVec(8, [1, 1]))
-    init = [Term(BV.Const(torch.tensor([[0]])), [X(s)])]
-    update = [Term(BV.Id(), [X(s)], [X(b)])]
+    b = Var(Word(8, [1, 1]))
+    s = Var(Word(8, [1, 1]))
+    init = [Term(tensor.word.Const(torch.tensor([[0]]), 8), [X(s)])]
+    update = [Term(tensor.Skip(Word(8, [1, 1])), [X(s)], [X(b)])]
     module = Module.sequential([s, b], init, update)
 
     main = generate_main_lean(module)
@@ -168,8 +168,8 @@ def test_real_io_is_refused_with_a_reason():
     r = Var(Real([1, 1]))
     module = Module.sequential(
         [r],
-        [Term(LRA.Real(torch.tensor([[0.0]])), [X(r)])],
-        [Term(LRA.Id(), [X(r)], [r])],
+        [Term(tensor.real.Const(torch.tensor([[0.0]])), [X(r)])],
+        [Term(tensor.Skip(Real([1, 1])), [X(r)], [r])],
     )
     with pytest.raises(ValueError, match="noncomputable"):
         generate_main_lean(module)

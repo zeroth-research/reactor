@@ -23,8 +23,8 @@ from typing import Callable, ClassVar
 import cvc5
 from cvc5 import Kind
 
-from reactor import Wire, Sort, BitVec, Bool, Int, Real, Term
-from ..lowering.sorts import MatShape, itype_name, wire_shape
+from reactor import Wire, Bool, Int, Real, Term, Word
+from ..lowering.sorts import MatShape, Sort, itype_name, wire_shape
 from ..lowering.values import decimal_fraction
 from ..lowering.ops import smt_emitter
 
@@ -37,8 +37,8 @@ def elem_sort(tm: cvc5.TermManager, dt: Sort) -> cvc5.Sort:
         return tm.getIntegerSort()
     if isinstance(dt, Real):
         return tm.getRealSort()
-    if isinstance(dt, BitVec):
-        return tm.mkBitVectorSort(dt._0)
+    if isinstance(dt, Word):
+        return tm.mkBitVectorSort(dt.width)
     raise ValueError(f"Unsupported Sort for SMT encoding: {dt}")
 
 
@@ -106,8 +106,9 @@ def _scalar_const(tm: cvc5.TermManager, dt: Sort, raw) -> cvc5.Term:
         # and fails on `1e-07`.
         q = decimal_fraction(float(raw))
         return tm.mkReal(q.numerator, q.denominator)
-    if isinstance(dt, BitVec):
-        return tm.mkBitVector(dt._0, int(raw))
+    if isinstance(dt, Word):
+        # a negative entry is its two's complement
+        return tm.mkBitVector(dt.width, int(raw) % (1 << dt.width))
     raise ValueError(f"Unsupported scalar Sort: {dt}")
 
 
@@ -156,9 +157,8 @@ def _matmul(
             f"MatMul dim mismatch: {a_shape.m}x{a_shape.n} * {b_shape.m}x{b_shape.n}"
         )
     out_shape = MatShape(a_shape.m, b_shape.n)
-    # `BV.MatMul` multiplies bit-vectors, and cvc5's arithmetic `MULT`
-    # refuses them ("expecting an arithmetic subterm"): no module with one
-    # had an SMT encoding.
+    # cvc5's arithmetic `MULT` refuses bit-vectors ("expecting an arithmetic
+    # subterm"), so a product of words multiplies with their own kinds.
     bv = mat_select(tm, a, a_shape, 0, 0).getSort().isBitVector()
     mul, add = ((Kind.BITVECTOR_MULT, Kind.BITVECTOR_ADD) if bv
                 else (Kind.MULT, Kind.ADD))
@@ -214,15 +214,8 @@ def _reduce_flat(
     shape: MatShape,
     take_min: bool,
 ) -> cvc5.Term:
-    """Scalar: the min/max element of an `m × n` matrix, folded row-major.
-
-    `Min`/`Max` are *unary reductions* in the theory -- one read wire of any
-    shape, a `Mat t 1 1` written -- exactly like `Argmax`, and `Relational.Mat`
-    folds them row-major from element `(0,0)`. They were wired to
-    `_elementwise` with a binary lambda instead, so a real `Max` term raised
-    `TypeError: <lambda>() missing 1 required positional argument`, taking
-    down every SMT query about a module that uses one.
-    """
+    """Scalar: the least (greatest) entry of an `m × n` matrix, folded row by
+    row, as `Relational.Mat`'s `matMin` (`matMax`) folds it from `(0, 0)`."""
     xs = [
         mat_select(tm, x, shape, i, j)
         for i in range(shape.m)
@@ -236,15 +229,6 @@ def _reduce_flat(
         # `best` first, matching `foldl (fun best p => Min.min best (x p))`.
         best = tm.mkTerm(Kind.ITE, tm.mkTerm(kind, best, nxt), best, nxt)
     return best
-
-
-def _bool_or_bv1(tm: cvc5.TermManager, pred: cvc5.Term, want_bv1: bool) -> cvc5.Term:
-    """cvc5 comparison Kinds (EQUAL, BITVECTOR_ULT, ...) always yield a native
-    Bool term. LIA/LRA comparisons want that Bool as-is, but BV comparisons are
-    typed to write a `BV<1>` wire — reify the predicate as a 0/1 bit."""
-    if not want_bv1:
-        return pred
-    return tm.mkTerm(Kind.ITE, pred, tm.mkBitVector(1, 1), tm.mkBitVector(1, 0))
 
 
 @dataclass(frozen=True)
@@ -274,13 +258,17 @@ class SmtOp:
 
     @property
     def is_bv(self) -> bool:
-        """True when the written wire is a BitVec, which is what decides
-        between a BitVec Kind and its Bool/Int/Real counterpart."""
-        return isinstance(self.write.dtype, BitVec)
+        """True when the written wire is a word, which is what decides
+        between a bit-vector Kind and its Bool/Int/Real counterpart."""
+        return isinstance(self.write.dtype, Word)
 
     # -- builders ---------------------------------------------------------
     def mk(self, kind, *args: cvc5.Term) -> cvc5.Term:
         return self.tm.mkTerm(kind, *args)
+
+    def mk_indexed(self, kind, indices: tuple[int, ...], *args: cvc5.Term) -> cvc5.Term:
+        """A term of an indexed kind (`(_ extract i j)`, ...)."""
+        return self.tm.mkTerm(self.tm.mkOp(kind, *indices), *args)
 
     def unop(self, kind) -> Callable[[cvc5.Term], cvc5.Term]:
         return lambda a: self.tm.mkTerm(kind, a)
@@ -329,8 +317,6 @@ class SmtOp:
     def reduce_flat(self, index: int, take_min: bool) -> cvc5.Term:
         return _reduce_flat(self.tm, self.args[index], self.in_shapes[index], take_min)
 
-    def bool_or_bv1(self, pred: cvc5.Term, want_bv1: bool) -> cvc5.Term:
-        return _bool_or_bv1(self.tm, pred, want_bv1)
 
 
 def translate_terms(

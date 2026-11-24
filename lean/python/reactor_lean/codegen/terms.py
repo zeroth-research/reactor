@@ -26,7 +26,7 @@ from reactor_lean.codegen.literals import (
     tensor_to_lean_scalar,
     tensor_to_lean_inline,
 )
-from reactor_lean.lowering.ops import lean_gap, mat_emitter, scalar_emitter
+from reactor_lean.lowering.ops import entrywise_shape, lean_gap, mat_emitter, scalar_emitter
 
 from reactor import Wire
 
@@ -113,11 +113,10 @@ def check_argmax_output(output_shape: "list[int] | None") -> None:
     """Reject an Argmax output wider than the single index we can emit.
 
     Argmax follows `torch.argmax`, which returns one row-major flat index,
-    so both Lean variants produce a 1×1 `Matrix`. The theory is looser -- it
-    accepts any vector output (see the FIXME on `LIA::Argmax` in
-    theory/src/lia.rs) -- and a wider wire would previously get that 1x1
-    body ascribed to it, which does not elaborate. Fail here with the reason
-    instead of emitting Lean that cannot compile.
+    so both Lean variants produce a 1×1 `Matrix`, as the theory's `Argmax`
+    writes one; a wider wire would get that 1x1 body ascribed to it, which
+    does not elaborate. Fail here with the reason instead of emitting Lean
+    that cannot compile.
     """
     if output_shape is None:
         return
@@ -148,6 +147,13 @@ def _lift_scalar_reads(term, wire_expr: dict[int, str]) -> dict[int, str]:
     return lifted
 
 
+def _entrywise_expr(term, wire_expr: dict[int, str]) -> str:
+    """An `entrywise` op larger than 1×1 (`lowering.ops.entrywise_shape`):
+    its scalar form, applied to the operands entry by entry."""
+    args = [f"({wire_expr[w.id]} i j)" for w in term.read]
+    return mat_mk(scalar_emitter(term.itype)(args), "i", "j")
+
+
 def _get_expr(term, wire_expr: dict[int, str]) -> str:
     """`Get`: element `[row][col]` of the read matrix, as a 1x1 one."""
     op = term.itype
@@ -155,8 +161,9 @@ def _get_expr(term, wire_expr: dict[int, str]) -> str:
 
 
 def _linear_expr(term, wire_expr: dict[int, str]) -> str:
-    """Emit a baked-constant LIA/LRA `Linear` op, `Y = A·X + B`, in the reflected
-    form `matVecAffine m A b X`.
+    """Emit a baked-constant `Linear` op, `Y = A·X + B`, or a `Scale` one,
+    `diag(c)·X` (`literals.affine_tensors`), in the reflected form
+    `matVecAffine m A b X`.
 
     `A` (shape `[out, in]`) and `B` (`[out, 1]`, or empty) are constants baked
     into the op; the read wire supplies `X` (`[in, batch]`). They are emitted as
@@ -216,10 +223,12 @@ def translate_terms_lean(
                 dtype_shape(term.read[0].dtype),
                 dtype_shape(term.write[0].dtype),
             )
-        elif name == "Linear":
+        elif name in ("Linear", "Scale"):
             expr = _linear_expr(term, wire_expr)
         elif name == "Get":
             expr = _get_expr(term, wire_expr)
+        elif entrywise_shape(term.itype):
+            expr = _entrywise_expr(term, wire_expr)
         else:
             input_exprs = [wire_expr[w.id] for w in term.read]
             expr = mat_emitter(term.itype)(input_exprs)
@@ -272,12 +281,12 @@ def _constant_expr_scalar(term, w: "Wire", constants: ConstantRegistry) -> str:
     """Like constant_expr but returns bare scalar values (no matrix around them)."""
     if is_scalar_wire(w):
         # Element type (Bool/Int/Real) is taken from the wire's dtype.
-        return tensor_to_lean_scalar(term.itype._0, w)
+        return tensor_to_lean_scalar(term.itype.tensor, w)
     # Non-scalar tensor: fall back to matrix constant from registry
     name = constants.lookup(w.id)
     if name is not None:
         return name
-    return tensor_to_lean_inline(term.itype._0, w)
+    return tensor_to_lean_inline(term.itype.tensor, w)
 
 
 def argmax_scalar_name(elem_ty: str, n: int) -> str:
@@ -341,7 +350,7 @@ def translate_terms_scalar(
                     dtype_shape(write_wire.dtype),
                 )
                 expr = f"({mat_expr} 0 0)" if is_scalar_wire(write_wire) else mat_expr
-        elif name == "Linear":
+        elif name in ("Linear", "Scale"):
             # `matVecAffine` consumes an `n × batch` matrix and yields
             # an `out × batch` one, but a 1x1 wire is bound to a bare scalar
             # here and ascribed one. Lift the operand and take `0 0` off
@@ -361,6 +370,10 @@ def translate_terms_scalar(
         elif is_scalar_wire(write_wire) and scalar_emitter(term.itype) is not None:
             input_exprs = [wire_expr[w.id] for w in term.read]
             expr = scalar_emitter(term.itype)(input_exprs)
+        elif entrywise_shape(term.itype):
+            # a matrix written entry by entry: its reads are matrices too,
+            # of its shape
+            expr = _entrywise_expr(term, wire_expr)
         else:
             # The `mat` column holds the matrix forms, which apply operands
             # to `0 0`. Scalar-bound reads must be lifted first: a matrix

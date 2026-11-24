@@ -1,7 +1,7 @@
 """Tests for the Module-to-Lean4 functional converter."""
 
 import torch
-from reactor import Wire, Term, Module, LIA as it, Bool, Int, Var, X
+from reactor import Wire, Term, Module, Bool, Int, Var, X, tensor
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.project.scaffold import create_project
 from reactor_lean.pipeline.certificate import render
@@ -13,7 +13,7 @@ from .test_lean_diagram import _make_matrix_module
 
 
 def _make_counter():
-    """Counter module with a 3×1 vector state, transitions via LIA.Linear.
+    """Counter module with a 3×1 vector state, transitions via Linear.
 
     Python semantics (state = (x, y, z) as Matrix (Fin 3) (Fin 1) Int, extl = (y0, z0)):
         init(y0, z0) = (0, y0, z0)       = [[0,0],[1,0],[0,1]] · (y0, z0)
@@ -30,7 +30,7 @@ def _make_counter():
     # init: state' = A · extl,  A = [[0,0],[1,0],[0,1]]
     A = torch.tensor([[0, 0], [1, 0], [0, 1]], dtype=torch.int64)
     init = [
-        Term(it.Linear(A, zero31), [X(state)], [X(extl)]),
+        Term(tensor.int.Linear(A, zero31), [X(state)], [X(extl)]),
     ]
 
     # update
@@ -51,18 +51,18 @@ def _make_counter():
     diag_yz = torch.tensor([[0, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=torch.int64)
 
     update = [
-        Term(it.Linear(row_x, zero11), [x], [state]),
-        Term(it.Linear(row_y, zero11), [y], [state]),
-        Term(it.Linear(row_z, zero11), [z], [state]),
+        Term(tensor.int.Linear(row_x, zero11), [x], [state]),
+        Term(tensor.int.Linear(row_y, zero11), [y], [state]),
+        Term(tensor.int.Linear(row_z, zero11), [z], [state]),
         # cond = x < y ∨ x < z
-        Term(it.Lt(), [x_lt_y], [x, y]),
-        Term(it.Lt(), [x_lt_z], [x, z]),
-        Term(it.Or(), [cond], [x_lt_y, x_lt_z]),
+        Term(tensor.int.Lt([1, 1]), [x_lt_y], [x, y]),
+        Term(tensor.int.Lt([1, 1]), [x_lt_z], [x, z]),
+        Term(tensor.bool.Or([1, 1]), [cond], [x_lt_y, x_lt_z]),
         # true branch: state + (1,0,0)ᵀ  = I·state + e1
-        Term(it.Linear(torch.eye(3, dtype=torch.int64), e1), [result_true], [state]),
+        Term(tensor.int.Linear(torch.eye(3, dtype=torch.int64), e1), [result_true], [state]),
         # false branch: zero out x  = diag(0,1,1)·state
-        Term(it.Linear(diag_yz, zero31), [result_false], [state]),
-        Term(it.Ite(), [X(state)], [cond, result_true, result_false]),
+        Term(tensor.int.Linear(diag_yz, zero31), [result_false], [state]),
+        Term(tensor.int.Ite([3, 1]), [X(state)], [cond, result_true, result_false]),
     ]
 
     return Module.sequential([state, extl], init, update)
