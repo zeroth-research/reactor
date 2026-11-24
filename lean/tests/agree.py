@@ -39,7 +39,7 @@ def _corpus() -> dict:
     """Name -> a function building the module: loaded the way `reactor`
     loads a Python input, so a fixture returning a `Named` module is the
     module it names."""
-    from reactor_lean.inputs.python import load_module as _load
+    from reactor_lean.parse import load_module as _load
 
     out = {}
     for p in sorted(MODS.glob("m_*.py")):

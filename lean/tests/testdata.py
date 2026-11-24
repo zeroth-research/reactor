@@ -17,7 +17,7 @@ LAKE_PROJECT = TESTS / "lean"           # the Lake project the slow tests build 
 
 def fixture(name: str):
     """The module `fixtures/<name>.py` defines, loaded as an input is."""
-    from reactor_lean.inputs.python import load_module
+    from reactor_lean.parse import load_module
 
     return load_module(FIXTURES / f"{name}.py")
 

@@ -539,7 +539,7 @@ def test_an_equivalence_theorem_alone_is_the_one_its_encoding_prints(mod):
     fresh `ModuleToLean4`, they print what the full producer prints rather
     than silently dropping the theorems or the argmax lemmas."""
     from reactor_lean.codegen.encodings import ModuleToLean4
-    from reactor_lean.inputs.python import load_module
+    from reactor_lean.parse import load_module
     from testdata import MODS
 
     module = load_module(MODS / f"{mod}.py")

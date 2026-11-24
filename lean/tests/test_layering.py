@@ -34,19 +34,15 @@ LAYERS: dict[str, frozenset[str]] = {
     "core": frozenset(),
     "lowering": frozenset({"core"}),
     "codegen": frozenset({"core", "lowering"}),
-    # Reading a predicate's text.
+    # Reading the module file, and a claim's names and predicates.
     "parse": frozenset({"core", "lowering"}),
     # The project on disk. It writes the certificate's files as the text it
     # is handed, so it sits below `proof`, which renders them.
     "project": frozenset({"core", "lowering", "codegen"}),
     "proof": frozenset({"core", "lowering", "codegen", "project", "parse"}),
-    # The input formats.
-    "inputs": frozenset({"core"}),
-    # `uv run reactor`: the command line, read off the input formats' rows,
-    # and every stage, in order.
+    # `uv run reactor`: the command line, and every stage, in order.
     "cli": frozenset({
-        "core", "lowering", "codegen", "project", "proof", "inputs",
-        "parse"}),
+        "core", "lowering", "codegen", "project", "proof", "parse"}),
 }
 
 

@@ -1,13 +1,8 @@
-"""The rules about which flags go together, each read off the rows it is
-about: an input format's options, and the claim.
-"""
+"""The rules about which flags go together."""
 
 from __future__ import annotations
 
 import argparse
-
-from ..core.options import given, missing, put_defaults
-from ..inputs import ADAPTERS, InputAdapter, adapter_by_name, adapter_for
 
 
 def check_blanks(parser: argparse.ArgumentParser, args) -> None:
@@ -30,58 +25,6 @@ def check_blanks(parser: argparse.ArgumentParser, args) -> None:
             f"{', '.join(blank)} {verb} given an empty value (an unset "
             "shell variable?). Pass a real one or drop the flag."
         )
-
-
-def input_adapter(parser: argparse.ArgumentParser,
-                  args) -> InputAdapter | None:
-    """The format the input is read in: `--format`, else its suffix's."""
-    if args.format:
-        return adapter_by_name(args.format)
-    if not args.module_file:
-        return None
-    adapter = adapter_for(args.module_file)
-    if adapter is None:
-        parser.error(
-            f"cannot tell the format of {args.module_file} from its suffix; "
-            f"pass --format ({', '.join(a.name for a in ADAPTERS)})"
-        )
-    return adapter
-
-
-def check_row_options(parser: argparse.ArgumentParser, args, stray,
-                       meaningful, row: str, options) -> None:
-    """The rules every row's options follow (`core.options`): an option of
-    a row that was not selected is refused, `stray` naming each with the
-    rows it belongs to and `meaningful` phrasing those rows; and for the
-    selected row, `row`'s `options`, a required one has to be given and
-    the others get their row default."""
-    if stray:
-        flags = [o.flags[-1] for o, _ in stray]
-        rows = sorted({r for _, rs in stray for r in rs})
-        verb = "is" if len(flags) == 1 else "are"
-        parser.error(
-            f"{', '.join(flags)} {verb} only meaningful {meaningful(rows)}")
-    if options is None:
-        return
-    absent = [o.flags[-1] for o in missing(options, args)]
-    if absent:
-        parser.error(f"{row} requires {', '.join(absent)}")
-    put_defaults(options, args)
-
-
-def check_input_options(parser: argparse.ArgumentParser, args,
-                        adapter: InputAdapter | None) -> None:
-    """A format's option is only meaningful for input in that format; one
-    its row requires has to be given; and its row default is put back once
-    the format is known."""
-    check_row_options(
-        parser, args,
-        [(o, [a.name]) for a in ADAPTERS for o in a.options
-         if a is not adapter and given(o, args)],
-        lambda rows: f"for {' or '.join(rows)} input",
-        f"{adapter.name} input" if adapter else "",
-        adapter.options if adapter else None,
-    )
 
 
 def check_claim_flags(parser: argparse.ArgumentParser, args) -> None:

@@ -1,12 +1,9 @@
-"""The flags: `build_parser`, with the help each input format contributes
-assembled from its rows.
-"""
+"""The flags: `build_parser`."""
 
 from __future__ import annotations
 
 import argparse
 
-from ..inputs import ADAPTERS
 
 
 _EPILOG = """\
@@ -26,23 +23,12 @@ examples:
 """
 
 
-def _format_help() -> str:
-    """`--format`'s help, assembled from the rows."""
-    rows = " ".join(
-        f"`{a.name}` ({', '.join(a.suffixes)}) -- {a.summary}." for a in ADAPTERS
-    )
-    return (
-        "The input's format; by default the one its suffix names. One of: "
-        + rows
-    )
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="reactor",
         description=(
             "Generate a Lean4 certificate project from a reactive module, read "
-            "from a Python file or another format --format names. "
+            "from a Python file. "
             "The property goes under --safety (`G FORMULA`: every reachable "
             "state) or --buchi (`G (F FORMULA)`: infinitely often), and the "
             "certificate's predicates under --invariant and --ranking. The "
@@ -59,14 +45,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def add_input(parser: argparse.ArgumentParser) -> None:
-    """The input: the module file, the format it is read in and that
-    format's own options, and where the project is written."""
+    """The input: the module file and the callable in it that makes the
+    module, and where the project is written."""
     parser.add_argument(
         "module_file",
         help=(
-            "The input: a file stating the module, in the format --format "
-            "names (by default the one its suffix names; a Python file must "
-            "contain a callable that returns a Module)."
+            "The input: a Python file containing a callable that returns a "
+            "Module."
         ),
     )
     parser.add_argument(
@@ -82,18 +67,15 @@ def add_input(parser: argparse.ArgumentParser) -> None:
         help="Name of the Lean package / library (default: Rea).",
     )
     parser.add_argument(
-        "--format",
-        choices=[a.name for a in ADAPTERS],
-        default=None,
-        help=_format_help(),
+        "-d",
+        "--module-def",
+        default="module",
+        metavar="NAME",
+        help=(
+            "Name of the function or class in the Python file that "
+            "produces the Module (default: module)."
+        ),
     )
-    # A format's own options, one group per format, parsed `default=None`
-    # so "given" is distinguishable from "not given".
-    for adapter in ADAPTERS:
-        if adapter.options:
-            group = parser.add_argument_group(f"--format {adapter.name}")
-            for opt in adapter.options:
-                group.add_argument(*opt.flags, **{**opt.kwargs, "default": None})
     parser.add_argument(
         "-x",
         "--executable",

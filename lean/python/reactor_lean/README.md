@@ -12,19 +12,17 @@ whoever wrote it. It is written into the project, and Lean checks it.
 `cli.main` runs the stages in this order. Each one names the code that
 does it and the section of this file that covers it in full.
 
-### 1. Input (`inputs/`)
+### 1. Input (`parse/module.py`)
 
-The input is a file, read by the adapter that `--format` names or that the
-file's suffix picks:
+The input is a Python file: the module is the `reactor.Module` that its
+`module()` (or `-d NAME`) returns. Returning
+`parse.Named(module, {"x": var})` instead adds names to write claims in.
+A Gymnasium environment comes in this way, through `reactor.gym`.
 
-| format | suffix | what it gives |
-|---|---|---|
-| `python` | `.py` | the `reactor.Module` that `module()` (or `-d NAME`) returns. Returning `inputs.Named(module, {"x": var})` instead adds names to write claims in. A Gymnasium environment comes in this way, through `reactor.gym` |
+`parse.load` returns a `parse.Problem`: the module, the source text and
+the names.
 
-The adapter returns an `inputs.Problem`: the module, the source text and the
-names. A new input format is a new `InputAdapter` in `inputs/`.
-
-### 2. The claim (`cli/`, `inputs/names.py`)
+### 2. The claim (`cli/`, `parse/names.py`)
 
 The property goes under the flag of its proof rule:
 
@@ -178,14 +176,13 @@ layer.
 
 | Package | What it holds |
 |------|------|
-| `core/` | The vocabulary every layer is written in, importing nothing of `reactor_lean`: `certificate` (`Claim`, and `Certificate` as SMT-LIB), `errors` (`Refused`, the error a run is refused with), `options` (`Opt`, an option an input format declares) |
+| `core/` | The vocabulary every layer is written in, importing nothing of `reactor_lean`: `certificate` (`Claim`, and `Certificate` as SMT-LIB), `errors` (`Refused`, the error a run is refused with) |
 | `lowering/` | What every backend reads of a module besides its terms: `sorts` (sorts and shapes of wires, and the Lean types they print as), `elements` (tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares), `values` (a constant as the exact number every backend states), `ops` (the op table: one row per theory variant, one column per backend) |
 | `codegen/` | The module as Lean text: `context` (`LeanContext`, what every encoding of one module shares), `literals` (constants as Lean text, `ConstantRegistry`), `terms` (term lists → functional `let`-binding bodies, and `lean_gaps`), `boxes` (term lists → `Box` circuit layers), `encodings/` (`ModuleToLean4` and one module per encoding: `functional`, `circuit`, `scalar`, `relational`; `skeleton`, the shape every relational encoding has, and `common`, what the scalar ones share) |
-| `parse/` | Reading a predicate's text: `dsl` (the Python predicate syntax), `sexpr` and `smtlib` (SMT-LIB into reactor's terms), `formula` (`Formula`, a predicate in reactor's terms), `native` (the parser: `NativeParser`, `read_predicates`) |
+| `parse/` | Reading the input: `module` (`load`, the module file as a `Problem`; `Named`, a module with names for its variables), `names` (a claim's names, translated to the internal ones and back), and a predicate's text: `dsl` (the Python predicate syntax), `sexpr` and `smtlib` (SMT-LIB into reactor's terms), `formula` (`Formula`, a predicate in reactor's terms), `native` (the parser: `NativeParser`, `read_predicates`) |
 | `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `lake_cache` (the built packages it can share), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table), the certificate's files as the text it is handed |
 | `proof/` | The certificate as Lean: `render` (`render_certificate`, `LeanCertificate`, the project's `certificate_files` and the `--cert-file` one), `from_ir` (a `parse.Formula` printed as Lean) |
-| `inputs/` | The input formats, one `InputAdapter` each (`python`), and `names`, which translates a claim's names to the internal ones and back |
-| `cli/` | `uv run reactor`: `main` runs the stages in order -- `parse_args` (the command line: `parser`, the flags, one `add_*` per group; `checks`, the rules about which go together, read off the rows; `settings`, `Settings`, what they are read into), `claim` (the module and what is to be proved of it), `certificate` (the module's Lean form, the certificate rendered), `outputs` (the project, `--cert-file`) |
+| `cli/` | `uv run reactor`: `main` runs the stages in order -- `parse_args` (the command line: `parser`, the flags, one `add_*` per group; `checks`, the rules about which go together; `settings`, `Settings`, what they are read into), `claim` (the module and what is to be proved of it), `certificate` (the module's Lean form, the certificate rendered), `outputs` (the project, `--cert-file`) |
 
 ---
 
@@ -486,7 +483,7 @@ def module() -> Module:
 ```
 
 To write claims in the module's own names (`--safety "(<= (X x) 9)"`), return
-`reactor_lean.inputs.Named(module, {"x": state})` instead of the bare module.
+`reactor_lean.parse.Named(module, {"x": state})` instead of the bare module.
 
 ### Common invocations
 
@@ -584,8 +581,7 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 |------|---------|-------------|
 | `-o` / `--output-dir` | `.` | Where to create the project |
 | `-p` / `--project-name` | `Rea` | Lean package name |
-| `--format` | by suffix | The input's format (`python`: `.py`) |
-| `-d` / `--module-def` | `module` | Name of the factory function in the Python file (python input only) |
+| `-d` / `--module-def` | `module` | Name of the factory function in the Python file |
 | `--safety` | — | SMT-LIB 2 Bool over `(X @intf.0)..(X @intf.N-1)` (or names, see below), to hold in every reachable state (`G P`) |
 | `--buchi` | — | SMT-LIB 2 Bool over `(X @intf.0)..(X @intf.N-1)` (or names, see below), to hold infinitely often (`G (F P)`) |
 | `--invariant` | — | SMT-LIB 2 Bool invariant |
@@ -608,8 +604,8 @@ Python-DSL aliases `s`, `e`, `el`) are refused there.
 
 An interface variable's latched value cannot be named yet. A name like `x`
 comes from an input that provides one (a module file returning
-`reactor_lean.inputs.Named(module, {"x": var})`); `@intf.N` works for any
-module. `reactor_lean.inputs.to_surface(text)` turns internal text into this
+`reactor_lean.parse.Named(module, {"x": var})`); `@intf.N` works for any
+module. `reactor_lean.parse.to_surface(text)` turns internal text into this
 spelling. A run prints one `.. --FLAG, in internal names: ...` line
 per claim flag it was given. Everything past the command line (`Claim`,
 `Certificate`, Lean) still uses the internal names below.

@@ -6,10 +6,10 @@ from __future__ import annotations
 
 from .settings import Settings
 from ..core.certificate import Certificate, Claim
-from .. import inputs
+from .. import parse
 
 
-def load(settings: Settings) -> "inputs.Problem":
+def load(settings: Settings) -> "parse.Problem":
     """The module the run is about, and the input it was read from.
 
     The loader refuses a path that is not there or cannot be read, a file
@@ -21,19 +21,18 @@ def load(settings: Settings) -> "inputs.Problem":
     `module`", and an `OSError` from a file it opens like a missing input.
     """
     try:
-        return inputs.load(settings.module_file, settings.input_opts,
-                           format=settings.input_format)
-    except (inputs.ClaimError, inputs.InputError) as e:
+        return parse.load(settings.module_file, settings.module_def)
+    except (parse.ClaimError, parse.InputError) as e:
         raise SystemExit(f"error: {e}") from e
 
 
 def claim_from_flags(
-    settings: Settings, names: "inputs.Names",
+    settings: Settings, names: "parse.Names",
 ) -> "tuple[Claim | None, Certificate]":
     """What the flags ask to be proved, and what of its certificate they
     supply. No claim when no predicate flag was passed.
 
-    The flags are in the module's own terms (`inputs.names`); the claim
+    The flags are in the module's own terms (`parse.names`); the claim
     is in the internal names every later stage reads, and each flag is
     printed in them once, since that is how the logs and
     any refusal will spell it."""
@@ -46,8 +45,8 @@ def claim_from_flags(
         if not text:
             return None
         try:
-            spelled = inputs.to_internal(text, names, flag)
-        except inputs.ClaimError as e:
+            spelled = parse.to_internal(text, names, flag)
+        except parse.ClaimError as e:
             raise SystemExit(f"error: {e}") from e
         print(f".. {flag}, in internal names: {spelled}")
         return spelled

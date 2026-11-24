@@ -25,7 +25,7 @@ from .lakefile import (LEAN_TOOLCHAIN, generate_lakefile,
 from .main_lean import generate_main_lean
 
 if TYPE_CHECKING:
-    from ..inputs import SourceText
+    from ..parse import SourceText
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -167,7 +167,7 @@ def create_project(
         `certificate`:     The certificate's files by project-relative path,
                            as `proof.render.certificate_files` renders them.
         `source`:          The input the module was read from, written to
-                           `dbg/system<suffix>` as a debug artifact.
+                           `dbg/system.py` as a debug artifact.
         `remove`:          Project-relative files an earlier run in the same
                            `-o` may have left where a lean_lib globs; they
                            are deleted before anything is written there.
@@ -188,7 +188,7 @@ def create_project(
     (dbg_dir / "system.txt").write_text(str(module))
     print("Wrote system.txt")
     if source is not None:
-        copy = f"system{source.suffix}"
+        copy = "system.py"
         (dbg_dir / copy).write_text(source.text)
         print(f"Wrote {copy}")
 

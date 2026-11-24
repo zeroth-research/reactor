@@ -11,7 +11,7 @@ from .settings import Settings
 from ..codegen.context import LeanContext
 from ..codegen.encodings import ModuleToLean4
 from ..core.errors import Refused
-from .. import inputs
+from .. import parse
 from ..project.names import CERT_LIB
 from ..project.scaffold import ENCODINGS, Layout, create_project, write_encoding
 from ..proof.render import (
@@ -47,7 +47,7 @@ def standalone(cert_file: str, ctx: LeanContext, lean_cert) -> None:
 
 def generate(settings: Settings, module, ctx: LeanContext,
              lean_cert: "LeanCertificate | None",
-             source: "inputs.SourceText") -> Path:
+             source: "parse.SourceText") -> Path:
     """The Lean project, with the certificate as it stands."""
     print(".. Generating lean code")
     certificate = certificate_files(ctx, lean_cert)

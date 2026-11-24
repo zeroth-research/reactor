@@ -15,8 +15,8 @@ nothing else in the project depends on but the certificate's `exact`s.
 Quick start
 -----------
 A *module file* is a Python file that defines a ``module()`` function (or
-class) returning a :class:`reactor.Module` (or a ``reactor_lean.inputs.Named``
-one, for claims in its own names), or another format ``--format`` lists.
+class) returning a :class:`reactor.Module` (or a ``reactor_lean.parse.Named``
+one, for claims in its own names).
 
 Generate a bare Lean project (all certificate fields left as ``sorry``)::
 
@@ -34,7 +34,7 @@ contains::
 
 A claim is written in the module's own terms: ``(X x)`` is the value of ``x``
 after the round.  Names like ``x`` come from a module file that returns
-``reactor_lean.inputs.Named(module, {"x": var})``, and ``(X @intf.0)`` names
+``reactor_lean.parse.Named(module, {"x": var})``, and ``(X @intf.0)`` names
 interface variable 0 by position, which works for any module.
 
 Supply the certificate's predicates::
@@ -73,16 +73,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..core.errors import Refused
-from ..inputs import InputAdapter
 from ..project.lake_cache import lake_cache
 from ..project.lakefile import reactlib_checkout
 from .certificate import lean_context, render
-from .checks import (
-    check_blanks,
-    check_claim_flags,
-    check_input_options,
-    input_adapter,
-)
+from .checks import check_blanks, check_claim_flags
 from .claim import claim_from_flags, load
 from .outputs import generate, standalone
 from .parser import build_parser
@@ -133,24 +127,11 @@ def parse_args(argv: "list[str] | None" = None) -> Settings:
 
     check_blanks(parser, args)
     check_claim_flags(parser, args)
-
-    adapter = input_adapter(parser, args)
-    check_input_options(parser, args, adapter)
-
-    return Settings(**settings_fields(args, adapter))
-
-
-def settings_fields(args, adapter: "InputAdapter | None") -> dict:
-    """`Settings`' fields, read off the command line."""
-    return dict(
+    return Settings(
         module_file=args.module_file,
+        module_def=args.module_def,
         output_dir=Path(args.output_dir),
         project_name=args.project_name,
-        input_format=adapter.name if adapter else None,
-        input_opts=(
-            {o.dest: getattr(args, o.dest) for o in adapter.options}
-            if adapter else {}
-        ),
         executable=args.executable,
         prp=args.safety or args.buchi,
         kind="safety" if args.safety else "buchi",

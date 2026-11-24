@@ -273,7 +273,7 @@ def test_the_reductions_enumerate_with_ofFn_not_finRange():
 
 def _counter_ctx():
     from reactor_lean.codegen.context import LeanContext
-    from reactor_lean.inputs.python import load_module
+    from reactor_lean.parse import load_module
 
     fixture = FIXTURES / "counter.py"
     return LeanContext(load_module(fixture))
@@ -287,7 +287,7 @@ def test_the_certificate_is_one_text_for_each_kind_of_property():
     obligations of the property's kind and nothing else."""
     from reactor_lean.codegen.context import LeanContext
     from reactor_lean.core.certificate import Certificate, Claim
-    from reactor_lean.inputs.python import load_module
+    from reactor_lean.parse import load_module
     from reactor_lean.project.names import (
         CERTIFICATE, DATA, MODULE, PROOFS, cert_file,
     )

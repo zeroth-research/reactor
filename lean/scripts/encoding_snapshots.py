@@ -41,7 +41,7 @@ def _write(out: Path, name: str, produce) -> None:
 
 
 def snapshot(path: Path, out: Path) -> None:
-    from reactor_lean import inputs
+    from reactor_lean.parse import load_module
     from reactor_lean.codegen.context import LeanContext
     from reactor_lean.codegen.terms import lean_gaps
     from reactor_lean.project.scaffold import ENCODINGS
@@ -50,7 +50,7 @@ def snapshot(path: Path, out: Path) -> None:
 
     out.mkdir(parents=True, exist_ok=True)
     try:
-        module = inputs.load(path).module
+        module = load_module(path)
         ctx = LeanContext(module)
         gaps = lean_gaps(ctx)
     except Exception as e:
