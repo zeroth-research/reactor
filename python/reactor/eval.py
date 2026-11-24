@@ -165,10 +165,11 @@ def eval_itype(itype, read, out_sort=None):
             return [r[0].abs()]
         case tensor.real.ReLU(_) | tensor.int.ReLU(_):
             return [r[0].relu()]
+        # the least and the greatest entry, as a [1, 1] matrix
         case tensor.real.Min(_) | tensor.int.Min(_):
-            return [torch.minimum(r[0], r[1])]
+            return [r[0].min().reshape(1, 1)]
         case tensor.real.Max(_) | tensor.int.Max(_):
-            return [torch.maximum(r[0], r[1])]
+            return [r[0].max().reshape(1, 1)]
         case tensor.real.Argmax(_) | tensor.int.Argmax(_):
             return [r[0].argmax().reshape(1, 1).to(r[0].dtype)]
         case tensor.real.Transpose(_) | tensor.int.Transpose(_):

@@ -16,7 +16,8 @@ information to compute its [`Boundary`]:
 - [`Neg`] — the pointwise negation `x ↦ -x`.
 - [`Abs`] — the pointwise absolute value `x ↦ |x|`.
 - [`ReLU`] — the shape-preserving rectified-linear map `x ↦ max(x, 0)`.
-- [`Min`], [`Max`] — pointwise minimum and maximum.
+- [`Min`], [`Max`] — the least and the greatest entry, as a `[1, 1]`
+  matrix.
 - [`Transpose`] — matrix transposition.
 - [`MatMul`] — the matrix product `x·y`.
 - [`Argmax`] — the index of a maximal entry, counted row by row, as a
@@ -193,14 +194,16 @@ pub struct Argmax {
     shape: [usize; 2],
 }
 
-/// Pointwise minimum `min(x, y)` of `[m, n]` matrices.
+/// The least entry `minᵢⱼ xᵢⱼ` of an `[m, n]` integer matrix, written as a
+/// `[1, 1]` matrix of the same sort.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Min {
     shape: [usize; 2],
 }
 
-/// Pointwise maximum `max(x, y)` of `[m, n]` matrices.
+/// The greatest entry `maxᵢⱼ xᵢⱼ` of an `[m, n]` integer matrix, written as
+/// a `[1, 1]` matrix of the same sort.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Max {
@@ -696,23 +699,25 @@ impl Boundary<Int> for ReLU {
     }
 }
 
+/// Takes a matrix of shape `[m, n]` to one of shape `[1, 1]`.
 impl Boundary<Int> for Min {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new(self.shape); 2].into()
+        mono![Int::new(self.shape)].into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new(self.shape)].into()
+        mono![Int::new([1, 1])].into()
     }
 }
 
+/// Takes a matrix of shape `[m, n]` to one of shape `[1, 1]`.
 impl Boundary<Int> for Max {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new(self.shape); 2].into()
+        mono![Int::new(self.shape)].into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new(self.shape)].into()
+        mono![Int::new([1, 1])].into()
     }
 }
 

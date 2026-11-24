@@ -12,6 +12,7 @@ from ..arrays import as_numpy
 from ..sort import Real, Int, Bool
 import numpy as _np
 import operator
+from functools import reduce
 
 from ..reactor import tensor
 from ..reactor import jax as _jax
@@ -118,10 +119,11 @@ def interpret(itype):
             return _np.frompyfunc(lambda x: _z3.If(x >= 0, x, -x), 1, 1)
         case tensor.real.ReLU(_) | tensor.int.ReLU(_):
             return _np.frompyfunc(lambda x: _z3.If(x > 0, x, 0), 1, 1)
+        # the least and the greatest entry, folded row by row, as a [1, 1] matrix
         case tensor.real.Min(_) | tensor.int.Min(_):
-            return _np.frompyfunc(lambda x, y: _z3.If(x <= y, x, y), 2, 1)
+            return lambda x: _np.array([[reduce(lambda m, y: _z3.If(m <= y, m, y), x.flat)]], dtype=object)
         case tensor.real.Max(_) | tensor.int.Max(_):
-            return _np.frompyfunc(lambda x, y: _z3.If(x >= y, x, y), 2, 1)
+            return lambda x: _np.array([[reduce(lambda m, y: _z3.If(m >= y, m, y), x.flat)]], dtype=object)
 
         case tensor.real.Transpose(_) | tensor.int.Transpose(_):
             return _np.transpose

@@ -147,7 +147,8 @@ mod any {
         assert_eq!(op.dom(), base::mono![r([2, 3], 2)].into());
         assert_eq!(op.cod(), base::mono![r([3, 2], 2)].into());
         let op = real(real::Max::with_degree([2, 3], 1));
-        assert_eq!(op.dom(), base::mono![r([2, 3], 1); 2].into());
+        assert_eq!(op.dom(), base::mono![r([2, 3], 1)].into());
+        assert_eq!(op.cod(), base::mono![r([1, 1], 1)].into());
         let op = real(real::Ite::with_degree([2, 3], 1));
         assert_eq!(
             op.dom(),
@@ -424,10 +425,16 @@ mod int {
         assert_eq!(Div::new([2, 3]).cod(), one(r));
         assert_eq!(Mod::new([2, 3]).dom(), two(r));
         assert_eq!(Mod::new([2, 3]).cod(), one(r));
-        assert_eq!(Min::new([2, 3]).dom(), two(r));
-        assert_eq!(Max::new([2, 3]).cod(), one(r));
         assert_eq!(ReLU::new([2, 3]).dom(), one(r));
         assert_eq!(ReLU::new([2, 3]).cod(), one(r));
+    }
+
+    #[test]
+    fn min_and_max_reduce_a_matrix_to_one_entry() {
+        assert_eq!(Min::new([2, 3]).dom(), one(Int::new([2, 3])));
+        assert_eq!(Min::new([2, 3]).cod(), one(Int::new([1, 1])));
+        assert_eq!(Max::new([2, 3]).dom(), one(Int::new([2, 3])));
+        assert_eq!(Max::new([2, 3]).cod(), one(Int::new([1, 1])));
     }
 
     #[test]
@@ -515,10 +522,16 @@ mod real {
         assert_eq!(Mul::new([2, 3]).cod(), one(r));
         assert_eq!(Div::new([2, 3]).dom(), two(r));
         assert_eq!(Div::new([2, 3]).cod(), one(r));
-        assert_eq!(Min::new([2, 3]).dom(), two(r));
-        assert_eq!(Max::new([2, 3]).cod(), one(r));
         assert_eq!(ReLU::new([2, 3]).dom(), one(r));
         assert_eq!(ReLU::new([2, 3]).cod(), one(r));
+    }
+
+    #[test]
+    fn min_and_max_reduce_a_matrix_to_one_entry() {
+        assert_eq!(Min::new([2, 3]).dom(), one(Real::new([2, 3])));
+        assert_eq!(Min::new([2, 3]).cod(), one(Real::new([1, 1])));
+        assert_eq!(Max::new([2, 3]).dom(), one(Real::new([2, 3])));
+        assert_eq!(Max::new([2, 3]).cod(), one(Real::new([1, 1])));
     }
 
     #[test]

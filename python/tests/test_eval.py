@@ -403,6 +403,12 @@ def test_all_op_is_the_conjunction_of_the_entries(entries, holds):
     assert got.shape == (1, 1) and got.dtype == torch.bool and got.item() is holds
 
 
+@pytest.mark.parametrize("op, entry", [(tensor.int.Min, -3), (tensor.int.Max, 9)])
+def test_min_and_max_write_the_least_and_greatest_entry_as_1x1(op, entry):
+    got = eval_itype(op([2, 2]), [torch.tensor([[1, 9], [-3, 4]], dtype=torch.int64)])[0]
+    assert got.shape == (1, 1) and got.dtype == torch.int64 and got.item() == entry
+
+
 def test_argmax_writes_flat_index_as_1x1():
     got = eval_itype(tensor.int.Argmax([2, 2]), [torch.tensor([[1, 9], [3, 4]], dtype=torch.int64)])[0]
     assert got.shape == (1, 1) and got.dtype == torch.int64 and got.item() == 1

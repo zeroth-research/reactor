@@ -14,7 +14,8 @@ information to compute its [`Boundary`]:
 - [`Neg`] — the pointwise negation `x ↦ -x`.
 - [`Abs`] — the pointwise absolute value `x ↦ |x|`.
 - [`ReLU`] — the shape-preserving rectified-linear map `x ↦ max(x, 0)`.
-- [`Min`], [`Max`] — pointwise minimum and maximum.
+- [`Min`], [`Max`] — the least and the greatest entry, as a `[1, 1]`
+  matrix.
 - [`Transpose`] — matrix transposition.
 - [`MatMul`] — the matrix product `x·y`.
 - [`Argmax`] — the index of a maximal entry, counted row by row, as a
@@ -252,9 +253,10 @@ pub struct Argmax {
     degree: u8,
 }
 
-/// Pointwise minimum `min(x, y)` of `[m, n]` matrices.
+/// The least entry `minᵢⱼ xᵢⱼ` of an `[m, n]` real matrix, written as a
+/// `[1, 1]` matrix of the same sort.
 ///
-/// Of operands of the same degree, which the minimum keeps.
+/// Of a degree, which the minimum keeps.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Min {
@@ -262,9 +264,10 @@ pub struct Min {
     degree: u8,
 }
 
-/// Pointwise maximum `max(x, y)` of `[m, n]` matrices.
+/// The greatest entry `maxᵢⱼ xᵢⱼ` of an `[m, n]` real matrix, written as a
+/// `[1, 1]` matrix of the same sort.
 ///
-/// Of operands of the same degree, which the maximum keeps.
+/// Of a degree, which the maximum keeps.
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(feature = "pyo3", pyo3::pyclass(frozen, from_py_object, eq, str))]
 pub struct Max {
@@ -789,23 +792,25 @@ impl Boundary<Real> for ReLU {
     }
 }
 
+/// Takes a matrix of shape `[m, n]` to one of shape `[1, 1]`.
 impl Boundary<Real> for Min {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.shape, self.degree); 2].into()
+        mono![Real::with_degree(self.shape, self.degree)].into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.shape, self.degree)].into()
+        mono![Real::with_degree([1, 1], self.degree)].into()
     }
 }
 
+/// Takes a matrix of shape `[m, n]` to one of shape `[1, 1]`.
 impl Boundary<Real> for Max {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.shape, self.degree); 2].into()
+        mono![Real::with_degree(self.shape, self.degree)].into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.shape, self.degree)].into()
+        mono![Real::with_degree([1, 1], self.degree)].into()
     }
 }
 
