@@ -21,7 +21,7 @@ import torch
 from reactor import Bool, Int, Real, Term, Wire, Word, tensor
 
 from ..errors import Unreadable
-from ..lowering.values import decimal_fraction
+from ..lowering.sorts import decimal_fraction
 
 # The shape of every term a predicate builds.
 SCALAR = [1, 1]

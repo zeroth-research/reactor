@@ -1,9 +1,42 @@
-"""The flags: `build_parser`."""
+"""The command line: the flags (`build_parser`), the rules about which go
+together (`check_blanks`, `check_claim_flags`), and `Settings`, what
+`parse_args` reads them into -- validated, with the property and its kind
+decided, rather than an `argparse.Namespace` to re-derive facts from.
+"""
 
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
+from pathlib import Path
 
+
+@dataclass
+class Settings:
+    """A validated command line.
+
+    The decisions the grammar makes are made here, once: which proof rule
+    (`kind`), say.  The pipeline reads; it does not re-derive.
+    """
+
+    module_file: str
+    module_def: str                     # the callable in it that makes the module
+    output_dir: Path
+    project_name: str
+    executable: bool
+
+    prp: str | None                     # the property, whichever flag carried it
+    kind: str                           # "safety" | "buchi"
+
+    pre: str | None
+    invariant: str | None
+    ranking: str | None
+
+    cert_file: str | None = None
+
+    @property
+    def is_safety(self) -> bool:
+        return self.kind == "safety"
 
 
 _EPILOG = """\
@@ -159,4 +192,69 @@ def add_outputs(parser: argparse.ArgumentParser) -> None:
             "same module are written beside it under the same stem (Rel, Scalar, "
             "ScalarRel), as they are in a project."
         ),
+    )
+
+
+def check_blanks(parser: argparse.ArgumentParser, args) -> None:
+    """An option given an empty string is the error, not "not passed".
+
+    `--invariant "$INV"` with `INV` unset -- which is how a copied
+    benchmark command reads -- reads as "not passed" to every
+    truthiness test below.  The invariant would be dropped and the run
+    would *succeed*, having quietly generated a project with no
+    certificate instead.  No option here has a meaningful empty value.
+    """
+    blank = [
+        action.option_strings[-1]
+        for action in parser._actions
+        if action.option_strings and getattr(args, action.dest, None) == ""
+    ]
+    if blank:
+        verb = "was" if len(blank) == 1 else "were"
+        parser.error(
+            f"{', '.join(blank)} {verb} given an empty value (an unset "
+            "shell variable?). Pass a real one or drop the flag."
+        )
+
+
+def check_claim_flags(parser: argparse.ArgumentParser, args) -> None:
+    """The property is one flag, and a ranking function is for --buchi."""
+    # A certificate proves one property under one proof rule, and which rule
+    # decides what the certificate even consists of -- a ranking function or
+    # no ranking function. So the two flags are not a pair of properties to
+    # be combined; they are the choice.
+    if args.safety and args.buchi:
+        parser.error(
+            "--safety and --buchi are mutually exclusive: a certificate "
+            "proves `G FORMULA` or `G (F FORMULA)`, under one proof rule"
+        )
+    # `G FORMULA` needs no ranking function -- `rule_globally` has nowhere to
+    # put one. Taking it and dropping it would look like it had been used.
+    if args.safety and args.ranking:
+        parser.error(
+            "--ranking is meaningless with --safety: `G FORMULA` is proved "
+            "by an invariant that implies FORMULA, and `rule_globally` takes "
+            "no ranking function. Ranking functions belong to --buchi."
+        )
+
+
+def parse_args(argv: "list[str] | None" = None) -> Settings:
+    """The command line as `Settings`."""
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    check_blanks(parser, args)
+    check_claim_flags(parser, args)
+    return Settings(
+        module_file=args.module_file,
+        module_def=args.module_def,
+        output_dir=Path(args.output_dir),
+        project_name=args.project_name,
+        executable=args.executable,
+        prp=args.safety or args.buchi,
+        kind="safety" if args.safety else "buchi",
+        pre=args.pre,
+        invariant=args.invariant,
+        ranking=args.ranking,
+        cert_file=args.cert_file,
     )

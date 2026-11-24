@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from reactor_lean.errors import PredicateRefused, Unreadable
-from reactor_lean.lowering.wires import ModuleWires
+from reactor_lean.lowering.elements import ModuleWires
 from reactor_lean.parse import load_module
 from reactor_lean.lowering.sorts import itype_name, theory_of
 from reactor_lean.parse import dsl

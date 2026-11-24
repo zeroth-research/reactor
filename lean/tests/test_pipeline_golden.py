@@ -28,7 +28,7 @@ from reactor_lean.proof.render import (
     generate_standalone_cert_lean,
 )
 from reactor_lean.parse import Certificate, Claim
-from reactor_lean.cli.certificate import render
+from reactor_lean.proof.render import lean_certificate
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.project.lake_cache import LAKE_CACHE_ENV
 from testdata import FIXTURES, TESTS, dense, fixture
@@ -134,7 +134,7 @@ CODEGEN = [
 def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None") -> str:
     """Data.lean, Module.lean, Proofs.lean, Certificate.lean and the
     standalone certificate, as one text."""
-    lean = render(module, claim, cert or Certificate())
+    lean = lean_certificate(module, claim, cert or Certificate())
     ctx = LeanContext(module)
     return "\n".join([
         "=== Certificate/Data.lean",

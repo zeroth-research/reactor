@@ -1,8 +1,8 @@
 """The module's Lean encodings: ``ModuleToLean4``, one submodule per encoding.
 
 `functional`, `circuit`, `scalar` and `relational` (the matrix and the
-scalar relational ones) are the encodings; `skeleton` is the shape every
-relational encoding has, and `common` what the scalar ones share.
+scalar relational ones) are the encodings, and `common` is what the scalar
+ones share.
 """
 
 from functools import cached_property

@@ -5,9 +5,9 @@ from __future__ import annotations
 from reactor import Module, Real, Var, Wire
 
 from ..errors import Refused
-from ..lowering.elements import product_accessor
-from ..lowering.wires import ModuleWires
+from ..lowering.elements import ModuleWires, product_accessor
 from .literals import ConstantRegistry
+from .terms import lean_gaps
 
 
 class LeanContext:
@@ -66,6 +66,23 @@ class LeanContext:
         ]
         self.init_wire_names = bind_wires(self.init_groups)
         self.update_wire_names = bind_wires(self.update_groups)
+
+
+def lean_context(module) -> LeanContext:
+    """The module's `LeanContext`, refusing a module with no Lean form.
+
+    An operator with no Lean form is a fact about the module, said here
+    once, before any of the project exists, rather than as a missing table
+    cell in the middle of a file.
+
+    Built once and threaded: its discovery pass interns every init/update
+    term, and everything that prints the module needs the same one.
+    """
+    ctx = LeanContext(module)
+    gaps = lean_gaps(ctx)
+    if gaps:
+        raise Refused("this module has no Lean form: " + "; also ".join(gaps))
+    return ctx
 
 
 def any_float_wire(*wire_lists: list[Wire]) -> bool:

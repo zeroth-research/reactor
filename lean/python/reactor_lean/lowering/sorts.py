@@ -1,9 +1,10 @@
-"""Sorts and shapes of wires, and the Lean types they print as."""
+"""Sorts and shapes of wires, the Lean types they print as, and the exact
+number a constant holds (`decimal_fraction`)."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-
+from fractions import Fraction
 from typing import Any
 
 import reactor.reactor as _ext
@@ -179,3 +180,12 @@ def is_scalar_wire(wire: Wire) -> bool:
 def flat_element_type(wire: Wire) -> str:
     """Base Lean scalar type for one element of the wire (no matrix around it)."""
     return lean_elem_type(wire.dtype)
+
+
+def decimal_fraction(value) -> Fraction:
+    """`value` as an exact fraction, a float read by its decimal form:
+    `0.1` is 1/10, what the number was written as and what Lean makes of
+    a decimal literal."""
+    if isinstance(value, float):
+        return Fraction(repr(value))
+    return Fraction(value)

@@ -176,12 +176,12 @@ layer.
 | Package | What it holds |
 |------|------|
 | `errors` | `Refused`, the error a run is refused with, which every layer raises; it imports nothing of `reactor_lean` |
-| `lowering/` | What every backend reads of a module besides its terms: `sorts` (sorts and shapes of wires, and the Lean types they print as), `elements` (tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares), `values` (a constant as the exact number every backend states), `ops` (the op table: one row per theory variant, one column per backend) |
-| `codegen/` | The module as Lean text: `context` (`LeanContext`, what every encoding of one module shares), `literals` (constants as Lean text, `ConstantRegistry`), `terms` (term lists → functional `let`-binding bodies, and `lean_gaps`), `boxes` (term lists → `Box` circuit layers), `encodings/` (`ModuleToLean4` and one module per encoding: `functional`, `circuit`, `scalar`, `relational`; `skeleton`, the shape every relational encoding has, and `common`, what the scalar ones share) |
+| `lowering/` | What every backend reads of a module besides its terms: `sorts` (sorts and shapes of wires, the Lean types they print as, and a constant as the exact number every backend states), `elements` (tuple accessors, `flat_layout`, the row-major element order every scalar encoding shares, and `ModuleWires`, the module's wires in the order everything numbers them), `ops` (the op table: one row per theory variant, one column per backend) |
+| `codegen/` | The module as Lean text: `context` (`LeanContext`, what every encoding of one module shares, and `lean_context`, which refuses a module with no Lean form), `literals` (constants as Lean text, `ConstantRegistry`), `terms` (term lists → functional `let`-binding bodies, and `lean_gaps`), `boxes` (term lists → `Box` circuit layers), `encodings/` (`ModuleToLean4` and one module per encoding: `functional`, `circuit`, `scalar`, `relational`, which holds the shape both relational ones have; and `common`, what the scalar ones share) |
 | `parse/` | Reading the input: `Claim` and `Certificate` (what is claimed of the module and what certifies it, as text), `module` (`load`, the module file as a `Problem`; `Named`, a module with names for its variables), `names` (a claim's names, translated to the internal ones and back), and a predicate's text: `dsl` (the Python predicate syntax), `sexpr` and `smtlib` (SMT-LIB into reactor's terms), `formula` (`Formula`, a predicate in reactor's terms), `native` (the parser: `NativeParser`, `read_predicates`) |
 | `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `lake_cache` (the built packages it can share), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table), the certificate's files as the text it is handed |
-| `proof/` | The certificate as Lean: `render` (`render_certificate`, `LeanCertificate`, the project's `certificate_files` and the `--cert-file` one), `from_ir` (a `parse.Formula` printed as Lean) |
-| `cli/` | `uv run reactor`: `main` runs the stages in order -- `parse_args` (the command line: `parser`, the flags, one `add_*` per group; `checks`, the rules about which go together; `settings`, `Settings`, what they are read into), `claim` (the module and what is to be proved of it), `certificate` (the module's Lean form, the certificate rendered), `outputs` (the project, `--cert-file`) |
+| `proof/` | The certificate as Lean: `render` (`lean_certificate`, a claim's predicates parsed and printed; `render_certificate`, `LeanCertificate`, the project's `certificate_files` and the `--cert-file` one), `from_ir` (a `parse.Formula` printed as Lean) |
+| `cli/` | `uv run reactor`: `main` runs the stages in order -- `load` and `claim_from_flags` (the module and what is to be proved of it), the certificate rendered, `generate` (the project) or `standalone` (`--cert-file`); `args` is the command line (`build_parser`, the flags, one `add_*` per group; the rules about which go together; `Settings`, what `parse_args` reads them into) |
 
 ---
 
@@ -432,7 +432,7 @@ certificate trusts nothing in it.
 `render_certificate(q)` translates the terms, with repeated subterms
 `let`-bound, which Lean reads the same once `simp` has zeta-reduced the
 `let`s. Every certificate is printed through it, by
-`cli.certificate.render(module, claim, cert)`; `certificate_files` renders
+`proof.render.lean_certificate(module, claim, cert)`; `certificate_files` renders
 the project's `Data.lean`, `Module.lean`, `Proofs.lean` and
 `Certificate.lean` from it, and `create_project` writes that text as it is.
 
@@ -641,11 +641,9 @@ so does a row no theory backs.
    the project.
 
 If the new encoding is *relational* — a per-slot body def, a per-slot
-relation, and a conjunction over them — do not spell that shape a fourth
-time: build a `RelSyntax` and a `RelBlock` and call `emit_rel_block` from
-`codegen/encodings/skeleton.py`, as `Rel` and `ScalarRel` (both in
-`codegen/encodings/relational.py`) do.  It is parameterised on the type
-builder, the projection, and the spelling
-(`def`/`abbrev`, `Prop`/`Bool`, `=`/`==`, `∧`/`&&`); the body producer stays
-yours, and the per-slot `*_eq` theorems are emitted only if you name a
-functional counterpart to prove them against.
+relation, and a conjunction over them — do not spell that shape a third
+time: build a `RelSyntax` and a `RelBlock` and call `emit_rel_block`, as
+`Rel` and `ScalarRel` do (`codegen/encodings/relational.py`). It takes
+what a slot is (its type and its projection out of a state) and the
+functional counterpart each body is proved equal to; the body producer
+stays yours.

@@ -13,7 +13,7 @@ from reactor import Bool, Int, Module, Real, Term, Var, Word, X, tensor
 from reactor_lean.errors import Unreadable
 from reactor_lean.lowering.sorts import itype_name, theory_of
 from reactor_lean.parse.formula import family
-from reactor_lean.lowering.wires import ModuleWires
+from reactor_lean.lowering.elements import ModuleWires
 from reactor_lean.parse.native import scope_of
 from reactor_lean.parse.smtlib import Scope, read_smtlib
 

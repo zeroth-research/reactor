@@ -1,12 +1,14 @@
 """Where a wire's elements sit: tuple accessors, the flat element order
-every scalar encoding shares (`FlatLayout`), and the matrix rebuilt from it."""
+every scalar encoding shares (`FlatLayout`), and the matrix rebuilt from it;
+and the module's wires, in the order every encoding and every predicate
+numbers them (`ModuleWires`)."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import NamedTuple
 
-from reactor import Wire
+from reactor import Wire, X
 from .sorts import flat_element_type, mat_mk, MatShape, wire_shape
 
 
@@ -152,3 +154,24 @@ def mat_from_scalars(slots: list[str], shape: MatShape) -> str:
     # Catch-all for the same reason as `tensor_to_lean_def`: Lean cannot see
     # that `0..k-1` exhausts `Fin k` for larger k.
     return mat_mk(f"match i, j with {arms} | _, _ => {slots[0]}", "i", "j")
+
+
+@dataclass(frozen=True)
+class ModuleWires:
+    """Each interface variable (`ctrl_latched`) and `X` of it, its value
+    after the round (`ctrl_next`); each input as latched in the round
+    before (`extl_latched`) and as awaited in the round (`extl_next`)."""
+
+    ctrl_latched: list
+    ctrl_next: list
+    extl_latched: list
+    extl_next: list
+
+    @staticmethod
+    def of(module) -> "ModuleWires":
+        return ModuleWires(
+            ctrl_latched=list(module.ctrl),
+            ctrl_next=[X(v) for v in module.ctrl],
+            extl_latched=list(module.extl),
+            extl_next=[X(v) for v in module.extl],
+        )

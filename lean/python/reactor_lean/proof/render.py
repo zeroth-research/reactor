@@ -16,6 +16,9 @@ from reactor_lean.codegen.encodings import ModuleToLean4
 from reactor_lean.codegen.terms import extl_native_type, product_type
 from reactor_lean.errors import PredicateRefused, Refused
 from reactor_lean.codegen.context import LeanContext
+from reactor_lean.parse.native import (
+    Certificate, Claim, NativePredicates, read_predicates,
+)
 from reactor_lean.project.names import (
     CERTIFICATE, DATA, MODULE, PROOFS, cert_file,
 )
@@ -23,8 +26,6 @@ from reactor_lean.project.templates import render
 
 if TYPE_CHECKING:
     from reactor import Module
-
-    from reactor_lean.parse.native import NativePredicates
 
 # ══════════════════════════════════════════════════════════════════════════
 # The certificate as Lean
@@ -101,6 +102,17 @@ def render_certificate(q: "NativePredicates") -> LeanCertificate:
         kind=q.kind, prp=prp, inv=inv, ranking=ranking,
         init_pre=init_pre, update_pre=update_pre,
     )
+
+
+def lean_certificate(module, claim: "Claim | None",
+                     cert: Certificate = Certificate()) -> "LeanCertificate | None":
+    """The certificate as codegen takes it: the claim's and the
+    certificate's predicates parsed once (`parse.native.read_predicates`)
+    and printed as Lean. `None` without a claim: a bare run parses
+    nothing."""
+    if claim is None:
+        return None
+    return render_certificate(read_predicates(module, claim, cert))
 
 
 def _cert_def_context(ctx: LeanContext, lean_cert: LeanCertificate) -> dict:

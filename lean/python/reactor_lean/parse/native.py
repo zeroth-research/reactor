@@ -19,9 +19,8 @@ from typing import Literal
 from reactor import Word, X
 
 from ..errors import PredicateRefused, Unreadable
-from ..lowering.sorts import wire_shape
-from ..lowering.values import decimal_fraction
-from ..lowering.wires import ModuleWires
+from ..lowering.sorts import decimal_fraction, wire_shape
+from ..lowering.elements import ModuleWires
 from . import dsl
 from .formula import Builder, Formula, family
 from .smtlib import Elaborator, Lit, Matrix, Scope, read_smtlib

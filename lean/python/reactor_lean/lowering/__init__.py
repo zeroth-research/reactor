@@ -1,9 +1,9 @@
 """A reactive module lowered to what every backend reads, besides its terms.
 
-`sorts`: the sort and shape of a wire, and the Lean type each prints as.
-`elements`: where a wire's elements sit -- tuple accessors, and the flat
-element order every scalar encoding shares. `values`: a constant as the
-exact number every backend states. `wires`: the module's wires, in the
-order everything numbers them. `ops`: the op table, one row per theory
-variant and one column per backend. Nothing here imports a backend.
+`sorts`: the sort and shape of a wire, the Lean type each prints as, and a
+constant as the exact number every backend states. `elements`: where a
+wire's elements sit -- tuple accessors, and the flat element order every
+scalar encoding shares -- and the module's wires, in the order everything
+numbers them. `ops`: the op table, one row per theory variant and one
+column per backend. Nothing here imports a backend.
 """

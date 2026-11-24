@@ -1,12 +1,10 @@
 """`uv run reactor`: a reactive module in, a Lean 4 certificate project out.
 
-`main` runs the stages in order. `parse_args` reads the command line into
-`Settings` -- validated, with the property and its kind already decided --
-rather than an `argparse.Namespace` to re-derive facts from: `parser` is
-the flags (`build_parser`), `checks` the rules about which go together,
-`settings` what they are read into. Then `claim` reads the module and what
-is to be proved of it; `certificate` checks the module and renders the
-certificate; `outputs` writes the project, or the one file asked for.
+`main` runs the stages in order: `parse_args` reads the command line
+(`args`); `load` reads the module, and `claim_from_flags` what is to be
+proved of it; `codegen.context.lean_context` checks that the module has a
+Lean form, and `proof.render.lean_certificate` renders the certificate;
+`generate` writes the project, or `standalone` the one file asked for.
 
 The certificate states its obligations and proves each by `sorry`: the
 proofs are a prover's to write, into `Certificate/Proofs.lean`, which
@@ -72,15 +70,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .. import parse
+from ..codegen.context import LeanContext, lean_context
+from ..codegen.encodings import ModuleToLean4
 from ..errors import Refused
+from ..parse import Certificate, Claim
 from ..project.lake_cache import lake_cache
 from ..project.lakefile import reactlib_checkout
-from .certificate import lean_context, render
-from .checks import check_blanks, check_claim_flags
-from .claim import claim_from_flags, load
-from .outputs import generate, standalone
-from .parser import build_parser
-from .settings import Settings
+from ..project.scaffold import ENCODINGS, Layout, create_project, write_encoding
+from ..proof.render import (
+    LeanCertificate,
+    certificate_files,
+    generate_standalone_cert_lean,
+    lean_certificate,
+)
+from .args import Settings, parse_args
 
 __all__ = ["Settings", "main", "parse_args"]
 
@@ -104,11 +108,7 @@ def main():
     claim, given = claim_from_flags(settings, problem.names)
     try:
         ctx = lean_context(module)
-    except Refused as e:
-        raise SystemExit(f"error: {e}") from e
-
-    try:
-        lean_cert = render(module, claim, given)
+        lean_cert = lean_certificate(module, claim, given)
     except Refused as e:
         raise SystemExit(f"error: {e}") from e
 
@@ -120,23 +120,106 @@ def main():
     print(f"\nProject ready at: {project_dir}")
 
 
-def parse_args(argv: "list[str] | None" = None) -> Settings:
-    """The command line as `Settings`."""
-    parser = build_parser()
-    args = parser.parse_args(argv)
+# ══════════════════════════════════════════════════════════════════════
+# What the run is about: the module, and the claim the flags ask
+# ══════════════════════════════════════════════════════════════════════
 
-    check_blanks(parser, args)
-    check_claim_flags(parser, args)
-    return Settings(
-        module_file=args.module_file,
-        module_def=args.module_def,
-        output_dir=Path(args.output_dir),
-        project_name=args.project_name,
-        executable=args.executable,
-        prp=args.safety or args.buchi,
-        kind="safety" if args.safety else "buchi",
-        pre=args.pre,
-        invariant=args.invariant,
-        ranking=args.ranking,
-        cert_file=args.cert_file,
-    )
+
+def load(settings: Settings) -> "parse.Problem":
+    """The module the run is about, and the input it was read from.
+
+    The loader refuses a path that is not there or cannot be read, a file
+    that is not a module and a `-d` the file does not define, all as
+    `InputError`. All of them are the user's input, so they are reported
+    rather than raised. What the module file's own code raises is not a
+    refusal, and keeps its traceback: an `AttributeError` from a typo in
+    `module()` reads, as one `error:` line, exactly like "must define
+    `module`", and an `OSError` from a file it opens like a missing input.
+    """
+    try:
+        return parse.load(settings.module_file, settings.module_def)
+    except (parse.ClaimError, parse.InputError) as e:
+        raise SystemExit(f"error: {e}") from e
+
+
+def claim_from_flags(
+    settings: Settings, names: "parse.Names",
+) -> "tuple[Claim | None, Certificate]":
+    """What the flags ask to be proved, and what of its certificate they
+    supply. No claim when no predicate flag was passed.
+
+    The flags are in the module's own terms (`parse.names`); the claim
+    is in the internal names every later stage reads, and each flag is
+    printed in them once, since that is how the logs and
+    any refusal will spell it."""
+    if not (settings.prp or settings.pre or settings.invariant
+            or settings.ranking):
+        return None, Certificate()
+    prp_flag = "--safety" if settings.is_safety else "--buchi"
+
+    def internal(text: "str | None", flag: str) -> "str | None":
+        if not text:
+            return None
+        try:
+            spelled = parse.to_internal(text, names, flag)
+        except parse.ClaimError as e:
+            raise SystemExit(f"error: {e}") from e
+        print(f".. {flag}, in internal names: {spelled}")
+        return spelled
+
+    prp = internal(settings.prp, prp_flag)
+    pre = internal(settings.pre, "--pre")
+    claim = Claim(prp=prp, kind=settings.kind, init_pre=pre, update_pre=pre)
+    return claim, Certificate(internal(settings.invariant, "--invariant"),
+                              internal(settings.ranking, "--ranking"))
+
+
+# ══════════════════════════════════════════════════════════════════════
+# What the run writes: the project, or a standalone certificate; both
+# prove the obligations by `sorry`
+# ══════════════════════════════════════════════════════════════════════
+
+
+def standalone(cert_file: str, ctx: LeanContext, lean_cert) -> None:
+    """`--cert-file`: a self-contained certificate and its sibling encodings.
+
+    No project: the predicates are the ones supplied.
+    """
+    out = Path(cert_file)
+    try:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(generate_standalone_cert_lean(ctx, lean_cert))
+        print(f"Wrote standalone certificate: {out}")
+        # The same encoding table the project walks, so these files and
+        # the ones in a generated project carry the same headers and the
+        # same imports. The functional encoding is already inlined in the
+        # standalone certificate above, which is the base they import.
+        m2l = ModuleToLean4(ctx)
+        layout = Layout(base=out.stem, flat=True, directory=out.parent)
+        for enc in ENCODINGS:
+            if enc.cert_file:
+                path = write_encoding(enc, m2l, layout, out.stem)
+                print(f"Wrote {enc.title.lower()}: {path}")
+    except (Refused, OSError) as e:
+        raise SystemExit(f"error: --cert-file: {e}") from e
+
+
+def generate(settings: Settings, module, ctx: LeanContext,
+             lean_cert: "LeanCertificate | None",
+             source: str) -> Path:
+    """The Lean project, with the certificate as it stands; `source` is
+    the input's text, which the project keeps in `dbg/`."""
+    print(".. Generating lean code")
+    certificate = certificate_files(ctx, lean_cert)
+    try:
+        return create_project(
+            output_dir=settings.output_dir,
+            module=module,
+            project_name=settings.project_name,
+            executable=settings.executable,
+            certificate=certificate,
+            source=source,
+            ctx=ctx,
+        )
+    except (Refused, OSError) as e:
+        raise SystemExit(f"error: {e}") from e

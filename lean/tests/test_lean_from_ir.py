@@ -17,7 +17,7 @@ from reactor_lean.proof.render import LeanCertificate
 from reactor_lean.parse import Certificate, Claim
 from reactor_lean.errors import PredicateRefused
 from reactor_lean.parse.native import read_predicates
-from reactor_lean.cli.certificate import render
+from reactor_lean.proof.render import lean_certificate
 from reactor_lean.proof.from_ir import ir_to_lean_nat
 from testdata import dense, relu
 
@@ -43,7 +43,7 @@ def _real_module() -> Module:
 
 def _lean(module, **cert: str) -> LeanCertificate:
     """`cert`'s predicates printed as the certificate prints them."""
-    return render(module, Claim(), Certificate(**cert))
+    return lean_certificate(module, Claim(), Certificate(**cert))
 
 
 def _inv(module, smt: str) -> str:

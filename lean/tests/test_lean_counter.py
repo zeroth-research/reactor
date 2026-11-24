@@ -4,7 +4,7 @@ import torch
 from reactor import Wire, Term, Module, Bool, Int, Var, X, tensor
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.project.scaffold import create_project
-from reactor_lean.cli.certificate import render
+from reactor_lean.proof.render import lean_certificate
 from reactor_lean.proof.render import certificate_files
 from reactor_lean.parse import Certificate, Claim
 from testdata import TESTS
@@ -91,7 +91,7 @@ def test_counter_generates_lean():
         module=m,
         project_name="Counter",
         executable=True,
-        certificate=certificate_files(LeanContext(m), render(
+        certificate=certificate_files(LeanContext(m), lean_certificate(
             m,
             Claim(
                 prp="s[0][0] == 0",

@@ -9,7 +9,7 @@ from reactor import Module, Wire
 
 from ..errors import Refused
 from ..lowering.sorts import flat_element_type, mat_mk, wire_shape
-from ..lowering.wires import ModuleWires
+from ..lowering.elements import ModuleWires
 from ..codegen.terms import build_tuple, product_type
 from .names import (
     LINTERS_OFF,
