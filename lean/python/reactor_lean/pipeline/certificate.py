@@ -6,21 +6,19 @@ from __future__ import annotations
 
 from ..codegen.context import LeanContext
 from ..codegen.terms import lean_gaps
-from ..core.certificate import Certificate, Claim, LeanAnswer
+from ..core.certificate import Certificate, Claim
 from ..core.errors import Refused
 from ..parse.native import read_predicates
 from ..proof.render import LeanCertificate, render_certificate
 
 
-def render(module, claim: "Claim | None", cert: Certificate = Certificate(),
-           *, verbatim: "LeanAnswer | None" = None) -> "LeanCertificate | None":
+def render(module, claim: "Claim | None",
+           cert: Certificate = Certificate()) -> "LeanCertificate | None":
     """The certificate as codegen takes it: the predicates parsed once and
-    printed as Lean. `None` without a claim: a bare run parses nothing.
-    `verbatim` is an answer that is Lean already."""
+    printed as Lean. `None` without a claim: a bare run parses nothing."""
     if claim is None:
         return None
-    return render_certificate(read_predicates(module, claim, cert),
-                              verbatim=verbatim)
+    return render_certificate(read_predicates(module, claim, cert))
 
 
 def lean_context(module) -> LeanContext:

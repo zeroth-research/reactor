@@ -4,6 +4,5 @@
 `Certificate/Proofs.lean`, and the fixed `Certificate/Module.lean` and
 `Certificate/Certificate.lean`), its predicates through `from_ir`, which
 prints reactor's terms as a Lean expression. The obligations are stated in
-`Proofs.lean` and proved by `sorry`, or by the scripts a prover hands over
-(`render.ProofScripts`).
+`Proofs.lean` and proved by `sorry`, for a prover to replace.
 """

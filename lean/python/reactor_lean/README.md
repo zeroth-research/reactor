@@ -126,9 +126,7 @@ These steps turn the given predicates into the certificate, before stage 4:
 in `Proofs.lean`, and lake reports a `sorry` as a warning and builds. The
 run stops at the project. Proving the obligations -- and `lake build
 Certificate`, which is what the result rests on, Lean checking them against
-the module's encoding -- is a prover's: it writes `Proofs.lean`, either as a
-whole file or as `ProofScripts` handed to `certificate_files`, which puts
-each script under its statement. See [What a certificate
+the module's encoding -- is a prover's: it writes `Proofs.lean`. See [What a certificate
 rewrites](#certificate-generation-proofrenderpy).
 
 ## Checking a change to the pipeline
@@ -180,12 +178,12 @@ layer.
 
 | Package | What it holds |
 |------|------|
-| `core/` | The vocabulary every layer is written in, importing nothing of `reactor_lean`: `certificate` (`Claim`, `Certificate` as SMT-LIB, `LeanAnswer` for an answer that is Lean only), `errors` (`Refused`, the error a run is refused with), `options` (`Opt`, an option an input format declares) |
+| `core/` | The vocabulary every layer is written in, importing nothing of `reactor_lean`: `certificate` (`Claim`, and `Certificate` as SMT-LIB), `errors` (`Refused`, the error a run is refused with), `options` (`Opt`, an option an input format declares) |
 | `lowering/` | What every backend reads of a module besides its terms: `sorts` (sorts and shapes of wires, and the Lean types they print as), `elements` (tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares), `values` (a constant as the exact number every backend states), `ops` (the op table: one row per theory variant, one column per backend) |
 | `codegen/` | The module as Lean text: `context` (`LeanContext`, what every encoding of one module shares), `literals` (constants as Lean text, `ConstantRegistry`), `terms` (term lists → functional `let`-binding bodies, and `lean_gaps`), `boxes` (term lists → `Box` circuit layers), `encodings/` (`ModuleToLean4` and one module per encoding: `functional`, `circuit`, `scalar`, `relational`; `skeleton`, the shape every relational encoding has, and `common`, what the scalar ones share) |
 | `parse/` | Reading a predicate's text: `dsl` (the Python predicate syntax), `sexpr` and `smtlib` (SMT-LIB into reactor's terms), `formula` (`Formula`, a predicate in reactor's terms), `native` (the parser: `NativeParser`, `read_predicates`) |
 | `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `lake_cache` (the built packages it can share), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table), the certificate's files as the text it is handed |
-| `proof/` | The certificate as Lean: `render` (`render_certificate`, `LeanCertificate`, `ProofScripts`, the project's `certificate_files` and the `--cert-file` one), `from_ir` (a `parse.Formula` printed as Lean) |
+| `proof/` | The certificate as Lean: `render` (`render_certificate`, `LeanCertificate`, the project's `certificate_files` and the `--cert-file` one), `from_ir` (a `parse.Formula` printed as Lean) |
 | `inputs/` | The input formats, one `InputAdapter` each (`python`), and `names`, which translates a claim's names to the internal ones and back |
 | `cli/` | The command line: `parser` (the flags, one `add_*` per group), `checks` (the rules about which go together, read off the rows), `settings` (`Settings`, what they are read into); `parse_args` runs the three |
 | `pipeline/` | `uv run reactor`: `main` runs the stages in order -- `claim` (the module and what is to be proved of it), `certificate` (the module's Lean form, the certificate rendered), `outputs` (the project, `--cert-file`) |
@@ -398,16 +396,12 @@ files:
 2. `Module.lean`: `def RM`, wiring `init`/`update` and the preconditions into
    a `ReactiveModule`, and `def lts`, its transition system.
 3. `Proofs.lean`: `init_inv_proof`, `step_inv_proof` and `hrank_proof` (or
-   `inv_imp_P_proof`), each obligation stated again and proved by
-   `proofs.script(name)` -- `sorry`, unless a prover handed its scripts
-   over as `ProofScripts`, with the modules they import, the options they
-   run under and what they share.
+   `inv_imp_P_proof`), each obligation stated again and proved by `sorry`.
 4. `Certificate.lean`: `init_inv`, `step_inv` and `hrank` (or `inv_imp_P`),
    each `exact` its `_proof`; `hinv`; and `buchi` (or `safety`).
 
-`generate_certificate_lean(ctx, lean_cert, module_inline=..., proofs=...)`
-is the `--cert-file` certificate: all four in one file, the module inlined,
-under the proofs' options.
+`generate_certificate_lean(ctx, lean_cert, module_inline=...)` is the
+`--cert-file` certificate: all four in one file, the module inlined.
 
 **Wire bindings in certificates:**  State is accessed as `s`, externals as
 `e.1` (latched) and `e.2` (next).
@@ -438,10 +432,9 @@ certificate trusts nothing in it.
 ### `read_predicates` / `render_certificate`
 
 `read_predicates` parses and refuses a predicate by the flag it came from;
-`render_certificate(q, share=..., verbatim=...)` translates the terms. `share=False` prints repeated subterms in full, for reading; a
+`render_certificate(q, share=...)` translates the terms. `share=False` prints repeated subterms in full, for reading; a
 certificate is printed shared, which Lean reads the same once `simp` has
-zeta-reduced the `let`s. `verbatim` takes the invariant and ranking of a
-`LeanAnswer` as they are. Every certificate is printed through it, by
+zeta-reduced the `let`s. Every certificate is printed through it, by
 `pipeline.certificate.render(module, claim, cert)`; `certificate_files` renders
 the project's `Data.lean`, `Module.lean`, `Proofs.lean` and
 `Certificate.lean` from it, and `create_project` writes that text as it is.

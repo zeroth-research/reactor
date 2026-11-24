@@ -7,8 +7,7 @@ Those were independent walks over the
 same row-major order, agreeing by construction and by comment; the
 defects `d49ebdb9` and `fe8600da` fixed are what that was worth. They now
 all go through `lowering.elements.flat_layout`, and this is the test that
-says so -- for the NA model and the bridge, which are the fbk-proveit
-route's, `verith/tests/test_fbk_layout.py` is.
+says so.
 
 The shapes here are synthetic on purpose. Mutating `flat_indices` to
 column-major and running the fast suite fails exactly one existing test:

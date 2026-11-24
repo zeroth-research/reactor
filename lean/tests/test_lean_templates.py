@@ -23,7 +23,6 @@ from reactor_lean.project.lake_cache import (
 )
 from reactor_lean.project.lakefile import (
     FIXED_REQUIRES,
-    LakefileParts,
     REACTLIB_ENV,
     REACTLIB_PACKAGES,
     REACTLIB_REV,
@@ -204,7 +203,7 @@ def test_the_lakefile_written_with_a_cache_brings_the_manifest_and_packages(
     project = tmp_path / "P"
     project.mkdir()
     for _ in range(2):              # and again, over the first
-        write_lakefile(project, "P", executable=False, parts=LakefileParts())
+        write_lakefile(project, "P", executable=False)
     link = project / ".lake" / "packages"
     assert link.is_symlink() and link.resolve() == (cache / "packages").resolve()
     manifest = json.loads((project / "lake-manifest.json").read_text())
@@ -220,7 +219,7 @@ def test_a_project_with_packages_of_its_own_keeps_them(monkeypatch, tmp_path):
     own = tmp_path / "P" / ".lake" / "packages" / "mathlib"
     own.mkdir(parents=True)
     (tmp_path / "P" / "lake-manifest.json").write_text("its own")
-    write_lakefile(tmp_path / "P", "P", executable=False, parts=LakefileParts())
+    write_lakefile(tmp_path / "P", "P", executable=False)
     assert own.is_dir()
     assert (tmp_path / "P" / "lake-manifest.json").read_text() == "its own"
 

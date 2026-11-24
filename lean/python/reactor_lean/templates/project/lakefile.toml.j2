@@ -14,17 +14,6 @@ globs = ["Certificate", "Certificate.+"]
 
 [[lean_lib]]
 name = "System"
-{% for lib in parts.libs %}
-
-{% for line in lib.comment.splitlines() %}
-# {{ line }}
-{% endfor %}
-[[lean_lib]]
-name = "{{ lib.name }}"
-{% if lib.src_dir %}
-srcDir = "{{ lib.src_dir }}"
-{% endif %}
-{% endfor %}
 {% for req in requires %}
 
 {% for line in req.comment.splitlines() %}

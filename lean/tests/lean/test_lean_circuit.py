@@ -30,7 +30,7 @@ from lake import lean_outputs
 # The modules whose circuit is generated and does not compile.
 _KNOWN = {
     # The circuit types `argmax_1d` Int-valued where the functional
-    # encoding has it Real (tutorials/verith_gym.md).
+    # encoding has it Real.
     "fixtures/simple_env",
 }
 

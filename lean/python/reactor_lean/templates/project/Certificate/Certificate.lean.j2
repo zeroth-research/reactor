@@ -5,14 +5,10 @@
     does not trust `Proofs.lean`, which can be rewritten -- by hand, or by
     another tool -- without touching it. What changes with the module and
     the certificate is `Data.lean` (the definitions) and `Proofs.lean`. A
-    `--cert-file` certificate inlines all of them, the module too, under the
-    proofs' options. -#}
+    `--cert-file` certificate inlines all of them, the module too. -#}
 {% if module_inline %}
 import Relational.Basic
 import Relational.Circ
-{% for module in proofs.imports %}
-import {{ module }}
-{% endfor %}
 {% else %}
 import Relational.Basic
 import Certificate.Module
@@ -22,10 +18,6 @@ import Certificate.Proofs
 {{ linters_off }}
 
 {% if module_inline %}
-{% if proofs.options %}
-{{ proofs.options }}
-
-{% endif %}
 {{ module_inline }}
 
 {{ inline_defs }}

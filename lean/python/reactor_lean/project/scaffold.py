@@ -20,7 +20,7 @@ from ..core.errors import Refused
 from .names import LINTERS_OFF, SYSTEM_LAYOUT, Layout
 from .templates import render
 from .lake_cache import lake_cache, use_lake_cache
-from .lakefile import (LEAN_TOOLCHAIN, LakefileParts, generate_lakefile,
+from .lakefile import (LEAN_TOOLCHAIN, generate_lakefile,
                        project_requires)
 from .main_lean import generate_main_lean
 
@@ -126,21 +126,20 @@ def write_files(project_dir: Path, files: Mapping[str, str]) -> None:
 
 
 def write_lakefile(project_dir: Path, project_name: str, *,
-                   executable: bool, parts: LakefileParts) -> Path:
-    """The project's `lakefile.toml`, with what a caller adds (`parts`).
+                   executable: bool) -> Path:
+    """The project's `lakefile.toml`.
 
-    `create_project` writes it; a caller can write it again with other
-    `parts` for a project already generated. With `$REACTOR_LAKE_CACHE`
+    `create_project` writes it. With `$REACTOR_LAKE_CACHE`
     set, the project's manifest is written with it, for the same requires
     (`lake_cache`).
     """
     cache = lake_cache()
     path = project_dir / "lakefile.toml"
     path.write_text(
-        generate_lakefile(project_name, executable=executable, parts=parts))
+        generate_lakefile(project_name, executable=executable))
     print(f"Wrote {path}")
     if cache is not None and use_lake_cache(
-            project_dir, project_requires(parts), name=project_name,
+            project_dir, project_requires(), name=project_name,
             cache=cache):
         print(f"Wrote {project_dir / 'lake-manifest.json'}, "
               f"its packages {cache / 'packages'}")
@@ -155,7 +154,6 @@ def create_project(
     *,
     certificate: Mapping[str, str],
     source: "SourceText | None" = None,
-    lakefile: LakefileParts | None = None,
     remove: Iterable[str] = (),
     ctx: "LeanContext | None" = None,
 ) -> Path:
@@ -170,9 +168,6 @@ def create_project(
                            as `proof.render.certificate_files` renders them.
         `source`:          The input the module was read from, written to
                            `dbg/system<suffix>` as a debug artifact.
-        `lakefile`:        What a caller adds to the lakefile, declared as
-                           data: the lakefile is written here and not
-                           amended afterwards.
         `remove`:          Project-relative files an earlier run in the same
                            `-o` may have left where a lean_lib globs; they
                            are deleted before anything is written there.
@@ -198,8 +193,7 @@ def create_project(
         print(f"Wrote {copy}")
 
     # Render and write project-level files from templates
-    write_lakefile(project_dir, project_name, executable=executable,
-                   parts=lakefile or LakefileParts())
+    write_lakefile(project_dir, project_name, executable=executable)
 
     toolchain = project_dir / "lean-toolchain"
     toolchain.write_text(

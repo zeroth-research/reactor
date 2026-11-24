@@ -149,20 +149,20 @@ the same way from `lean/` or by `just lean-test [file::test]`.
 
 ### Slow tests (Lean proof verification)
 
-Some tests of `reactor_lean` (in `lean/tests`) and of `verith` (in `verith/tests`)
-build Lean 4 projects by running `lake build`, which requires a working `lake`
-installation, a ReactLib checkout and Mathlib. These tests are marked
+Some tests of `reactor_lean` (in `lean/tests`) build Lean 4 projects by
+running `lake build`, which requires a working `lake` installation, a
+ReactLib checkout and Mathlib. These tests are marked
 `@pytest.mark.slow` and are **skipped by default**.
 
 ```sh
 just lean-test               # fast: skips all lake-build tests
-just test-lean               # slow: runs the lake-build tests of lean and verith
+just test-lean               # slow: runs the lake-build tests of lean
 ```
 
 `just` points every command it runs at the ReactLib checkout beside this
 repository (`$REACTLIB`) and at the Lake package cache in `.lake` here
 (`$REACTOR_LAKE_CACHE`): Mathlib and cslib, built once, which every
-project the tests, `reactor`, `certify` and `verith` write builds against. A
+project the tests and `reactor` write builds against. A
 variable already set wins. A cache is made from a project built without one
 (see `reactor_lean.project.lake_cache`); that first build fetches and compiles
 Mathlib, which takes about an hour.
@@ -175,10 +175,6 @@ Tests that carry the `slow` mark:
 | `lean/tests/lean/test_lean_builds.py` | `test_manual_tests_build`, `test_argmax_scalar_equiv_build` | `Relational.Mat`'s reductions, and the scalar Argmax proved equal to them |
 | `lean/tests/lean/test_lean_builds.py` | `test_generated_executable_builds_and_runs` | A generated executable project builds and runs |
 | `lean/tests/lean/test_lean_agree.py` | `test_the_lean_encoding_takes_the_rounds_the_module_takes` | The functional encoding computes what the interpreter computes |
-| `verith/tests/lean/test_lean_hammer.py` | `test_zeroth_hammer_proofs` | `ZerothHammerTests.lean` compiles — individual tactic phase examples |
-| `verith/tests/lean/test_lean_hammer.py` | `test_manual_tests_build` | `ManualTests/Basic.lean` compiles — `zeroth_hammer` on standalone goal shapes |
-| `verith/tests/lean/test_lean_hammer.py` | `test_cert_*_build` | Generated `Certs/*.lean` compile without sorry |
-| `verith/tests/test_svcomp_proofs.py` | `test_*_proofs` | SV-COMP certificates compile (a generated project each) |
 
 ## Advanced building
 

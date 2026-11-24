@@ -1,15 +1,7 @@
-{#- The proofs of the obligations: see `_proofs.lean.j2`. What the prover's
-    scripts need is imported after what the statements need. -#}
+{#- The proofs of the obligations: see `_proofs.lean.j2`. -#}
 import Relational.Basic
 import Certificate.Module
-{% for module in proofs.imports %}
-import {{ module }}
-{% endfor %}
 
 {{ linters_off }}
-{% if proofs.options %}
-
-{{ proofs.options }}
-{% endif %}
 
 {% include "project/Certificate/_proofs.lean.j2" %}

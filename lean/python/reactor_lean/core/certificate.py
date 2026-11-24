@@ -50,14 +50,3 @@ class Certificate:
     @property
     def empty(self) -> bool:
         return not (self.inv or self.ranking)
-
-
-@dataclass(frozen=True)
-class LeanAnswer:
-    """A certificate that exists only as Lean `fun s => ...` text.
-
-    Nothing parses it into a term; Lean is the only check it gets.
-    """
-
-    inv: str
-    ranking: str | None = None

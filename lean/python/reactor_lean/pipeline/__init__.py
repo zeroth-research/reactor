@@ -97,7 +97,6 @@ def main():
     except Refused as e:
         raise SystemExit(f"error: {e}") from e
 
-
     try:
         lean_cert = render(module, claim, given)
     except Refused as e:

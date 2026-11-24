@@ -1,6 +1,6 @@
 """`generate_main_lean` must emit a Main.lean that matches what it calls.
 
-The executable project (`verith -x`) is generated from two places that have
+The executable project is generated from two places that have
 to agree: `atom_to_lean_functional` emits `init`/`update`, and
 `generate_main_lean` emits the IO loop that drives them. Nothing checked
 that agreement, so the loop drifted from the signatures it calls.

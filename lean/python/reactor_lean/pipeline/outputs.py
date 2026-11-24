@@ -1,6 +1,6 @@
 """What a run writes: the project (`generate`), or a standalone
 certificate (`standalone`, `--cert-file`). Both prove the obligations by
-`sorry` unless a caller hands over the proofs (`ProofScripts`).
+`sorry`.
 """
 
 from __future__ import annotations
@@ -12,20 +12,16 @@ from ..codegen.context import LeanContext
 from ..codegen.encodings import ModuleToLean4
 from ..core.errors import Refused
 from .. import inputs
-from ..project.lakefile import LakefileParts
 from ..project.names import CERT_LIB
 from ..project.scaffold import ENCODINGS, Layout, create_project, write_encoding
 from ..proof.render import (
-    SORRY,
     LeanCertificate,
-    ProofScripts,
     certificate_files,
     generate_standalone_cert_lean,
 )
 
 
-def standalone(cert_file: str, ctx: LeanContext, lean_cert,
-               proofs: ProofScripts = SORRY) -> None:
+def standalone(cert_file: str, ctx: LeanContext, lean_cert) -> None:
     """`--cert-file`: a self-contained certificate and its sibling encodings.
 
     No project: the predicates are the ones supplied.
@@ -33,7 +29,7 @@ def standalone(cert_file: str, ctx: LeanContext, lean_cert,
     out = Path(cert_file)
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(generate_standalone_cert_lean(ctx, lean_cert, proofs))
+        out.write_text(generate_standalone_cert_lean(ctx, lean_cert))
     except (Refused, OSError) as e:
         raise SystemExit(f"error: --cert-file: {e}") from e
     print(f"Wrote standalone certificate: {out}")
@@ -51,17 +47,10 @@ def standalone(cert_file: str, ctx: LeanContext, lean_cert,
 
 def generate(settings: Settings, module, ctx: LeanContext,
              lean_cert: "LeanCertificate | None",
-             source: "inputs.SourceText", *,
-             lakefile: "LakefileParts | None" = None,
-             proofs: ProofScripts = SORRY) -> Path:
-    """The Lean project, with the certificate as it stands, proved by
-    `proofs`.
-
-    `lakefile` is what a caller adds to the lakefile; the lakefile is
-    written here, with the rest of the project.
-    """
+             source: "inputs.SourceText") -> Path:
+    """The Lean project, with the certificate as it stands."""
     print(".. Generating lean code")
-    certificate = certificate_files(ctx, lean_cert, proofs)
+    certificate = certificate_files(ctx, lean_cert)
     try:
         return create_project(
             output_dir=settings.output_dir,
@@ -70,7 +59,6 @@ def generate(settings: Settings, module, ctx: LeanContext,
             executable=settings.executable,
             certificate=certificate,
             source=source,
-            lakefile=lakefile,
             remove=stale_certificate_files(
                 settings.output_dir / settings.project_name, certificate),
             ctx=ctx,

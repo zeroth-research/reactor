@@ -1,25 +1,19 @@
 {#- `Proofs.lean` after its options; a `--cert-file` certificate inlines it.
 
     Each obligation of `Certificate.lean`, stated again with `_proof` after
-    its name, and proved by `proofs` (`proof.render.ProofScripts`): the
-    tactic script a prover handed over, after what the scripts share, or
-    `sorry`. -#}
-{% if proofs.preamble %}
-{{ proofs.preamble }}
-
-{% endif %}
+    its name, and proved by `sorry`, for a prover to replace. -#}
 theorem init_inv_proof : ∀ s, RM.init_pre s → inv (RM.init s) := by
-  {{ proofs.script("init_inv") | indent(2) }}
+  sorry
 
 theorem step_inv_proof : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) := by
-  {{ proofs.script("step_inv") | indent(2) }}
+  sorry
 {% if is_safety %}
 
 theorem inv_imp_P_proof : ∀ s, inv s → P s := by
-  {{ proofs.script("inv_imp_P") | indent(2) }}
+  sorry
 {% else %}
 
 theorem hrank_proof : ∀ s s', (inv s ∧ ¬(P s) ∧ (∃ l, lts.Tr s l s')) →
     ranking s' < ranking s := by
-  {{ proofs.script("hrank") | indent(2) }}
+  sorry
 {% endif %}

@@ -1,7 +1,6 @@
 """`reactor_lean.project.names` is what the project is written under: every
 module the generated Lean imports from the project is a file the project
-has. (The fbk-proveit bridge's imports are checked with the route, in
-`verith/tests/test_fbk_layout.py`.)"""
+has."""
 
 import re
 

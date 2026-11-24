@@ -6,9 +6,7 @@ files). Both are compared with the snapshots under
 `tests/golden/pipeline/`; set `REACTOR_UPDATE_GOLDEN=1` to rewrite them, and
 only for a change to the output that is intended.
 
-The certificate's obligations are proved by `sorry` here. The proofs, and
-the runs that infer the certificate, are `certify`'s, pinned the same way
-in `verith/tests/test_certify_golden.py` and `test_proofs_golden.py`.
+The certificate's obligations are proved by `sorry` here.
 """
 
 from __future__ import annotations
@@ -29,7 +27,7 @@ from reactor_lean.proof.render import (
     generate_proofs_lean,
     generate_standalone_cert_lean,
 )
-from reactor_lean.core.certificate import Certificate, Claim, LeanAnswer
+from reactor_lean.core.certificate import Certificate, Claim
 from reactor_lean.pipeline.certificate import render
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.project.lake_cache import LAKE_CACHE_ENV
@@ -104,8 +102,7 @@ def _real_countdown() -> Module:
 
 COUNTDOWN_INV = "(and (>= s0 0) (<= s0 100))"
 
-# (name, module, claim, certificate). `verith/tests/test_proofs_golden.py`
-# proves the same certificates.
+# (name, module, claim, certificate).
 CODEGEN = [
     ("bare", lambda: fixture("counter"), None, None),
     ("countdown", lambda: fixture("svcomp_countdown"), Claim(prp="(= s0 0)"),
@@ -134,11 +131,10 @@ CODEGEN = [
 ]
 
 
-def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
-             verbatim: "LeanAnswer | None" = None) -> str:
+def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None") -> str:
     """Data.lean, Module.lean, Proofs.lean, Certificate.lean and the
     standalone certificate, as one text."""
-    lean = render(module, claim, cert or Certificate(), verbatim=verbatim)
+    lean = render(module, claim, cert or Certificate())
     ctx = LeanContext(module)
     return "\n".join([
         "=== Certificate/Data.lean",
@@ -159,14 +155,6 @@ def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None",
 def test_codegen_is_unchanged(name, make, claim, cert):
     _check(f"codegen-{name}.golden", _codegen(make(), claim, cert))
 
-
-def test_codegen_of_a_lean_answer_is_unchanged():
-    """An answer that is Lean already is printed as it was given."""
-    answer = LeanAnswer("fun s => (s 0 0) ≥ 0",
-                        "fun s => ((s 0 0) * (s 0 0)).toNat")
-    _check("codegen-lean_answer_nonlinear.golden",
-           _codegen(fixture("svcomp_countdown"), Claim(prp="(= s0 0)"),
-                    None, verbatim=answer))
 
 
 # ══════════════════════════════════════════════════════════════════════════

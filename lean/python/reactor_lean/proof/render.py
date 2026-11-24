@@ -4,19 +4,16 @@
 (`generate_standalone_cert_lean`).
 
 The obligations are stated here and proved elsewhere. `Proofs.lean` states
-each one again and proves it by `sorry`, unless a prover hands its proofs
-over as `ProofScripts`.
+each one again and proves it by `sorry`, for a prover to replace.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from reactor_lean.codegen.encodings import ModuleToLean4
 from reactor_lean.codegen.terms import extl_native_type, product_type
-from reactor_lean.core.certificate import LeanAnswer
 from reactor_lean.core.errors import PredicateRefused, Refused
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.project.names import (
@@ -32,12 +29,6 @@ if TYPE_CHECKING:
 # ══════════════════════════════════════════════════════════════════════════
 # The certificate as Lean
 # ══════════════════════════════════════════════════════════════════════════
-
-
-# Every obligation a certificate states, by the name of its `_proof`
-# theorem without the suffix: the first three of a safety certificate, or
-# the first two and `hrank` of a Buchi one (`LeanCertificate.obligations`).
-OBLIGATIONS = ("init_inv", "step_inv", "inv_imp_P", "hrank")
 
 
 @dataclass(frozen=True)
@@ -57,17 +48,9 @@ class LeanCertificate:
     def is_safety(self) -> bool:
         return self.kind == "safety"
 
-    @property
-    def obligations(self) -> tuple[str, ...]:
-        """The obligations this certificate states, by the names
-        `ProofScripts.scripts` is keyed by."""
-        return ("init_inv", "step_inv",
-                "inv_imp_P" if self.is_safety else "hrank")
-
 
 def render_certificate(
     q: "NativePredicates", *, share: bool = True,
-    verbatim: LeanAnswer | None = None,
 ) -> LeanCertificate:
     """The one place certificate predicates are printed as Lean.
 
@@ -75,8 +58,7 @@ def render_certificate(
     by `from_ir`. `share=False` prints repeated subterms in full instead of
     `let`-binding them, which Lean reads the same once `simp` has
     zeta-reduced the `let`s; it is for reading a definition, not for
-    proving with it. `verbatim` is an answer that is Lean already; its
-    `inv` and `ranking` are taken as they are.
+    proving with it.
     """
     from .from_ir import ir_to_lean as prop
     from .from_ir import ir_to_lean_nat as nat
@@ -118,11 +100,8 @@ def render_certificate(
     prp = named(q.prp, "property")
     init_pre = named(q.init_pre, "pre")
     update_pre = named(q.update_pre, "pre")
-    if verbatim is not None:
-        inv, ranking = verbatim.inv, verbatim.ranking
-    else:
-        inv = named(q.inv, "invariant")
-        ranking = named(q.ranking, "ranking")
+    inv = named(q.inv, "invariant")
+    ranking = named(q.ranking, "ranking")
     return LeanCertificate(
         kind=q.kind, prp=prp, inv=inv, ranking=ranking,
         init_pre=init_pre, update_pre=update_pre,
@@ -171,46 +150,8 @@ def generate_data_lean(
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# The proofs
+# The certificate's other files
 # ══════════════════════════════════════════════════════════════════════════
-
-
-@dataclass(frozen=True)
-class ProofScripts:
-    """The proofs of a certificate's obligations, as a prover hands them
-    over: this package states the obligations and proves none of them.
-
-    `scripts` maps an obligation's name -- `init_inv`, `step_inv`, and
-    `hrank` or `inv_imp_P` -- to the tactic proof of its `_proof` theorem,
-    the lines after `:= by`; an obligation it leaves out is `sorry`.
-    `imports` are the modules the scripts need, `options` the `set_option`s
-    they run under, set before anything else is elaborated (a `--cert-file`
-    certificate sets them before its inlined module), and `preamble` what
-    they share, put before the first of them.
-    """
-
-    imports: tuple[str, ...] = ()
-    options: str = ""
-    preamble: str = ""
-    scripts: Mapping[str, str] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        # A misspelt name would otherwise leave its obligation `sorry`,
-        # found only when `lake build` warns about it.
-        unknown = sorted(set(self.scripts) - set(OBLIGATIONS))
-        if unknown:
-            raise ValueError(
-                f"no obligation is named {', '.join(unknown)}: the "
-                f"obligations are {', '.join(OBLIGATIONS)}"
-            )
-
-    def script(self, name: str) -> str:
-        """The proof of obligation `name`: its script, or `sorry`."""
-        return self.scripts.get(name, "sorry")
-
-
-# Every obligation proved by `sorry`: what this package writes on its own.
-SORRY = ProofScripts()
 
 
 def generate_module_lean() -> str:
@@ -219,16 +160,12 @@ def generate_module_lean() -> str:
     return render("project/Certificate/Module.lean.j2")
 
 
-def generate_proofs_lean(
-    lean_cert: LeanCertificate | None = None,
-    proofs: ProofScripts = SORRY,
-) -> str:
+def generate_proofs_lean(lean_cert: LeanCertificate | None = None) -> str:
     """Generate Certificate/Proofs.lean: each obligation of `lean_cert`'s
-    kind stated again, and proved by `proofs`."""
+    kind stated again, and proved by `sorry`."""
     return render(
         "project/Certificate/Proofs.lean.j2",
         is_safety=(lean_cert or LeanCertificate()).is_safety,
-        proofs=proofs,
     )
 
 
@@ -237,7 +174,6 @@ def generate_certificate_lean(
     lean_cert: LeanCertificate | None = None,
     *,
     module_inline: str | None = None,
-    proofs: ProofScripts = SORRY,
 ) -> str:
     """Generate Certificate.lean: the certificate.
 
@@ -250,7 +186,7 @@ def generate_certificate_lean(
         module_inline: When set, inline this Lean source (the ``init`` /
             ``update`` functions) for standalone certs instead of importing
             ``System.System``, and the definitions, ``Module.lean`` and the
-            proofs (`proofs`) with it. Should be the output of
+            proofs with it. Should be the output of
             ``ModuleToLean4.to_lean_functional()``.
     """
     lean_cert = lean_cert or LeanCertificate()
@@ -264,25 +200,23 @@ def generate_certificate_lean(
                 "project/Certificate/_module.lean.j2").strip("\n"),
             inline_proofs=render(
                 "project/Certificate/_proofs.lean.j2",
-                is_safety=lean_cert.is_safety, proofs=proofs).strip("\n"),
+                is_safety=lean_cert.is_safety).strip("\n"),
         )
     return render(
         "project/Certificate/Certificate.lean.j2",
         is_safety=lean_cert.is_safety,
         module_inline=module_inline,
-        proofs=proofs,
         **inline,
     )
 
 
 def certificate_files(
     ctx: LeanContext, lean_cert: LeanCertificate | None = None,
-    proofs: ProofScripts = SORRY,
 ) -> dict[str, str]:
     """The project's four certificate files by project-relative path: the
     definitions (`Data.lean`); `RM` and `lts` over them (`Module.lean`), the
     same text for every certificate; the obligations stated again and
-    proved by `proofs` (`Proofs.lean`); and the certificate, which is fixed
+    proved by `sorry` (`Proofs.lean`); and the certificate, which is fixed
     text for the property's kind and takes its proofs from `Proofs.lean`
     (`Certificate.lean`). Placeholders where `lean_cert` has no predicate,
     or is `None`.
@@ -294,7 +228,7 @@ def certificate_files(
     return {
         cert_file(DATA): generate_data_lean(ctx, lean_cert),
         cert_file(MODULE): generate_module_lean(),
-        cert_file(PROOFS): generate_proofs_lean(lean_cert, proofs),
+        cert_file(PROOFS): generate_proofs_lean(lean_cert),
         cert_file(CERTIFICATE): generate_certificate_lean(ctx, lean_cert),
     }
 
@@ -302,13 +236,12 @@ def certificate_files(
 def generate_standalone_cert_lean(
     src: "LeanContext | Module",
     lean_cert: LeanCertificate | None = None,
-    proofs: ProofScripts = SORRY,
 ) -> str:
     """Generate a self-contained certificate Lean file with init/update inlined.
 
     Unlike the project's ``Certificate.lean``, the functional module code
     (init, update) is inlined directly rather than imported, and so are the
-    definitions and the proofs, `proofs`' imports aside.
+    definitions and the proofs.
 
     Suitable for placing a single .lean file inside an existing lake project
     such as ``tests/lean/Certs/``. `src` is the run's `LeanContext`, or a
@@ -316,5 +249,4 @@ def generate_standalone_cert_lean(
     """
     ctx = src if isinstance(src, LeanContext) else LeanContext(src)
     module_code = ModuleToLean4(ctx).to_lean_functional()
-    return generate_certificate_lean(ctx, lean_cert, module_inline=module_code,
-                                     proofs=proofs)
+    return generate_certificate_lean(ctx, lean_cert, module_inline=module_code)

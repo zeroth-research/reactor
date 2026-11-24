@@ -4,14 +4,13 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from reactor_lean.core.certificate import Certificate, Claim, LeanAnswer
+from reactor_lean.core.certificate import Certificate, Claim
 
 
 def test_the_types_are_values():
     """A route is handed these, and handing one back changed is `replace`."""
     for value, field in ((Claim(prp="(= s0 0)"), "prp"),
-                         (Certificate(inv="true"), "inv"),
-                         (LeanAnswer(inv="fun s => True"), "inv")):
+                         (Certificate(inv="true"), "inv")):
         with pytest.raises(FrozenInstanceError):
             setattr(value, field, "x")
 

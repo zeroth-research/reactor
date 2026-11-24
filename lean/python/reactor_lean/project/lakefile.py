@@ -1,7 +1,6 @@
 """The project's lakefile: the dependencies every project requires
 (Mathlib, Cslib, and the ReactLib repository's `ReactLib` and
-`LeanAI`) at the revisions it pins, and what a caller adds to them
-(`LakefileParts`).
+`LeanAI`) at the revisions it pins.
 """
 
 from __future__ import annotations
@@ -36,17 +35,6 @@ REACTLIB_ENV = "REACTLIB"
 
 
 @dataclass(frozen=True)
-class LeanLib:
-    """A `[[lean_lib]]` a caller adds: `name` is the module name its files are
-    imported under, `src_dir` the project-relative directory they are in,
-    the project's own when empty."""
-
-    name: str
-    src_dir: str = ""
-    comment: str = ""
-
-
-@dataclass(frozen=True)
 class Require:
     """A `[[require]]`: from a local checkout at `path`, or else at `rev`
     from the git repository `git`, or from Reservoir under `scope`, the
@@ -59,20 +47,6 @@ class Require:
     rev: str | None = None
     sub_dir: str | None = None
     scope: str | None = None
-
-
-@dataclass(frozen=True)
-class LakefileParts:
-    """What a caller adds to the lakefile: libraries after
-    `System`, requires after the fixed ones, each preceded by its `comment`."""
-
-    libs: tuple[LeanLib, ...] = ()
-    requires: tuple[Require, ...] = ()
-
-    def __add__(self, other: "LakefileParts") -> "LakefileParts":
-        """Both callers' additions, `self`'s first."""
-        return LakefileParts(self.libs + other.libs,
-                             self.requires + other.requires)
 
 
 def reactlib_checkout() -> Path | None:
@@ -131,26 +105,17 @@ def reactlib_requires() -> tuple[Require, ...]:
     )
 
 
-def project_requires(parts: LakefileParts = LakefileParts()) -> tuple[Require, ...]:
+def project_requires() -> tuple[Require, ...]:
     """Everything the project's lakefile requires, in its order: the fixed
-    packages, ReactLib's, then what `parts` adds."""
-    return FIXED_REQUIRES + reactlib_requires() + parts.requires
+    packages, then ReactLib's."""
+    return FIXED_REQUIRES + reactlib_requires()
 
 
-def generate_lakefile(
-    project_name: str,
-    executable: bool = False,
-    parts: LakefileParts = LakefileParts(),
-) -> str:
-    """Render the project's lakefile, with `parts` added to the fixed ones.
-
-    The lakefile is written while the project is created and not amended
-    after the fact, so what a caller needs in it is given here.
-    """
+def generate_lakefile(project_name: str, executable: bool = False) -> str:
+    """Render the project's lakefile."""
     return render(
         "project/lakefile.toml.j2",
         project_name=project_name,
         executable=executable,
-        parts=parts,
-        requires=project_requires(parts),
+        requires=project_requires(),
     )
