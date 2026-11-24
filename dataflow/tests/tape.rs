@@ -1,11 +1,12 @@
 //! Tests for the tape data structures: two tapes built by hand in normal
-//! form, their boundaries, and the well-formedness check
+//! form, their boundaries and listings, and the well-formedness check
 //! rejecting broken variants of them.
 
 use base::boundary::{Boundary, Mono, Poly};
 use dataflow::tape::{
     Arm, Node, NodeId, NodeKind, Operation, Route, RouteId, Span, Tape, TapeParts, Value,
 };
+use std::fmt;
 
 /// The sorts of the tests: reals, booleans, and distributions over booleans.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -13,6 +14,12 @@ enum Sort {
     R,
     B,
     D,
+}
+
+impl fmt::Display for Sort {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self:?}")
+    }
 }
 
 use Sort::{B, D, R};
@@ -65,6 +72,21 @@ impl Boundary<Sort> for Op {
 impl Operation<Sort> for Op {
     fn is_deterministic(&self) -> bool {
         !matches!(self, Op::Sample)
+    }
+}
+
+impl fmt::Display for Op {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Op::Gt0 => f.write_str("gt0"),
+            Op::Lt => f.write_str("lt"),
+            Op::Eq => f.write_str("eq"),
+            Op::Add => f.write_str("add"),
+            Op::Lit(l) => f.write_str(l),
+            Op::Or => f.write_str("or"),
+            Op::False => f.write_str("false"),
+            Op::Sample => f.write_str("sample"),
+        }
     }
 }
 
@@ -238,6 +260,27 @@ fn sampled_guard_is_well_formed() {
 }
 
 #[test]
+fn sampled_guard_listing() {
+    let tape = Tape::new(sampled_guard()).unwrap();
+    let expected = "\
+(R ⊗ D) ⊕ I → R ⊕ I
+arm 0: R ⊗ D
+  in v0: R, v1: D
+  n0  v2 = gt0(v0)
+  n1  v3 = sample@0(v1)
+  r0  end 1 ()
+  r1  end 0 (v0)
+  r2  bind n1; split v3 ? r1 : r0
+  r3  split v2 ? r2 : r0
+arm 1: I
+  in (none)
+  n2  v0 = zero()
+  r4  end 0 (v0)
+";
+    assert_eq!(tape.to_string(), expected);
+}
+
+#[test]
 fn boundaries_of_the_parts() {
     let tape = Tape::new(sampled_guard()).unwrap();
 
@@ -281,6 +324,37 @@ fn program_is_well_formed() {
     assert_eq!(Boundary::cod(&tape), mono(&[R, R, B, B]));
     let ends = tape.arm(0).routes().filter(|d| d.outs().is_some()).count();
     assert_eq!(ends, 4);
+}
+
+#[test]
+fn program_listing() {
+    let tape = Tape::new(program()).unwrap();
+    let expected = "\
+R ⊗ R ⊗ R → R ⊗ R ⊗ B ⊗ B
+arm 0: R ⊗ R ⊗ R
+  in v0: R, v1: R, v2: R
+  n0  v3 = lt(v0, v1)
+  n1  v4 = lt(v0, v2)
+  n2  v5 = or(v3, v4)
+  n3  v6 = 1.0()
+  n4  v7 = add(v0, v6)
+  n5  v8 = eq(v7, v1)
+  n6  v9 = eq(v7, v2)
+  n7  v10 = or(v8, v9)
+  n8  v11 = false()
+  n9  v12 = 0.0()
+  n10 v13 = eq(v12, v1)
+  n11 v14 = eq(v12, v2)
+  n12 v15 = or(v13, v14)
+  r0  end 0 (v7, v6, v10, v11)
+  r1  end 0 (v7, v12, v10, v11)
+  r2  split v10 ? r0 : r1
+  r3  end 0 (v12, v6, v15, v11)
+  r4  end 0 (v12, v12, v15, v11)
+  r5  split v15 ? r3 : r4
+  r6  split v5 ? r2 : r5
+";
+    assert_eq!(tape.to_string(), expected);
 }
 
 #[test]

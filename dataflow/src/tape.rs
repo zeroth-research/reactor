@@ -145,7 +145,7 @@
 //! }
 //! ```
 //!
-//! is, written one input, node and route per line:
+//! is, as printed by its [`Display`](std::fmt::Display) impl:
 //!
 //! ```text
 //! (R ⊗ D) ⊕ I → R ⊕ I
@@ -317,6 +317,7 @@
 //!   `(A ⊕ B) ⊗ (C ⊕ D)`, and it may not be needed beyond whiskering.
 
 mod check;
+mod display;
 mod ids;
 mod layout;
 mod node;
