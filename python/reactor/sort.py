@@ -28,10 +28,11 @@ def shape(sort) -> list:
 
 
 def with_shape(sort, new_shape) -> Real | Int | Bool | Word:
-    """The sort of the same family as ``sort`` (and width, for words), of another shape."""
+    """The sort of the same family as ``sort`` (and width, for words, and degree, for
+    reals), of another shape."""
     match sort:
-        case Real():
-            return Real(new_shape)
+        case Real(_, degree=d):
+            return Real(new_shape, degree=d)
         case Int():
             return Int(new_shape)
         case Bool():

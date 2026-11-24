@@ -1,6 +1,6 @@
 """Tests for the eager Expression (`reactor.expr`).
 
-Covers `expr()`, the `AExpr`/`BExpr`/`WExpr` split, explicit-sort literals, signed/unsigned
+Covers `expr()`, the `IExpr`/`RExpr`/`BExpr`/`SExpr`/`UExpr` split, explicit-sort literals, signed/unsigned
 word ops, no-implicit-promotion (+ `cast`), the `collecting()` term collector, and eval.
 """
 
@@ -10,7 +10,7 @@ import pytest
 from reactor import Wire, Bool, Int, Real, T, Word, Var, X as _X, TheoryError
 from reactor import tensor
 from reactor.eval import eval_itype
-from reactor.expr import expr, cast, ite, collecting, AExpr, BExpr, WExpr, X
+from reactor.expr import expr, cast, ite, collecting, IExpr, RExpr, BExpr, SExpr, UExpr, X
 
 INT = Int([1, 1])
 REAL = Real([1, 1])
@@ -53,9 +53,11 @@ def _int(n):
 
 
 def test_factory_picks_subclass_from_sort():
-    assert isinstance(expr(_var(INT)), AExpr)
+    assert isinstance(expr(_var(INT)), IExpr)
+    assert isinstance(expr(_var(REAL)), RExpr)
     assert isinstance(expr(True, sort=Bool), BExpr)
-    assert isinstance(expr(_var(BV32)), WExpr)
+    assert isinstance(expr(_var(BV32)), UExpr)
+    assert isinstance(expr(_var(BV32), signed=True), SExpr)
 
 
 def test_expr_is_not_idempotent():
@@ -67,7 +69,8 @@ def test_expr_is_not_idempotent():
 def test_numeric_literal_needs_explicit_sort():
     with pytest.raises(TypeError):
         expr(3)
-    assert isinstance(expr(3, sort=Real), AExpr)
+    assert isinstance(expr(3, sort=Real), RExpr)
+    assert isinstance(expr(3, sort=Int), IExpr)
     assert isinstance(expr(True), BExpr)  # bool is exempt
 
 
@@ -147,7 +150,7 @@ def test_nxt_requires_a_variable():
 
 def test_arith_and_compare_result_sorts():
     x, y = _varexpr(INT), _varexpr(INT)
-    assert isinstance(x + y, AExpr) and (x + y).dtype == INT
+    assert isinstance(x + y, IExpr) and (x + y).dtype == INT
     assert isinstance(x < y, BExpr) and (x < y).dtype == Bool([1, 1])
     assert isinstance(x == y, BExpr)
 
@@ -238,6 +241,10 @@ def test_mixed_sorts_raise():
 def test_cast_identity_and_unsupported():
     x = _varexpr(INT)
     assert cast(x, Int) is x
+    assert cast(x, INT) is x
+    # a concrete sort must be of the shape of the expression
+    with pytest.raises(TypeError):
+        cast(x, Int([2, 2]))
     with pytest.raises(NotImplementedError):
         cast(x, Real)
 
@@ -444,18 +451,18 @@ def test_single_entry_point_spec():
     assert isinstance(x & y & w, BExpr)
     assert isinstance(x & y & w & True, BExpr)
 
-    # a numeric literal needs an explicit sort; with one it is an AExpr
+    # a numeric literal needs an explicit sort; with one it is an RExpr
     with pytest.raises(TypeError):
         expr(0.3)
     b = expr(0.3, sort=Real)
-    assert isinstance(b, AExpr)
-    assert isinstance(b + 1, AExpr)  # raw operand coerces
+    assert isinstance(b, RExpr)
+    assert isinstance(b + 1, RExpr)  # raw operand coerces
 
     # list / tensor constants; matmul with a raw tensor coerces the tensor
     t = expr([0.1, 1.0], sort=Real)
-    assert isinstance(t, AExpr)
+    assert isinstance(t, RExpr)
     u = t @ torch.tensor([[0.2], [0.5]])
-    assert isinstance(u, AExpr)
+    assert isinstance(u, RExpr)
 
     # not idempotent: passing an Expr back into expr() is an error
     with pytest.raises(TypeError):
