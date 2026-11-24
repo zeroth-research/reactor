@@ -42,24 +42,3 @@ def test_the_lakefile_builds_the_certificate_library(tmp_path):
     lakefile = (project / "lakefile.toml").read_text()
     assert f'name = "{CERT_LIB}"' in lakefile
     assert re.search(rf'defaultTargets = \[[^\]]*"{CERT_LIB}"', lakefile)
-
-
-def test_a_certificate_file_this_run_does_not_write_is_removed(tmp_path):
-    """`Certificate/` is globbed by the build, so a file an earlier run left
-    there -- an inference route's `Equivalence.lean`, say -- would be built
-    against this run's module. Generating the project again removes it,
-    without knowing which route wrote it."""
-    from reactor_lean.cli.outputs import stale_certificate_files
-
-    module = load_module(FIXTURES / "counter.py")
-    files = certificate_files(LeanContext(module))
-    project = create_project(tmp_path, module, "Rea", certificate=files)
-    assert stale_certificate_files(project, files) == ()
-
-    stale = project / CERT_LIB / "Equivalence.lean"
-    stale.write_text("-- an earlier run's\n")
-    remove = stale_certificate_files(project, files)
-    assert remove == (f"{CERT_LIB}/Equivalence.lean",)
-    create_project(tmp_path, module, "Rea", certificate=files, remove=remove)
-    assert not stale.exists()
-    assert all((project / rel).exists() for rel in files)

@@ -7,7 +7,7 @@ writes as they are.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -154,7 +154,6 @@ def create_project(
     *,
     certificate: Mapping[str, str],
     source: "SourceText | None" = None,
-    remove: Iterable[str] = (),
     ctx: "LeanContext | None" = None,
 ) -> Path:
     """
@@ -168,9 +167,6 @@ def create_project(
                            as `proof.render.certificate_files` renders them.
         `source`:          The input the module was read from, written to
                            `dbg/system.py` as a debug artifact.
-        `remove`:          Project-relative files an earlier run in the same
-                           `-o` may have left where a lean_lib globs; they
-                           are deleted before anything is written there.
         `ctx`:             A `LeanContext` this run already built, so the
                            discovery pass runs once rather than once here
                            and again for every file rewritten later.
@@ -202,15 +198,6 @@ def create_project(
     print(f"Wrote {toolchain}")
 
     (project_dir / "Certificate.lean").write_text(render("project/Certificate.lean.j2"))
-
-    # The `Certificate` lean_lib globs its submodules, so every file in
-    # `Certificate/` is built -- including one this run did not write. A file
-    # a caller writes there is written *after* this, so anything already
-    # there is a copy an earlier run left in the same `-o`: it is about a
-    # different module, and lake would build it against this run's `System/`.
-    # The caller names those files in `remove`.
-    for rel in remove:
-        (project_dir / rel).unlink(missing_ok=True)
 
     # ----------------------------------------------------------
     # Generate reactive module (init and update)

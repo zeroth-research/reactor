@@ -1,6 +1,6 @@
 """The project's lakefile: the dependencies every project requires
-(Mathlib, Cslib, and the ReactLib repository's `ReactLib` and
-`LeanAI`) at the revisions it pins.
+(Mathlib, Cslib, and the ReactLib repository's `ReactLib`) at the
+revisions it pins.
 """
 
 from __future__ import annotations
@@ -18,17 +18,15 @@ CSLIB_REV = MATHLIB_REV
 # Lean toolchain version — should match Mathlib's requirement
 LEAN_TOOLCHAIN = f"leanprover/lean4:{MATHLIB_REV}"
 
-# The Lean libraries the generated files import come in two Lake packages,
-# each in its own directory of the ReactLib repository, which is also
-# what each package is named: `ReactLib`, whose libraries are
+# The Lean libraries the generated files import are the Lake package
+# `ReactLib`, in the directory of the ReactLib repository of that name:
 # `Relational.*`, which the encodings and the certificate are stated in,
-# and `Spec.*`, the LTL their proof rules are stated in; and `LeanAI`, the
-# `ai_solve` tactic.
+# and `Spec.*`, the LTL their proof rules are stated in.
 REACTLIB_URL = "https://github.com/zeroth-research/ReactLib"
 # A commit rather than a branch, so a project cannot drift from the
 # generator that wrote it.
 REACTLIB_REV = "97144c6538db206fdefa10825d850219901c673b"
-REACTLIB_PACKAGES = ("ReactLib", "LeanAI")
+REACTLIB_PACKAGES = ("ReactLib",)
 # A ReactLib checkout to require by path instead of from git, to work on
 # the libraries and the generator together.
 REACTLIB_ENV = "REACTLIB"
@@ -75,10 +73,8 @@ _REACTLIB_COMMENTS = {
         "ReactLib's `ReactLib` package: `Relational.*`, what the encodings and "
         "the certificate are stated in, and `Spec.*`, the LTL of its proof "
         "rules.\n"
-        f"Set ${REACTLIB_ENV} to a ReactLib checkout to require its "
-        "packages by path."
+        f"Set ${REACTLIB_ENV} to a ReactLib checkout to require it by path."
     ),
-    "LeanAI": "ReactLib's `LeanAI`: the `ai_solve` tactic.",
 }
 
 

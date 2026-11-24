@@ -3,14 +3,10 @@ name = "{{ project_name }}"
 version = "0.1.0"
 defaultTargets = ["System", "Certificate"]
 
-# The root `Certificate.lean` imports the certificate alone. The directory
-# can also hold modules that cannot be imported beside it -- stated over a
-# library that declares the same top-level name as one the certificate
-# uses, which is rejected before elaboration -- so the glob reaches each
-# as a module of its own.
+# The root `Certificate.lean` imports the certificate, and through it
+# every file of `Certificate/`.
 [[lean_lib]]
 name = "Certificate"
-globs = ["Certificate", "Certificate.+"]
 
 [[lean_lib]]
 name = "System"
@@ -36,11 +32,6 @@ subDir = "{{ req.sub_dir }}"
 {% endif %}
 {% endif %}
 {% endfor %}
-
-#[[require]]
-#name = "mylib"
-#git = "https://github.com/zeroth/proof-prototyping"
-#rev = "main"
 {% if executable %}
 
 [[lean_exe]]

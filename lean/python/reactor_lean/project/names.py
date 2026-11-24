@@ -44,8 +44,8 @@ class Layout:
 SYSTEM_LAYOUT = Layout(base="System", prefix="System.")
 
 
-# The certificate's library: the `Certificate/` directory and the lean_lib
-# that globs it, so every file in it is built.
+# The certificate's library: the `Certificate/` directory, and the lean_lib
+# whose root imports it.
 CERT_LIB = "Certificate"
 DATA = "Data"                   # the predicates (`Data.lean.j2`)
 MODULE = "Module"               # `RM` and `lts`, fixed text (`Module.lean.j2`)

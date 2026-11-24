@@ -12,7 +12,6 @@ from ..codegen.context import LeanContext
 from ..codegen.encodings import ModuleToLean4
 from ..core.errors import Refused
 from .. import parse
-from ..project.names import CERT_LIB
 from ..project.scaffold import ENCODINGS, Layout, create_project, write_encoding
 from ..proof.render import (
     LeanCertificate,
@@ -59,29 +58,7 @@ def generate(settings: Settings, module, ctx: LeanContext,
             executable=settings.executable,
             certificate=certificate,
             source=source,
-            remove=stale_certificate_files(
-                settings.output_dir / settings.project_name, certificate),
             ctx=ctx,
         )
     except (Refused, OSError) as e:
         raise SystemExit(f"error: {e}") from e
-
-
-def stale_certificate_files(project_dir: Path,
-                            certificate: "dict[str, str]") -> tuple[str, ...]:
-    """The files under `Certificate/` this run will not write.
-
-    `Certificate/` is globbed by the build, so a file an earlier run in this
-    `-o` left there would be built against this run's module. What wrote it
-    is not the point: anything there that is not this run's certificate is a
-    leftover. Directories beside `Certificate/` are left alone: nothing
-    globs them until the lakefile declares a lean_lib for them.
-    """
-    root = project_dir / CERT_LIB
-    if not root.is_dir():
-        return ()
-    return tuple(sorted(
-        rel for rel in (p.relative_to(project_dir).as_posix()
-                        for p in root.rglob("*.lean"))
-        if rel not in certificate
-    ))

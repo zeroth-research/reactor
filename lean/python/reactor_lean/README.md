@@ -69,14 +69,13 @@ NAME/
 ```
 
 The Lean library the project is stated in is not part of it: the lakefile
-requires two packages of [ReactLib][ReactLib], each in its own
+requires the `ReactLib` package of [ReactLib][ReactLib], in its own
 directory of that repository.
 
 | Package | Library | Modules | Contents |
 |---------|---------|---------|----------|
 | `ReactLib` | `Spec` | `Spec.LTL` | LTL formulas and their semantics |
 | | `Relational` | `Relational.Mat`, `.Box`, `.Basic` | matrices, ReactiveModule, the proof rules (`rule_globally`, `rule_buchi`) |
-| `LeanAI` | `LeanAI` | `LeanAI.*` | the `ai_solve` tactic |
 
 By default they are git requires at `project/lakefile.py`'s
 `REACTLIB_REV`. With `REACTLIB` set to a ReactLib checkout they
@@ -540,11 +539,6 @@ uv run reactor mymodule.py --buchi "(= (X @intf.0) 0)" --cert-file out/MyCert.le
   dbg/                        # system.txt (the module) and a copy of the input
   Main.lean                   # only with --executable
 ```
-
-A file in `Certificate/` the run does not write -- one an earlier run left
-there, say -- is deleted when the project is generated again: the
-`Certificate` library globs the directory, and the file would be built
-against this run's module.
 
 **Standalone certificate** (`--cert-file path/Name.lean`):
 

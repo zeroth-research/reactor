@@ -1,8 +1,8 @@
 """The templates, and the Lean library the files they render import.
 
 `templates/` holds the Jinja templates of the generated project's files and
-no Lean sources: the library those files import -- `Relational.*`, and
-`LeanAI` -- is ReactLib's, and the project's lakefile requires it. A
+no Lean sources: the library those files import -- `Relational.*` -- is
+ReactLib's, and the project's lakefile requires it. A
 `.lean` file left under `templates/` would be read by nothing, so editing it
 would silently do nothing, which is what the first two tests exist to
 prevent. (`templates/` once carried two byte-identical sets of the Core
@@ -74,7 +74,7 @@ def _require(lakefile: str, name: str) -> str:
     """The `[[require]]` table named `name`, up to the next blank line."""
     block = lakefile.split(f'[[require]]\nname = "{name}"\n', 1)
     assert len(block) == 2, f"the lakefile does not require {name}"
-    return block[1].split("\n\n", 1)[0]
+    return block[1].split("\n\n", 1)[0].rstrip("\n")
 
 
 def test_the_lakefile_requires_each_package_from_its_directory_of_the_repo(
