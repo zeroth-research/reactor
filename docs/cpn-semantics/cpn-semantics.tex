@@ -27,6 +27,9 @@
 
 \newtheorem{definition}{Definition}
 \newtheorem{remark}{Remark}
+\newtheorem{gadget}{Gadget}
+\newtheorem{theorem}{Theorem}
+\newtheorem{corollary}{Corollary}
 
 \title{Semantics of Coloured Petri Nets in SDCPN sense}
 \author{Igor Konnov, Thomas Pani}
@@ -535,6 +538,423 @@ affects the \DCPN{0} only via the initial marking.
   transitions. The lock places do not have this problem.
 \end{remark}
 
+%%%%%%%%%%%
+\subsection{Undecidability of parameterized reachability}\label{sec:undecidability}
+
+A small model theorem for \DCPN{0} would state that, to check whether a bad
+marking is reachable from an initial marking with arbitrarily many tokens, it
+suffices to check initial markings with a bounded number of tokens. In this
+section, we show that no computable bound exists in general, even if every
+fixed initial marking has only finitely many reachable markings. To this end,
+we encode unidirectional token rings, in which a single token carries a value
+from a finite set. Parameterized verification of such rings is
+undecidable~\cite{Suzuki1988,EmersonNamjoshi1995,EmersonNamjoshi2003}.
+
+\paragraph{Token rings.}
+We use a variant of the token-passing systems of Bloem et
+al.~\cite[Sec.~4.1.2]{BloemEtAl2015}. A \emph{token-ring template} is a
+tuple $\mathsf{P} = (Q_T, Q_N, \iota_T, \iota_N, \Theta, \delta_{\mathit{int}},
+\delta_!, \delta_?)$, where:
+\begin{itemize}
+  \item $Q_T$ and~$Q_N$ are disjoint finite sets of local states with and
+    without the token, respectively, and $Q = Q_T \cup Q_N$;
+  \item $\iota_T \in Q_T$ and $\iota_N \in Q_N$ are the initial states;
+  \item $\Theta$ is a finite set of token values;
+  \item $\delta_{\mathit{int}} \subseteq (Q_T \times Q_T) \cup
+    (Q_N \times Q_N)$ is the set of internal transitions;
+  \item $\delta_! \subseteq Q_T \times \Theta \times Q_N$ is the set of send
+    transitions, and $\delta_? \subseteq Q_N \times \Theta \times Q_T$ is
+    the set of receive transitions.
+\end{itemize}
+For $N \ge 1$, the \emph{ring of size~$N$} consists of $N$ copies of
+$\mathsf{P}$ with the identifiers $0, \dots, N - 1$. We write
+$i \oplus 1 = (i + 1) \bmod N$. A global state is a function
+$s : \{0, \dots, N - 1\} \to Q$. In the initial global state~$s_0$, we have
+$s_0(0) = \iota_T$ and $s_0(i) = \iota_N$ for $1 \le i < N$. There is a
+step from~$s$ to~$s'$ iff one of the following holds, and
+$s'(l) = s(l)$ for all other identifiers~$l$:
+\begin{enumerate}
+  \item \emph{internal step}: $(s(i), s'(i)) \in \delta_{\mathit{int}}$ for
+    some~$i$;
+  \item \emph{token passing}: $(s(i), \theta, s'(i)) \in \delta_!$ and
+    $(s(i \oplus 1), \theta, s'(i \oplus 1)) \in \delta_?$ for some~$i$
+    and $\theta \in \Theta$. That is, process~$i$ sends the token with the
+    value~$\theta$ to process~$i \oplus 1$, which may change its value by
+    moving into a state of~$Q_T$.
+\end{enumerate}
+A global state is \emph{reachable} if it is reachable from~$s_0$ in finitely
+many steps. The \emph{parameterized reachability problem} is: given a
+template~$\mathsf{P}$ and a set $\mathit{Bad} \subseteq Q$, are there
+$N \ge 2$ and a reachable global state~$s$ of the ring of size~$N$ such that
+$s(i) \in \mathit{Bad}$ for some~$i$?
+
+\begin{theorem}[Suzuki~\cite{Suzuki1988}, Emerson and
+  Namjoshi~\cite{EmersonNamjoshi1995,EmersonNamjoshi2003}]\label{thm:rings}
+  The parameterized reachability problem for token rings is undecidable.
+\end{theorem}
+
+Bloem et al.~\cite[Thm.~4.12]{BloemEtAl2015} state this result as
+undecidability of parameterized model checking for the safety fragment of
+indexed LTL$\setminus$X. Their proof, which follows Emerson and
+Namjoshi~\cite[Sec.~6]{EmersonNamjoshi2003}, simulates a two-counter
+machine~$M$:
+\begin{itemize}
+  \item The process that starts with the token becomes the controller.
+  \item The other processes store the counters of~$M$ and a step counter in
+    unary.
+  \item The token values are the commands that the controller sends around
+    the ring.
+\end{itemize}
+In this way, the ring of size~$N$ simulates up to $N - 1$ steps of~$M$ with
+counter values up to $N - 1$. If the controller moves into a state
+of~$\mathit{Bad}$ when $M$ halts, then $M$ halts iff a state of~$\mathit{Bad}$ is
+reachable in some ring. The restriction to $N \ge 2$ does not matter, since
+the ring of size~$1$ is a finite system. The templates of Bloem et al.\ are
+special cases of ours.
+
+\paragraph{The construction.}
+Fix a template~$\mathsf{P}$ and a set $\mathit{Bad} \subseteq Q$. We assume
+without loss of generality that $Q \subseteq \NatZero$, that is, local states
+are encoded as numbers. We construct a \DCPN{0}~$\mathcal{N}_{\mathsf{P}}$
+with $k = 3$ and $\Dom = \NatZero$, see Figure~\ref{fig:ring}. Its tokens are
+of three kinds:
+\begin{itemize}
+  \item A \emph{process token} has a colour $(i, N, q)$. It represents
+    process~$i$ in the ring of size~$N$ in the local state~$q$.
+  \item A \emph{counter token} has a colour $(v, 0, 0)$, which we abbreviate
+    as~$v$.
+  \item All other tokens have the colour $\bar{0} = (0, 0, 0)$.
+\end{itemize}
+For a colour~$c$, we write $c_1$, $c_2$, and~$c_3$ for its components. The
+places are as follows:
+\begin{itemize}
+  \item $P_1$ holds the initial tokens, whose number is the parameter;
+  \item $P_2$ holds the tokens that have been counted;
+  \item $P_3$ holds a counter token, which counts the tokens in~$P_2$ and
+    eventually holds the ring size;
+  \item $P_4$ holds a counter token with the next identifier;
+  \item $P_5$ holds the process tokens;
+  \item $B$ and~$A$ hold a phase token, which is in~$B$ while counting and
+    in~$A$ while assigning identifiers;
+  \item $\mathit{Err}$ receives the process tokens in bad states.
+\end{itemize}
+All transitions are guard transitions, and $\mathcal{V}_P(c) = \bar{0}$ for
+every place~$P$, that is, colours do not change in ticks. We list the
+transitions with their input arcs, output arcs, guards, and firing functions:
+
+\begin{itemize}
+  \item $T_1$ consumes $x$ from~$P_1$, $c$ from~$P_3$, and $b$ from~$B$. Its
+    guard is~$\mathit{True}$, and
+    $\pi_{T_1}(x, c, b) = (x, (c_1 + 1, 0, 0), b)$, where the produced
+    tokens go to $P_2$, $P_3$, and~$B$, respectively.
+
+  \item $D$ consumes $b$ from~$B$ and produces~$b$ in~$A$. Its guard
+    is~$\mathit{True}$.
+
+  \item $T_2^0$ and~$T_2^+$ consume $x$ from~$P_2$, $c$ from~$P_3$, $d$
+    from~$P_4$, and $a$ from~$A$. They produce tokens in $P_5$, $P_3$, $P_4$,
+    and~$A$ with
+    \begin{align*}
+      \pi_{T_2^0}(x, c, d, a) &= ((d_1, c_1, \iota_T), c, (d_1 + 1, 0, 0), a),\\
+      \pi_{T_2^+}(x, c, d, a) &= ((d_1, c_1, \iota_N), c, (d_1 + 1, 0, 0), a).
+    \end{align*}
+    The guard of~$T_2^0$ is $d_1 = 0 \wedge c_1 \ge 2$, and the guard
+    of~$T_2^+$ is $d_1 \ge 1$.
+
+  \item $\mathit{Int}_{q, q'}$, for $(q, q') \in \delta_{\mathit{int}}$,
+    consumes $c$ from~$P_5$ and produces $(c_1, c_2, q')$ in~$P_5$. Its guard
+    is $c_3 = q$.
+
+  \item $\mathit{Pass}_{q, \theta, q', r, r'}$, for
+    $(q, \theta, q') \in \delta_!$ and $(r, \theta, r') \in \delta_?$, has two
+    arcs from~$P_5$ and two arcs to~$P_5$. It consumes $c$ and~$d$, and
+    produces $(c_1, c_2, q')$ and~$(d_1, d_2, r')$. Its guard is
+    \[
+      c_3 = q \wedge d_3 = r \wedge
+      \bigl(c_1 + 1 = d_1 \vee (c_1 + 1 = c_2 \wedge d_1 = 0)\bigr).
+    \]
+
+  \item $\mathit{Idle}$ consumes $c$ from~$P_5$ and produces~$c$ in~$P_5$.
+    Its guard is~$\mathit{True}$.
+
+  \item $\mathit{Det}_q$, for $q \in \mathit{Bad}$, consumes $c$ from~$P_5$
+    and produces~$c$ in~$\mathit{Err}$. Its guard is $c_3 = q$.
+\end{itemize}
+
+For $n \in \NatZero$, the initialisation function~$\mathcal{I}_n$ puts
+$n$ tokens of colour~$\bar{0}$ in~$P_1$ and one token of colour~$\bar{0}$
+in each of $P_3$, $P_4$, and~$B$. All other places are empty. The functions
+$\mathcal{I}_n$ differ only in the number of tokens in~$P_1$.
+
+\begin{figure}[tbp]
+  \centering
+  \begin{tikzpicture}[
+      >={Stealth[length=2mm]},
+      every place/.style={draw, thick, minimum size=8mm, font=\small},
+      every transition/.style={draw, thick, fill=black!15,
+        minimum width=3mm, minimum height=8mm},
+      every label/.style={font=\small},
+      ins/.style={font=\scriptsize},
+      arc/.style={->, thick}]
+    \node at (-1, 2.9) {(a)};
+    \node[place, label=left:$P_1$] (P1) at (0, 0) {$n$};
+    \node[transition] (T1) at (2, 0) {};
+    \node[font=\small] at (2.5, 0.3) {$T_1$};
+    \node[place, label=below:$P_2$] (P2) at (4.25, 0) {};
+    \node[transition] (T2) at (6.5, 0) {};
+    \node[font=\small] at (5.55, -0.4) {$T_2^0, T_2^+$};
+    \node[place, label=right:$P_5$] (P5) at (9, 0) {};
+    \node[place, tokens=1, label=left:$B$] (B) at (2, 2.2) {};
+    \node[transition, label=above:$D$] (D) at (4.25, 2.2) {};
+    \node[place, label=right:$A$] (A) at (6.5, 2.2) {};
+    \node[place, tokens=1, label=below:$P_3$] (P3) at (4.25, -2.2) {};
+    \node[place, tokens=1, label=right:$P_4$] (P4) at (8, -2.2) {};
+    \draw[arc] (P1) -- (T1);
+    \draw[arc] (T1) -- (P2);
+    \draw[arc] (P2) -- (T2);
+    \draw[arc] (T2) -- node[ins, above] {$(j, v, \iota)$} (P5);
+    \draw[arc] (B) to[bend right=25] (T1);
+    \draw[arc] (T1) to[bend right=25] (B);
+    \draw[arc] (B) -- (D);
+    \draw[arc] (D) -- (A);
+    \draw[arc] (A) to[bend right=25] (T2);
+    \draw[arc] (T2) to[bend right=25] (A);
+    \draw[arc] (P3) to[bend left=15] node[ins, right] {$v$} (T1);
+    \draw[arc] (T1) to[bend right=40] node[ins, below left] {$v + 1$} (P3);
+    \draw[arc] (P3) to[bend right=15] node[ins, left] {$v$} (T2);
+    \draw[arc] (T2) to[bend left=40] node[ins, below right] {$v$} (P3);
+    \draw[arc] (P4) to[bend right=20] node[ins, right] {$j$} (T2);
+    \draw[arc] (T2) to[bend right=20] node[ins, left, pos=0.65] {$j + 1$} (P4);
+  \end{tikzpicture}
+
+  \vspace{6mm}
+
+  \begin{tikzpicture}[
+      >={Stealth[length=2mm]},
+      every place/.style={draw, thick, minimum size=8mm, font=\small},
+      every transition/.style={draw, thick, fill=black!15,
+        minimum width=3mm, minimum height=8mm},
+      every label/.style={font=\small},
+      ins/.style={font=\scriptsize},
+      arc/.style={->, thick},
+      aux/.style={draw=blue, text=blue}]
+    \node at (-4.5, 2.4) {(b)};
+    \node[place, label={[xshift=3mm]below right:$P_5$}] (P5) at (0, 0) {};
+    \node[transition, label=above:$\mathit{Pass}$] (Pass) at (0, 2.2) {};
+    \node[transition, label=left:$\mathit{Int}$] (Int) at (-3, 0) {};
+    \node[transition, aux, fill=blue!15,
+      label={[text=blue]below:$\mathit{Idle}$}] (Idle) at (0, -2.2) {};
+    \node[transition, label=above:$\mathit{Det}$] (Det) at (3, 0) {};
+    \node[place, label=right:$\mathit{Err}$] (Err) at (5.25, 0) {};
+    \draw[arc] (P5) to[bend left=35]
+      node[ins, left, pos=0.75] {$(i, N, p) + (i', N', p')$} (Pass);
+    \draw[arc] (Pass) to[bend left=35]
+      node[ins, right, pos=0.25] {$(i, N, q') + (i', N', r')$} (P5);
+    \draw[arc] (P5) to[bend left=30] node[ins, below] {$(i, N, p)$} (Int);
+    \draw[arc] (Int) to[bend left=30] node[ins, above] {$(i, N, q')$} (P5);
+    \draw[arc, aux] (P5) to[bend left=30] node[ins, right] {$c$} (Idle);
+    \draw[arc, aux] (Idle) to[bend left=30] node[ins, left] {$c$} (P5);
+    \draw[arc] (P5) -- node[ins, above] {$(i, N, p)$} (Det);
+    \draw[arc] (Det) -- node[ins, above] {$(i, N, p)$} (Err);
+  \end{tikzpicture}
+  \caption{The \DCPN{0}~$\mathcal{N}_{\mathsf{P}}$ with the initial
+    marking~$\mathcal{I}_n$: (a)~bootstrapping and (b)~token passing.
+    A dot is a token of colour~$\bar{0}$, and $n$ stands for $n$~such tokens.
+    Arcs without inscriptions carry tokens of colour~$\bar{0}$, and the
+    inscriptions $v$ and~$j$ stand for the counter colours $(v, 0, 0)$
+    and~$(j, 0, 0)$. The box $T_2^0, T_2^+$ stands for two transitions with
+    the same arcs, which produce $\iota = \iota_T$ and $\iota = \iota_N$,
+    respectively. The boxes $\mathit{Pass}$, $\mathit{Int}$,
+    and~$\mathit{Det}$ stand for the families of transitions in the text, and
+    an inscription with two summands stands for two arcs. The auxiliary
+    self-loop~$\mathit{Idle}$, shown in blue, lets a process skip a round.}
+  \label{fig:ring}
+\end{figure}
+
+\paragraph{How the net works.}
+The net runs in three phases, which may overlap.
+\begin{enumerate}
+  \item \emph{Counting.} While the phase token is in~$B$, transition~$T_1$
+    moves the tokens from $P_1$ to~$P_2$ one by one, and increments the
+    counter in~$P_3$.
+  \item \emph{Assigning identifiers.} Transition~$D$ moves the phase token
+    to~$A$. From then on, the counter in~$P_3$ holds the ring size~$N$.
+    Transitions $T_2^0$ and~$T_2^+$ move the tokens from $P_2$ to~$P_5$ one
+    by one. Each moved token receives a fresh identifier from the counter
+    in~$P_4$ and the ring size~$N$. The process with identifier~$0$ starts in
+    the state~$\iota_T$, that is, with the token, and all other processes
+    start in~$\iota_N$.
+  \item \emph{Token passing.} In~$P_5$, transition~$\mathit{Int}$ performs
+    internal steps, and $\mathit{Pass}$ passes the token from process~$i$ to
+    process~$i \oplus 1$. Its guard expresses
+    $(c_1 + 1) \bmod c_2 = d_1$ in LIA, since identifiers are smaller than
+    the ring size. As in Section~\ref{sec:vaccination},
+    $\mathit{Idle}$ lets every process token skip a round. Finally,
+    $\mathit{Det}$ moves a process in a bad state to~$\mathit{Err}$.
+\end{enumerate}
+
+\paragraph{No inhibitor arcs.}
+Ideally, $T_2^0$ and~$T_2^+$ would fire only once $P_1$ is empty, and
+$\mathit{Pass}$ would fire only once $P_2$ is empty. Since \DCPN{0} has no
+inhibitor arcs, we cannot test these conditions, but neither is needed:
+\begin{itemize}
+  \item \emph{Emptiness of~$P_1$.} The phase token replaces this test.
+    If $D$ fires while $P_1$ is not empty, the remaining tokens of~$P_1$ are
+    stranded, since $T_1$ requires the phase token in~$B$. Then the ring is
+    smaller, which does not matter, since the ring size is existentially
+    quantified.
+  \item \emph{Emptiness of~$P_2$.} Process tokens may move before all
+    identifiers are assigned. A process that has not been assigned yet
+    behaves like a process that stays in~$\iota_N$. In particular,
+    $\mathit{Pass}$ cannot pass the token to it, since the guard
+    of~$\mathit{Pass}$ requires its process token.
+\end{itemize}
+
+We say that $\mathit{Err}$ is \emph{markable} from~$\mathcal{I}_n$ if some
+execution that starts with the initial marking defined by~$\mathcal{I}_n$
+contains a marking with a token in~$\mathit{Err}$.
+
+\begin{theorem}\label{thm:undecidable}
+  For every $n \in \NatZero$, the place $\mathit{Err}$ is markable
+  from~$\mathcal{I}_n$ iff there are $N$ with $2 \le N \le n$ and a
+  reachable global state~$s$ of the ring of size~$N$ with
+  $s(i) \in \mathit{Bad}$ for some~$i$. Consequently, the following problem
+  is undecidable: given a \DCPN{0} with places $P_1$ and~$\mathit{Err}$ and
+  a family of initialisation functions~$\mathcal{I}_n$ that differ only in
+  the number~$n$ of tokens in~$P_1$, is $\mathit{Err}$ markable
+  from~$\mathcal{I}_n$ for some~$n$?
+\end{theorem}
+
+\begin{proof}
+  Since $\mathcal{V}_P(c) = \bar{0}$ for every place~$P$, a tick of every
+  duration~$h > 0$ is possible and leaves the marking unchanged. Since every
+  marking has a successor round, every finite sequence of rounds extends to
+  an execution. Hence, $\mathit{Err}$ is markable from~$\mathcal{I}_n$ iff
+  there are rounds $\bfm_0 \Rightarrow \bfm_1 \Rightarrow \dots \Rightarrow
+  \bfm_\ell$, where $\bfm_0$ is the initial marking and $\bfm_\ell$ has a
+  token in~$\mathit{Err}$.
+
+  ($\Leftarrow$) Let $s_0, s_1, \dots, s_r$ be a sequence of steps of the
+  ring of size~$N$, where $2 \le N \le n$ and $s_r(i) \in \mathit{Bad}$. We
+  construct the rounds as follows:
+  \begin{itemize}
+    \item In each of the first $N$ rounds, $T_1$ fires.
+    \item In the next round, $D$ fires. Then the counter in~$P_3$ is~$N$,
+      and $P_2$ holds $N$ tokens.
+    \item In each of the next $N$ rounds, $T_2^0$ fires (in the first of
+      these rounds) or $T_2^+$ fires (in the other rounds), and
+      $\mathit{Idle}$ consumes all tokens in~$P_5$. Afterwards, $P_5$
+      holds exactly the tokens $(i, N, s_0(i))$ for $0 \le i < N$.
+    \item For every step from $s_{l-1}$ to~$s_l$, one round fires the
+      corresponding transition $\mathit{Int}_{q, q'}$ on the token of
+      process~$i$, or the corresponding
+      $\mathit{Pass}_{q, \theta, q', r, r'}$ on the tokens of processes~$i$
+      and~$i \oplus 1$. $\mathit{Idle}$ consumes all other tokens in~$P_5$.
+      Since $P_2$ is empty and the phase token is in~$A$, no other
+      transition is enabled, so the round is maximal. Afterwards, $P_5$
+      holds exactly the tokens $(i, N, s_l(i))$.
+    \item In the last round, $\mathit{Det}_{s_r(i)}$ fires on the token of
+      process~$i$.
+  \end{itemize}
+
+  ($\Rightarrow$) Consider rounds from the initial marking up to the first
+  round in which a transition $\mathit{Det}_q$ fires. Every transition has
+  as many output arcs as input arcs, so the markings contain $n + 3$ tokens.
+  While the phase token is in~$B$, every round fires
+  exactly one of $T_1$ and~$D$, since both consume the phase token and $D$
+  is always enabled. Hence, the counter in~$P_3$ equals the number of tokens
+  in~$P_2$, and no process token exists. Once $D$ has fired, the phase token
+  stays in~$A$ forever, $T_1$ is disabled, and the counter in~$P_3$ keeps its
+  value~$N$, where $N \le n$. Then the following invariant holds, where $j$ is
+  the value of the counter in~$P_4$:
+  \begin{itemize}
+    \item $P_2$ holds $N - j$ tokens;
+    \item $P_5$ holds exactly one token $(i, N, q_i)$ for every $i < j$;
+    \item if $j \ge 1$, then $N \ge 2$, and the global state~$s$ with
+      $s(i) = q_i$ for $i < j$ and $s(i) = \iota_N$ for $j \le i < N$ is
+      reachable in the ring of size~$N$.
+  \end{itemize}
+  The invariant holds when $D$ fires, since then $j = 0$ and $P_5$ is
+  empty. Consider a round that preserves the invariant. Since the counter
+  token in~$P_4$ is consumed by $T_2^0$ and~$T_2^+$, at most one of them
+  fires in the round:
+  \begin{itemize}
+    \item If $T_2^0$ fires, then $j = 0$ and $N \ge 2$, and it adds the
+      token $(0, N, \iota_T)$. Then $s$ becomes the initial global
+      state~$s_0$.
+    \item If $T_2^+$ fires, then it adds the token $(j, N, \iota_N)$, which
+      agrees with $s(j) = \iota_N$.
+  \end{itemize}
+  The other firings in the round consume pairwise distinct process tokens.
+  Their guards are evaluated on the snapshot, and the identifiers are
+  smaller than~$N$:
+  \begin{itemize}
+    \item A firing of $\mathit{Int}_{q, q'}$ on the token of process~$i$ is
+      an internal step of process~$i$.
+    \item The guard of $\mathit{Pass}_{q, \theta, q', r, r'}$ on the tokens
+      of processes $i$ and~$i'$ implies $i' = i \oplus 1$, so its firing is
+      a token passing from~$i$ to~$i \oplus 1$.
+    \item $\mathit{Idle}$ changes nothing.
+  \end{itemize}
+  Since these steps involve pairwise distinct processes, they can be
+  performed one after another in any order. This yields a sequence of steps
+  from~$s$ to the global state of the new marking. Hence, the invariant is
+  preserved.
+
+  Finally, the first firing of $\mathit{Det}_q$ consumes a token
+  $(i, N, q)$ with $q \in \mathit{Bad}$ from the snapshot. By the
+  invariant, $N \ge 2$, and a global state~$s$ with $s(i) = q$ is reachable
+  in the ring of size~$N$.
+
+  Undecidability follows from Theorem~\ref{thm:rings}, since
+  $\mathcal{N}_{\mathsf{P}}$ is computable from $\mathsf{P}$
+  and~$\mathit{Bad}$.
+\end{proof}
+
+\begin{corollary}[No computable cutoff]\label{cor:cutoff}
+  There is no computable function~$f$ that maps every \DCPN{0} with places
+  $P_1$ and~$\mathit{Err}$ to a number such that the following holds: if
+  $\mathit{Err}$ is markable from~$\mathcal{I}_n$ for some~$n$, then it is
+  markable from~$\mathcal{I}_n$ for some $n \le f(\mathcal{N})$.
+\end{corollary}
+
+\begin{proof}
+  From~$\mathcal{I}_n$, the net~$\mathcal{N}_{\mathsf{P}}$ has only finitely
+  many reachable markings:
+  \begin{itemize}
+    \item they contain $n + 3$ tokens;
+    \item the counters, identifiers, and ring sizes are at most~$n$;
+    \item the local states range over the finite set~$Q$.
+  \end{itemize}
+  Every round has finitely many outcomes, so the set of reachable markings is
+  computable. Given such an~$f$, we could decide the problem of
+  Theorem~\ref{thm:undecidable} by exploring the reachable markings
+  from~$\mathcal{I}_n$ for every $n \le f(\mathcal{N}_{\mathsf{P}})$.
+\end{proof}
+
+\begin{remark}[Why token rings?]\label{rem:why-rings}
+  Reachability in \DCPN{0} with $\Dom = \NatZero$ is undecidable for a much
+  simpler reason. A single token simulates a two-counter machine: its place
+  is the control state, and its colour $(x, y) \in \NatZero^2$ holds the
+  two counters. For the counter~$x$:
+  \begin{itemize}
+    \item the guards $x = 0$ and $x \ge 1$ test it for zero;
+    \item the firing functions $x + 1$ and $x - 1$ increment and decrement
+      it.
+  \end{itemize}
+  The construction above shows more. Its colours are only copied, set to
+  constants, or incremented, and they are bounded by the number of initial
+  tokens. Hence, every fixed initial marking yields a finite system, and the
+  undecidability stems from the unbounded number of tokens alone.
+  Corollary~\ref{cor:cutoff} is what a small model theorem has to work
+  around. For instance, it has to forbid guards like that of
+  $\mathit{Pass}$, which compares the colours of two tokens and thus lets the
+  tokens arrange themselves in a ring.
+
+  The construction also works for $\Dom = \Real$, since all colours remain
+  integers.
+\end{remark}
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \section{\DCPN{1}}
 
@@ -834,8 +1254,539 @@ happens with a positive probability.
   $\mathit{Skip}_T$ may also fire when $T$ has a binding. This is harmless in
   the nondeterministic reading. In a probabilistic reading,
   $\mathit{Skip}_T$ should only fire when $T$ has no binding, which requires
-  inhibitor arcs.
+  inhibitor arcs. \DCPN{2} has them, see Gadget~\ref{gad:lock}.
 \end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{\DCPN{2}}\label{sec:dcpn2}
+
+In this section, we extend \DCPN{1}, so that the gadgets of
+Section~\ref{sec:gadgets} can express further features of DCPNs. We only list
+the differences to \DCPN{1}:
+
+\begin{itemize}
+  \item Every token carries $d \ge 1$ delay clocks instead of one.
+
+  \item In every place, a delay clock either is frozen, or it counts down at
+    a non-negative rate, which may depend on the colour of the token.
+
+  \item A firing may add random noise to any colour component of a produced
+    token, not only to a delay clock. The noise is sampled from a fixed
+    distribution whose support is definable in LIA or LRA, for example, an
+    exponential distribution, a distribution with finitely many values, or a
+    uniform distribution on an interval.
+
+  \item In addition to ordinary arcs, there are enabling arcs and inhibitor
+    arcs.
+\end{itemize}
+
+\subsection{Structure and syntax}
+
+A \emph{\DCPN{2}} is a tuple as in Definition~\ref{def:dcpn0} with the
+following changes. We fix the number~$d$ of delay clocks with
+$1 \le d \le k$. For a colour $c = (c_1, \dots, c_k) \in \Dom^k$, we call
+the components $c_1, \dots, c_d$ the \emph{delay clocks}.
+
+\begin{enumerate}
+  \item[3.] $\mathcal{A} = \mathcal{A}_O \cup \mathcal{A}_E \cup
+    \mathcal{A}_I$ consists of ordinary arcs, enabling arcs, and inhibitor
+    arcs.
+
+  \item[4.] $\mathcal{N}$: As in \DCPN{0}, and every enabling or inhibitor
+    arc connects a place to a transition, that is, $\mathcal{N}(A) \in
+    \mathcal{P} \times \mathcal{T}$ for $A \in \mathcal{A}_E \cup
+    \mathcal{A}_I$. For a transition~$T$, we write
+    $\mathcal{A}_{\mathit{in},O}(T)$, $\mathcal{A}_{\mathit{in},E}(T)$, and
+    $\mathcal{A}_{\mathit{in},I}(T)$ for its ordinary, enabling, and
+    inhibitor input arcs, and $\mathcal{A}_{\mathit{in},OE}(T) =
+    \mathcal{A}_{\mathit{in},O}(T) \cup \mathcal{A}_{\mathit{in},E}(T)$, as
+    in~\cite{EverdijBlom2005}. Every transition has at least one ordinary
+    input arc, that is, $\mathcal{A}_{\mathit{in},O}(T) \ne \emptyset$. For
+    a place~$P$, we write $w_T(P)$ for the number of inhibitor arcs from~$P$
+    to~$T$. A single inhibitor arc tests that $P$ is empty, as
+    in~\cite{EverdijBlom2005}, and $w$ inhibitor arcs test that $P$ has
+    fewer than $w$ tokens, as the weighted inhibitor arcs of Petrinaut.
+
+  \item[6.] $\mathcal{C}$: As in \DCPN{0}, where $A_1, \dots, A_m$ are now
+    the arcs of $\mathcal{A}_{\mathit{in},OE}(T)$. Hence, the guards and the
+    firing measures read the colours of the tokens on enabling arcs too, as
+    in~\cite{EverdijBlom2005}. Inhibitor arcs do not contribute colours.
+
+  \item[7.] $\mathcal{V}$: For every place~$P$ and every
+    $l \in \{1, \dots, d\}$, the $l$-th delay clock is either \emph{frozen}
+    in~$P$, that is, the $l$-th component of $\mathcal{V}_P(c)$ is~$0$ for
+    every~$c$, or \emph{active} in~$P$, that is, the $l$-th component of
+    $\mathcal{V}_P(c)$ is $-\delta_{P, l}(c)$ for a \emph{rate function}
+    $\delta_{P, l} : \Dom^k \to \Dom_{\ge 0}$. If $\Dom = \Real$, then
+    $\delta_{P, l}$ is locally Lipschitz continuous. We write
+    $\Lambda_P \subseteq \{1, \dots, d\}$ for the set of the clocks that are
+    active in~$P$, and call~$P$ a \emph{delay place} if
+    $\Lambda_P \ne \emptyset$. The other components evolve as in \DCPN{0}.
+
+  \item[10.] $\mathcal{F}$: For every transition~$T$ with $m$ input arcs in
+    $\mathcal{A}_{\mathit{in},OE}(T)$ and $n$ output arcs, let $\pi_T$ be an
+    affine function as in \DCPN{0}. Additionally, let $\mathcal{R}_T
+    \subseteq \{1, \dots, n\} \times \{1, \dots, k\}$ be the set of the
+    produced components that receive \emph{noise}. For every $(j, l) \in
+    \mathcal{R}_T$, let $\rho_{T, j, l}$ be a probability distribution
+    on~$\Dom_\pm$ together with a set $S_{T, j, l} \subseteq \Dom_\pm$ that
+    is definable by a quantifier-free formula of LIA if $\Dom = \NatZero$,
+    and of LRA if $\Dom = \Real$, such that $\rho_{T, j, l}(S_{T, j, l}) = 1$.
+    We call $S_{T, j, l}$ the \emph{support} of the noise. Then
+    $\mathcal{F}_T(\cvec)$ is the distribution of $(\mathbf{1}, a)$, where
+    $a^j_l = \pi^j_l(\cvec) + x_{j, l}$ for $(j, l) \in \mathcal{R}_T$, with
+    every $x_{j, l}$ sampled from~$\rho_{T, j, l}$ independently of all
+    other samples, and $a^j_l = \pi^j_l(\cvec)$ for
+    $(j, l) \notin \mathcal{R}_T$. We require $a \in \Dom^{kn}$ for all
+    values of the noise in the supports.
+\end{enumerate}
+
+For example, the noise may come from $\mathrm{Exp}(\lambda)$ with the
+support $\Real_{> 0}$, from $\mathrm{Geom}(p)$ with the support
+$\{1, 2, \dots\}$, from a distribution with finitely many values
+$v_1, \dots, v_r$ with the support $\{v_1, \dots, v_r\}$, from the uniform
+distribution on $[u, v]$, or from a clamped Gaussian distribution, that is,
+the distribution of $\max(u, X)$ for a Gaussian~$X$, with the support
+$[u, \infty)$. All other elements are restricted as in
+Definition~\ref{def:dcpn0}, and the initialisation function~$\mathcal{I}$
+fixes the initial values of the delay clocks explicitly.
+
+A \DCPN{1} is a \DCPN{2} with $d = 1$, no enabling and inhibitor arcs, the
+rate function $\delta_{P, 1} = 1$ for every delay place~$P$, the noise only on
+the delay clocks, that is, $\mathcal{R}_T \subseteq \{1, \dots, n\} \times
+\{1\}$, the affine function~$\pi_T$ setting the delay clocks with noise
+to~$0$, and the noise coming from $\mathrm{Exp}(\lambda)$ or
+$\mathrm{Geom}(p)$.
+
+\subsection{Execution semantics}
+
+The rounds and executions are defined as in \DCPN{0}. We change the bindings,
+the firings, and the clock ticks.
+
+\paragraph{Bindings.}
+A \emph{binding} of a transition~$T$ in a marking~$\bfm$ is a tuple
+$\cvec = (c_1, \dots, c_m) \in \Dom^{km}$, where $A_1, \dots, A_m$ are the
+arcs of $\mathcal{A}_{\mathit{in},OE}(T)$, such that
+\[
+  \mathit{in}_T(\cvec) = \mset{(P(A_1), c_1), \dots, (P(A_m), c_m)} \le \bfm.
+\]
+That is, $\bfm$ contains a distinct token for every ordinary arc and every
+enabling arc. Only the tokens on the ordinary arcs are consumed:
+\[
+  \mathit{in}^O_T(\cvec) = \mset{(P(A_i), c_i) \mid A_i \in
+  \mathcal{A}_{\mathit{in},O}(T)}.
+\]
+A transition~$T$ is \emph{inhibited}
+in~$\bfm$ if there is a place~$P$ with $w_T(P) > 0$ such that $\bfm$ has at
+least $w_T(P)$ tokens in~$P$. A binding~$\cvec$ \emph{enables}~$T$ if $T$ is
+not inhibited in~$\bfm$, and either $T \in \mathcal{T}_I$, or
+$T \in \mathcal{T}_G$ and $\mathcal{G}_T(\cvec) = \mathit{True}$.
+
+\paragraph{Firings.}
+For a binding~$\cvec$ of~$T$, let $\mathit{Out}_T(\cvec)$ be the set of
+multisets
+\[
+  \mset{(P(A'_1), a^1), \dots, (P(A'_n), a^n)},
+\]
+where
+$a^j_l = \pi^j_l(\cvec) + x_{j, l}$ for some $x_{j, l} \in S_{T, j, l}$ if
+$(j, l) \in \mathcal{R}_T$, and $a^j_l = \pi^j_l(\cvec)$ otherwise. As in
+\DCPN{1}, this is the nondeterministic reading of the firing measures. We
+replace the conditions of Definition~\ref{def:firing} with:
+\begin{enumerate}
+  \item $\cvec$ is a binding of~$T$ in~$\bfm$ that enables~$T$;
+  \item if $T \in \mathcal{T}_G$, then no immediate transition is enabled by
+    a binding in~$\bfm$ (rule~R0); and
+  \item $\bfm' = \bfm - \mathit{in}^O_T(\cvec)$ and
+    $\bfDelta' = \bfDelta + \bfDelta_T$ for some
+    $\bfDelta_T \in \mathit{Out}_T(\cvec)$.
+\end{enumerate}
+
+A token on an enabling arc stays in~$\bfm$. Hence, other firings of the same
+round may read it again or consume it. A token that was consumed earlier in
+the round cannot be read. Inhibitor arcs are evaluated on~$\bfm$: a token
+consumed earlier in the round no longer inhibits, and a token produced in the
+round, which is in~$\bfDelta$, does not inhibit yet. This is how Petrinaut
+evaluates inhibitor arcs within a simulation step. Since inhibitor arcs are
+not monotone, a firing may enable a transition that was inhibited at the
+beginning of the round. Rounds are still finite, since every firing consumes
+a token along an ordinary arc.
+
+\paragraph{Clock ticks.}
+In Definition~\ref{def:tick}, we additionally require that the active delay
+clocks remain non-negative, that is, $c_l - h \cdot \delta_{P, l}(c) \ge 0$
+for every token $(P, c) \in \bfm$ and every $l \in \Lambda_P$. Hence, a tick
+stops at the latest when an active delay clock expires. If $\delta_{P, l}$ is
+constant, then the Euler step is exact for the $l$-th clock. Otherwise, the
+Euler step approximates the clock as any other component, see
+Remark~\ref{rem:euler}.
+
+\begin{remark}[Timelocks in \DCPN{2}]\label{rem:timelock2}
+  Remark~\ref{rem:timelock} applies to every active delay clock. A
+  sufficient condition to avoid timelocks is that for every place~$P$ and
+  every $l \in \Lambda_P$, there is a guard transition with the guard
+  $c_l \le 0$, whose only input arc is an ordinary arc from~$P$.
+  Gadget~\ref{gad:lock} below avoids timelocks in a different way.
+\end{remark}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Expressing DCPNs with gadgets}\label{sec:gadgets}
+
+\DCPN{2} has no delay transitions, its guards are predicates rather than
+boundaries, and its firing measures are affine functions with independent
+noise. In this section, we show how \emph{gadgets}, that is, small auxiliary
+subnets, express further features of DCPNs~\cite{EverdijBlom2005} in
+\DCPN{2}. We have already seen three gadgets: the self-loops of
+Section~\ref{sec:vaccination}, the lock places of Remark~\ref{rem:locks},
+and the generator tokens of Remark~\ref{rem:delay} and
+Section~\ref{sec:cafe}. We first fix what it means for a gadget to be
+correct, then list the gadgets, and finally summarize what remains out of
+reach.
+
+\subsection{Correctness and locality}
+
+Let $N$ be a DCPN, and let $N'$ be a \DCPN{2} that is obtained from~$N$ by
+applying gadgets. A partial map~$\mu$ from the places of~$N'$ to the places
+of~$N$ tells us which place of~$N$ a place of~$N'$ represents. The places
+of~$N'$ on which $\mu$ is undefined are \emph{auxiliary}. The colours of~$N$
+are embedded into the colours of~$N'$ by padding (Gadget~\ref{gad:pad}) and by
+adding delay clocks. The \emph{projection} of a marking of~$N'$ removes the
+tokens in auxiliary places, replaces every place~$P$ with $\mu(P)$, and
+restricts every colour to the components of~$N$.
+
+We say that a gadget is \emph{exact in the nondeterministic reading} if the
+projections of the executions of~$N'$ coincide with the executions of~$N$,
+where we read all random choices of~\cite{EverdijBlom2005}
+nondeterministically, and we compare both up to stuttering, that is, after
+merging consecutive equal markings. We say that a gadget is \emph{exact in
+the probabilistic reading} if, for $\Dom = \Real$ and exact flows, the
+projection of the marking process of~$N'$ has the same distribution as the
+marking process of~$N$. Since we have neither defined a small-step semantics
+of full DCPNs nor a probabilistic semantics of \DCPN{2}, the exactness claims
+below are informal arguments that remain to be proven.
+
+We are only interested in gadgets that are \emph{local}: a gadget adds a
+number of places and transitions that is linear in the size of~$N$, every
+auxiliary place holds a number of tokens that is bounded by a constant
+independent of the initial marking, and no place of~$N$ is replaced by a
+\emph{counter token}, that is, a token whose colour holds the number of
+tokens in a place. This excludes the trivial reduction that encodes the whole
+marking into the colour of a single token. This reduction is complete, but
+useless for us, since it destroys the independence of the tokens, on which the
+small model theorem relies. All gadgets below are local.
+
+\subsection{Gadgets}
+
+\begin{gadget}[Uniform colours]\label{gad:pad}
+  DCPNs allow every place~$P$ to have its own colour type~$\Real^{n_P}$,
+  including the uncoloured places with $n_P = 0$. We fix
+  $k = d + \max_P n_P$ and pad the colours with zeros. In a place~$P$, the
+  components beyond $d + n_P$ have the rate~$0$, and they are ignored by the
+  guards and set to~$0$ by the affine functions. This gadget is exact in both
+  readings.
+\end{gadget}
+
+\begin{gadget}[Hazard clocks]\label{gad:hazard}
+  \emph{Feature.} Delay transitions $T_1, \dots, T_r$ whose only input arc
+  is an ordinary arc from the same place~$P$, where $T_i$ has the delay rate
+  $\delta_i(c)$ that depends on the colour~$c$ of the input token.
+
+  \emph{Construction.} We assign distinct delay clocks
+  $l_1, \dots, l_r \in \Lambda_P$ with the rate functions
+  $\delta_{P, l_i} = \delta_i$. Every transition that produces a token
+  into~$P$ sets every clock $l \in \Lambda_P$ of this token to the noise
+  $\mathrm{Exp}(1)$, that is, $\pi_T$ sets the clock to~$0$, and the noise
+  has the support $\Real_{> 0}$. Every $T_i$ becomes a guard transition with
+  the guard $c_{l_i} \le 0$ and keeps its firing measure. The initial tokens
+  in~$P$ get their clocks from the support of $\mathrm{Exp}(1)$.
+
+  \emph{Exactness.} In~\cite{EverdijBlom2005}, the probability that $T_i$ has
+  not fired within $t$ time units after the token entered~$P$ is
+  $\exp(-\int_0^t \delta_i(c(s))\, ds)$, where $c(s)$ is the colour of the
+  token at time~$s$. The clock~$l_i$ expires at the first time~$t$ with
+  $\int_0^t \delta_i(c(s))\, ds = E$, where $E \sim \mathrm{Exp}(1)$, which
+  happens after~$t$ with exactly this probability. Since no tick passes the
+  expiry, $T_i$ fires at this moment. Independent clocks implement the race
+  of the competing delay transitions, and the transition whose clock expires
+  first wins. Hence, unlike the shared clock of Remark~\ref{rem:delay}, this
+  gadget keeps the probabilities of the winners, even for rates that depend
+  on colours. Since $T_i$ is pre-enabled exactly while the token resides
+  in~$P$, resetting the clocks whenever a token enters~$P$ implements the
+  restart rule. The gadget is exact in both readings, up to the Euler
+  approximation of non-constant rates. If $\Dom = \NatZero$, we only support
+  constant rates, as in Remark~\ref{rem:delay}.
+\end{gadget}
+
+\begin{gadget}[Generators]\label{gad:gen}
+  \emph{Feature.} A delay transition~$T$ without input arcs and with a
+  constant rate~$\lambda$.
+
+  \emph{Construction.} We add an auxiliary delay place~$G_T$ with a single
+  token whose clock has the rate~$1$ and an initial value in~$\Real_{> 0}$,
+  an ordinary arc from~$G_T$ to~$T$, and an ordinary arc from~$T$ to~$G_T$
+  that sets the clock to the noise $\mathrm{Exp}(\lambda)$. The
+  transition~$T$ becomes a guard transition with the guard $c_l \le 0$ on the
+  clock of the generator.
+
+  \emph{Exactness.} The times between the firings of~$T$ are independent and
+  distributed as $\mathrm{Exp}(\lambda)$. Hence, $T$ fires as a Poisson
+  process, as in~\cite{EverdijBlom2005}, and the gadget is exact in both
+  readings. Since $G_T$ is the only input of~$T$, there are no timelocks. A
+  source with enabling or inhibitor arcs is handled by Gadget~\ref{gad:lock}.
+\end{gadget}
+
+\begin{gadget}[Locks]\label{gad:lock}
+  \emph{Feature.} A delay transition~$T$ with a constant rate~$\lambda_T$
+  and arbitrary ordinary, enabling, and inhibitor input arcs. Its delay
+  belongs to the transition, not to a token: by the restart rule
+  of~\cite{EverdijBlom2005}, the delay runs while $T$ is pre-enabled, and it
+  starts anew when $T$ becomes pre-enabled again.
+
+  \emph{Construction.} See Figure~\ref{fig:lock}. We add an auxiliary delay
+  place~$L_T$ with a single token, the \emph{lock}, whose clock has the
+  rate~$1$ and is set to the noise $\mathrm{Exp}(\lambda_T)$ whenever the lock
+  is produced. We add an ordinary arc from~$L_T$ to~$T$ and an ordinary arc
+  from~$T$ to~$L_T$, and $T$ becomes a guard transition with the guard
+  $c_l \le 0$ on the clock of the lock. For every place~$P$ with $w \ge 1$
+  ordinary or enabling arcs to~$T$, we add a guard
+  transition~$\mathit{Skip}^P_T$ with the guard $c_l \le 0$, an ordinary arc
+  from~$L_T$, an ordinary arc to~$L_T$, and $w$ inhibitor arcs from~$P$. For
+  every place~$Q$ with $w \ge 1$ inhibitor arcs to~$T$, we add a guard
+  transition~$\mathit{Skip}^Q_T$ with the guard $c_l \le 0$, an ordinary arc
+  from~$L_T$, an ordinary arc to~$L_T$, and $w$ enabling arcs from~$Q$.
+
+  \emph{Exactness.} The transition~$T$ is pre-enabled iff every place~$P$
+  has as many tokens as $T$ has ordinary and enabling arcs from~$P$, and
+  every place~$Q$ has fewer tokens than $T$ has inhibitor arcs from~$Q$. The
+  transitions $\mathit{Skip}^P_T$ and $\mathit{Skip}^Q_T$ test exactly the
+  negations of these conditions. Hence, when the lock expires, either $T$
+  fires, or a skip transition resets the lock. Since inhibitor arcs are
+  evaluated on the remaining tokens of the snapshot, a skip transition is
+  also enabled if the input tokens of~$T$ have been consumed by other
+  transitions earlier in the round. Hence, there are no timelocks. Since the
+  exponential distribution is memoryless, the remaining time of the lock at
+  the moment when $T$ becomes pre-enabled again is distributed as
+  $\mathrm{Exp}(\lambda_T)$, as for a fresh delay. Hence, the gadget is exact
+  in both readings. It does not support rates that depend on colours, since
+  the clock of the lock can only depend on the colour of the lock.
+
+  If $T$ has a single ordinary input arc and no other input arcs, then both
+  this gadget and Gadget~\ref{gad:hazard} apply, and they differ when the
+  input place holds several tokens. Gadget~\ref{gad:hazard} gives every
+  token its own delay, whereas this gadget gives one delay to the
+  transition, as Petrinaut does. The café queue of Section~\ref{sec:cafe}
+  uses the former for FinishService. With this gadget, BeginService keeps
+  its rate~$\beta$, and the caveat of Remark~\ref{rem:cafe-locks}
+  disappears.
+\end{gadget}
+
+\begin{figure}[t]
+  \centering
+  \begin{tikzpicture}[
+      >={Stealth[length=2mm]},
+      every place/.style={draw, thick, minimum size=9mm, font=\small},
+      every transition/.style={draw, thick, fill=black!15,
+        minimum width=3mm, minimum height=8mm},
+      every label/.style={font=\small},
+      arc/.style={->, thick},
+      inh/.style={-{Circle[open, length=1.8mm]}, thick},
+      enab/.style={->, thick, dashed},
+      aux/.style={draw=blue, text=blue},
+      delay/.style={double, double distance=1pt}]
+    \node[place, label=below:$P$] (P) at (0, 0) {};
+    \node[transition, label=below left:$T$] (T) at (2.5, 0) {};
+    \node[place, label=below:$Q$] (Q) at (5, 0) {};
+    \node[place, label=left:$R$] (R) at (2.5, -1.8) {};
+    \node[place, delay, aux, label={[text=blue]above:$L_T$}] (L)
+      at (2.5, 1.8) {$1$};
+    \node[transition, aux, fill=blue!15,
+      label={[text=blue]above:$\mathit{Skip}^P_T$}] (SP) at (0, 1.8) {};
+    \node[transition, aux, fill=blue!15,
+      label={[text=blue]above:$\mathit{Skip}^Q_T$}] (SQ) at (5, 1.8) {};
+    \draw[arc] (P) -- (T);
+    \draw[inh] (Q) -- (T);
+    \draw[arc] (T) -- (R);
+    \draw[arc, aux] (L) to[bend left=25] (T);
+    \draw[arc, aux] (T) to[bend left=25] (L);
+    \draw[arc, aux] (L) to[bend left=20] (SP);
+    \draw[arc, aux] (SP) to[bend left=20] (L);
+    \draw[arc, aux] (L) to[bend left=20] (SQ);
+    \draw[arc, aux] (SQ) to[bend left=20] (L);
+    \draw[inh, aux] (P) -- (SP);
+    \draw[enab, aux] (Q) -- (SQ);
+  \end{tikzpicture}
+  \caption{Gadget~\ref{gad:lock} for a delay transition~$T$ with an ordinary
+    input arc from~$P$, an inhibitor arc from~$Q$, and an output arc to~$R$.
+    Inhibitor arcs end in a circle, and the enabling arc is dashed. The
+    auxiliary lock place~$L_T$, which is a delay place, the skip transitions,
+    and their arcs are shown in blue. Every arc into~$L_T$ sets the clock of
+    the lock to the noise $\mathrm{Exp}(\lambda_T)$.}
+  \label{fig:lock}
+\end{figure}
+
+\begin{gadget}[Split firing measures]\label{gad:split}
+  \emph{Feature.} A transition~$T$ whose firing measure $\mathcal{F}_T$
+  randomly chooses the subset $f \in \{0, 1\}^n$ of the output arcs that
+  receive tokens, and the colours of the produced tokens.
+
+  \emph{Construction.} For every pattern $f \in \{0, 1\}^n$, let $Z_f$ be the
+  set of the colours~$\cvec$ such that $\mathcal{F}_T(\cvec)$ produces the
+  pattern~$f$ with a positive probability. We assume that $Z_f$ is definable
+  by a formula~$\psi_f$ of LIA or LRA, and that the support of the produced
+  colours, given~$f$, is of the form $\pi_f(\cvec) + S_f$ for an affine
+  function~$\pi_f$ and a product~$S_f$ of definable sets. We replace~$T$
+  with copies~$T^f$ that have the guard $\varphi_T \wedge \psi_f$, the output
+  arcs $A'_j$ with $f_j = 1$, the affine function~$\pi_f$, and the noise with
+  the supports~$S_f$. The copies compete for the same bindings, and rules R2
+  and~R4 choose one of them.
+
+  \emph{Exactness.} The gadget is exact in the nondeterministic reading. In
+  the probabilistic reading, the choice among the copies would need the
+  probabilities of the patterns. If $T$ is a delay transition with a lock
+  (Gadget~\ref{gad:lock}), and the probabilities $p_f$ of the patterns do not
+  depend on the colours, then we can sample the pattern in advance: whenever
+  the lock is produced, a selector component of the lock receives the noise
+  that takes the value~$f$ with probability~$p_f$, and $T^f$ additionally
+  tests the selector. This is exact, since the pattern is independent of the
+  firing time.
+\end{gadget}
+
+\begin{gadget}[Hitting-time clocks]\label{gad:hitting}
+  \emph{Feature.} A guard transition~$T$ with the boundary semantics
+  of~\cite{EverdijBlom2005}, that is, $T$ fires at the first moment when the
+  colour of its input token reaches the boundary~$\partial O_T$. We assume
+  that the only input arc of~$T$ is an ordinary arc from a place~$P$, that
+  the colours in~$P$ have a constant rate~$v$, that $O_T = \{c \mid a_1
+  \cdot c < b_1, \dots, a_q \cdot c < b_q\}$ is an open polyhedron, and that
+  tokens enter~$P$ in the closure of~$O_T$.
+
+  \emph{Construction.} For every $i$ with $a_i \cdot v > 0$, we assign a
+  delay clock $l_i \in \Lambda_P$ with the constant rate
+  $\delta_{P, l_i} = a_i \cdot v$. The other facets cannot be reached from
+  inside~$O_T$. Every transition that produces a token with the colour~$c'$
+  into~$P$ sets the clock~$l_i$ to $b_i - a_i \cdot c'$, which is an affine
+  function of the input colours, provided that the components of~$c'$ that
+  occur in~$a_i$ receive no noise. The guard of~$T$ becomes
+  $\bigvee_i c_{l_i} \le 0$.
+
+  \emph{Exactness.} The clock~$l_i$ is the distance $b_i - a_i \cdot c$ of the
+  current colour~$c$ to the $i$-th facet, since both decrease at the rate
+  $a_i \cdot v$, and the Euler step is exact for constant rates. Since no
+  tick passes the expiry of a clock, time stops exactly when the colour
+  reaches the first facet, and $T$ fires in this round. Hence, the gadget is
+  exact in both readings. In particular, it resolves the problem of the
+  footnote on guards in Definition~\ref{def:dcpn0}, where a colour jumps over
+  the boundary between two ticks. Tokens that enter~$P$ outside the closure
+  of~$O_T$ can be sent to a copy of~$P$ by splitting the producing
+  transitions with guards on the produced colours.
+
+  By rule~R0 of~\cite{EverdijBlom2005}, guard transitions have priority over
+  delay transitions. Once Gadgets~\ref{gad:hazard} and~\ref{gad:lock} turn
+  delay transitions into guard transitions, this priority is lost. With
+  continuous delays, a guard event and a delay event coincide with
+  probability zero, so this only matters in the nondeterministic reading,
+  which over-approximates such ties.
+\end{gadget}
+
+\begin{remark}[Enabling and inhibitor arcs in \DCPN{1}]
+  If the target fragment has no enabling and inhibitor arcs, as \DCPN{1},
+  then an enabling arc can be replaced by an ordinary input arc and an
+  ordinary output arc that copies the colour. Inhibitor arcs need a bounded
+  place~$P$ and a complement place~$\overline{P}$, whose tokens are consumed
+  when tokens are produced into~$P$, and vice versa, so that $P$
+  and~$\overline{P}$ hold $K$ tokens together. Then $w$ inhibitor arcs
+  from~$P$ can be replaced by $K - w + 1$ arcs that consume tokens
+  from~$\overline{P}$ and $K - w + 1$ arcs that put them back. Both gadgets
+  are exact only up to the round
+  structure: a token that is put back is in~$\bfDelta$, so other transitions
+  can neither read nor consume it in the same round.
+\end{remark}
+
+\begin{remark}[Diffusion]
+  SDCPNs~\cite{EverdijBlom2006} add diffusion to the evolution of colours,
+  which \DCPN{2} cannot express. An Euler--Maruyama approximation is a
+  gadget: an auxiliary clock with the rate~$1$ and a self-loop that fires when
+  the clock expires, sets the clock to a step~$\eta$, and adds Gaussian noise
+  with the variance $\sigma^2 \eta$ to the diffusing components. The Petrinaut
+  example ``Inventory Purchasing'' uses exactly this construction. This is an
+  approximation, and the Gaussian noise has the support~$\Real$, so the
+  nondeterministic reading allows arbitrary jumps.
+\end{remark}
+
+\subsection{Coverage}
+
+Table~\ref{tab:gadgets} summarizes the gadgets. Together with the native
+enabling and inhibitor arcs of \DCPN{2}, they express DCPNs whose delay
+transitions either have a single ordinary input arc, or have a constant rate,
+whose guard transitions have polyhedral boundaries and input colours with
+constant rates, and whose firing measures have definable supports.
+
+\begin{table}[t]
+  \centering
+  \small
+  \begin{tabular}{lllcc}
+    \hline
+    DCPN feature & Gadget & Auxiliary tokens & Nondet. & Prob. \\
+    \hline
+    Colour types per place & \ref{gad:pad} & --- & exact & exact \\
+    Delay, single input, rate depends on colour
+      & \ref{gad:hazard} & --- & exact & exact$^{*}$ \\
+    Source with a constant rate & \ref{gad:gen} & 1 per source & exact
+      & exact \\
+    Delay, several inputs, constant rate & \ref{gad:lock}
+      & 1 per transition & exact & exact \\
+    Random output arcs and colours & \ref{gad:split} & --- & exact
+      & partial \\
+    Guard with a boundary, constant flow & \ref{gad:hitting} & --- & exact
+      & exact \\
+    Enabling and inhibitor arcs & native & --- & exact & exact \\
+    \hline
+  \end{tabular}
+  \caption{Gadgets that express features of DCPNs in \DCPN{2}. The
+    gadgets~\ref{gad:hazard} and~\ref{gad:hitting} also need one delay clock
+    per competing delay transition and per reachable facet, respectively.
+    $^{*}$Up to the Euler approximation of rates that are not constant.}
+  \label{tab:gadgets}
+\end{table}
+
+\paragraph{Out of reach.}
+The following features are not expressed by the gadgets:
+\begin{enumerate}
+  \item delay transitions with several input arcs whose rates depend on the
+    colours of the input tokens, since their delay belongs to a combination
+    of tokens;
+  \item guards with boundaries when the colours do not change at constant
+    rates, or when the boundaries are not polyhedral, since the hitting
+    times are then not affine, and only predicate guards checked after every
+    tick are available;
+  \item cascades of immediate transitions that happen at the same time, since
+    every stage of a cascade costs a round, see the remark at the end of the
+    execution semantics of \DCPN{0};
+  \item the random resolution of conflicts by rules R2 and~R4, and
+    probabilities of firing patterns that depend on colours, which we only
+    read nondeterministically;
+  \item firing measures that are not affine functions with independent noise,
+    and guards that are not expressible in LIA or LRA;
+  \item diffusion, which we only approximate.
+\end{enumerate}
+
+\paragraph{Petrinaut examples.}
+With \DCPN{2} and the gadgets, several Petrinaut examples become expressible
+without the simplifications of the previous sections. In the café queue,
+Gadget~\ref{gad:lock} keeps the rate of BeginService. In the vaccination
+campaign, Gadget~\ref{gad:lock} gives Infection and Recovery one delay per
+transition, as in Petrinaut. In ``Production with Machine Failure'',
+Gadget~\ref{gad:hitting} lets production, travel, and repair finish exactly
+at their thresholds, and Gadget~\ref{gad:hazard} expresses the failure
+hazard $\mathit{damage}^{100}$, which needs a second delay clock in the
+place of the producing machines. In ``Drone Patrol'', Gadget~\ref{gad:hazard}
+expresses the rates that are affine in the battery charge, and the noise
+expresses the random cruise altitude. The nets ``Gases 1'' and ``Gases 2''
+use the native enabling and inhibitor arcs and Gadget~\ref{gad:lock}. The
+remaining examples need features from the list above, for example, rates of
+transitions with several inputs that depend on colours (supply chains,
+inventory, semiconductor fab), firing that is not affine (inventory,
+planets), or guards that are not linear (satellites).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%
 \bibliographystyle{plain}
