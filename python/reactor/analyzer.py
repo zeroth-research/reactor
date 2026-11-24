@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Set, Tuple, Union, Callable
 from .reactor import Wire, Term, Var, X
 from .reactor.tensor import Havoc
 from .sort import Bool, Real, Int, Word
-from .builder import TermBuilder, builder_for, _normalize_shape
+from .builder import TermBuilder, builder_for
 
 
 # ---------------------------------------------------------------------------
@@ -1145,13 +1145,14 @@ def infer_dtype(name, abstract_value, builder):
 
     if abstract_value.is_const():
         shape, elem_type = _infer_shape_and_elem_type(abstract_value.value)
-        return builder.python_type_to_dtype(elem_type, _normalize_shape(shape or [1]))
+        # a scalar or a vector is a matrix of one row, as `torch.atleast_2d` makes it
+        return builder.python_type_to_dtype(elem_type, [1] * (2 - len(shape)) + shape)
 
     if abstract_value.type_ is None:
         raise ValueError(
             f"Cannot infer Sort for '{name}': analyzer returned {abstract_value}"
         )
-    return builder.python_type_to_dtype(abstract_value.type_, _normalize_shape([1]))
+    return builder.python_type_to_dtype(abstract_value.type_, [1, 1])
 
 
 def classify_attrs(cls, roots, init_attrs=None, base_cls=None):

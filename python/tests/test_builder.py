@@ -32,15 +32,23 @@ def test_const_takes_the_numeric_sort(sort, dtype):
     assert term.itype.tensor.dtype == dtype
 
 
+def _real(degree):
+    """The `[2, 3]` real matrices of `degree`: `T` applied `degree` times to plain ones."""
+    sort = Real([2, 3])
+    for _ in range(degree):
+        sort = T(sort)
+    return sort
+
+
 @pytest.mark.parametrize("p,q", [(1, 1), (1, 0), (0, 1)])
 def test_mul_adds_the_degrees_of_reals(p, q):
     builder = builder_for(Real)
-    x, y = Wire(Real([2, 3], degree=p)), Wire(Real([2, 3], degree=q))
+    x, y = Wire(_real(p)), Wire(_real(q))
 
     term = builder.mul(x, y)
 
-    assert term.itype == tensor.real.Mul([Real([2, 3], degree=p), Real([2, 3], degree=q)])
-    assert term.write[0].dtype == Real([2, 3], degree=p + q)
+    assert term.itype == tensor.real.Mul([_real(p), _real(q)])
+    assert term.write[0].dtype == _real(p + q)
 
 
 def test_add_keeps_the_degree_of_reals():

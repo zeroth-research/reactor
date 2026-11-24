@@ -5,7 +5,7 @@ import gymnasium as gym
 
 from ..reactor import Module, Wire, X, Var
 from ..sort import Real, Int, Bool, Word, Zero, shape as _shape
-from ..builder import builder_for, number_sort, _normalize_shape
+from ..builder import builder_for, number_sort
 from ..analyzer import (
     convert_method,
     classify_attrs,
@@ -34,7 +34,9 @@ def space_to_dtype(space, number, is_action: bool) -> Real | Int | Bool | Word |
             return Real([1, n])
         return number_sort(number)([1, 1])
     elif isinstance(space, gym.spaces.Box):
-        return number_sort(number)(_normalize_shape(list(space.shape)))
+        # a scalar or a vector is a matrix of one row, as `torch.atleast_2d` makes it
+        shape = list(space.shape)
+        return number_sort(number)([1] * (2 - len(shape)) + shape)
     elif isinstance(space, gym.spaces.MultiBinary):
         return Bool([1, space.n])
     else:

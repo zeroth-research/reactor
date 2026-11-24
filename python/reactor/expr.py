@@ -50,15 +50,7 @@ import torch
 from .reactor import Term, Wire, Var, X as _X, d as _d
 from .reactor import tensor
 from .sort import Real, Int, Bool, Word, Zero
-from .sort import shape as _shape, with_shape as _with_shape, family as _family
-
-
-def _normalize_shape(shape: list) -> list:
-    if len(shape) == 0:
-        return [1, 1]
-    if len(shape) == 1:
-        return [1, shape[0]]
-    return shape
+from .sort import shape as _shape, family as _family
 
 
 # ---------------------------------------------------------------------------
@@ -162,10 +154,9 @@ class Expr:
                 o = o.reshape(())
             if isinstance(o, (bool, int, float)) or (isinstance(o, torch.Tensor) and o.dim() == 0):
                 o = torch.as_tensor(o).expand(self.shape).clone()
-        # a literal takes my sort, with the width of a word and the degree of a real, but
-        # keeps its own shape
-        sort = _with_shape(self.dtype, _normalize_shape(list(torch.as_tensor(o).shape)))
-        return expr(o, sort=sort, signed=isinstance(self, SExpr))
+        # a literal takes my sort, shape included: of another shape, as the other factor
+        # of `@` may be, it is not coerced but built with `expr()`
+        return expr(o, sort=self.dtype, signed=isinstance(self, SExpr))
 
     def _coerce_same(self, o) -> "Expr":
         o = self._coerce(o)
@@ -553,9 +544,10 @@ def expr(value, *, sort=None, signed=False, tag=None) -> Expr:
         return _const(value, sort, signed=signed, tag=tag)
 
 
-def _term_from_torch(value, sort, bw=None, degree=0):
+def _term_from_torch(value, sort):
+    """The constant of the tensor `value`, of the sort `sort`: a concrete sort, which must
+    be of the shape of the tensor, or a family (Real/Int/Bool) taking its shape."""
     assert isinstance(value, torch.Tensor)
-    assert sort in (Bool, Real, Int, Word)
 
     # make it 2D to make the theory crate happy
     match len(value.shape):
@@ -570,71 +562,51 @@ def _term_from_torch(value, sort, bw=None, degree=0):
         case _:
             raise TypeError(f"expr() requires shape at most 2d; got {value.shape}")
 
-    match value.dtype:
-        case torch.bool if sort == Bool:
-            out = Bool(shape)
-        # the tensor is kept as given: no conversion of its elements
-        case torch.half | torch.float | torch.double if sort == Real:
-            out = Real(shape, degree=degree)
-        case torch.int | torch.long if sort == Int:
-            out = Int(shape)
-        case torch.int | torch.long if sort == Real:
-            out = Real(shape, degree=degree)
-        case torch.int | torch.long if sort == Word and bw is not None:
-            out = Word(bw, shape)
-        case _:
-            raise TypeError(f"expr() unsupported literal type {type(value)} / {sort}")
-    match out:
-        case Bool():
+    # a family takes the shape of the tensor; a concrete sort, with its width or degree,
+    # must already be of it
+    if sort in (Bool, Real, Int):
+        out = sort(shape)
+    elif sort is Word:
+        raise TypeError("expr(): a word literal needs a width: pass sort=Word(width, [...])")
+    elif isinstance(sort, Real | Int | Bool | Word):
+        out = sort
+        if _shape(out) != shape:
+            raise TypeError(f"expr(): value {value} with shape {shape} cannot be given shape {_shape(out)}")
+    else:
+        raise TypeError(f"expr(): unsupported sort {sort}")
+
+    # the tensor is kept as given: no conversion of its elements
+    match out, value.dtype:
+        case Bool(), torch.bool:
             op = tensor.bool.Const(value, out)
-        case Real():
+        case Real(), torch.half | torch.float | torch.double | torch.int | torch.long:
             op = tensor.real.Const(value, out)
-        case Int():
+        case Int(), torch.int | torch.long:
             op = tensor.int.Const(value, out)
-        case Word():
+        case Word(), torch.int | torch.long:
             op = tensor.word.Const(value, out)
+        case _:
+            raise TypeError(f"expr() unsupported literal type {value.dtype} / {out}")
     return Term.constant(op, [Wire(out)]), value
 
 
-def _term_from_other(value, sort, bw=None, degree=0):
-    # torch will figure out the errors, and the base
-    assert sort in (Bool, Real, Int, Word)
+def _term_from_other(value, sort):
+    """The constant of the Python value `value` (a number, a boolean or a nested list), of
+    the sort `sort`, as `_term_from_torch`."""
+    family = sort if isinstance(sort, type) else type(sort)
 
     # a boolean is not a number: no conversion of `True` to 1
-    if sort != Bool and torch.tensor(value).dtype == torch.bool:
-        raise TypeError(f"expr(): a boolean value {value!r} cannot be given the sort {sort.__name__}")
+    if family is not Bool and torch.tensor(value).dtype == torch.bool:
+        raise TypeError(f"expr(): a boolean value {value!r} cannot be given the sort {family.__name__}")
 
-    if sort == Bool:
+    if family is Bool:
         dtype = torch.bool
-    elif sort == Real:
+    elif family is Real:
         dtype = torch.float
     else:
         dtype = torch.int64
 
-    return _term_from_torch(torch.tensor(value, dtype=dtype), sort, bw=bw, degree=degree)
-
-
-def _unpack_sort_user_argument(sort):
-    assert sort is not None
-
-    if isinstance(sort, Real | Int | Bool | Word | Zero):
-        match sort:
-            case Bool(shape):
-                return Bool, None, list(shape)
-            case Real(shape):
-                return Real, None, list(shape)
-            case Int(shape):
-                return Int, None, list(shape)
-            case Word(w, shape):
-                return Word, w, list(shape)
-        raise TypeError(f"expr(): unsupported sort {sort}")
-
-    if sort in (Bool, Real, Int):
-        return sort, None, None
-    elif sort == Word:
-        raise TypeError("expr(): a word literal needs a width: pass sort=Word(width, [...])")
-
-    raise TypeError(f"expr(): unsupported sort {sort}")
+    return _term_from_torch(torch.tensor(value, dtype=dtype), sort)
 
 
 def _const(value, sort, *, signed, tag=None) -> Expr:
@@ -654,25 +626,13 @@ def _const(value, sort, *, signed, tag=None) -> Expr:
         _emit(term)
         return _wrap(term.write[0], value=value, tag=tag)
 
-    # unpack sort family and required shape if any
-    given = sort
-    sort, bw, required_shape = _unpack_sort_user_argument(sort)
-    # a real sort carries its degree; the family `Real` is of plain reals
-    degree = given.degree if isinstance(given, Real) else 0
-
     # build term
     if isinstance(value, torch.Tensor):
-        term, value = _term_from_torch(value, sort, bw=bw, degree=degree)
+        term, value = _term_from_torch(value, sort)
     elif isinstance(value, int | float | bool | list):
-        term, value = _term_from_other(value, sort, bw=bw, degree=degree)
+        term, value = _term_from_other(value, sort)
     else:
         raise TypeError(f"expr() unsupported value type {type(value)}")
-
-    # check built shape corresponds with required one, if any
-    assert len(term.write) == 1
-    shape = _shape(term.write[0].dtype)
-    if required_shape is not None and shape != required_shape:
-        raise TypeError(f"expr(): value {value} with shape {shape} cannot be given shape {required_shape}")
 
     # emit into collector
     _emit(term)

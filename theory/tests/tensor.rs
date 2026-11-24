@@ -1,8 +1,19 @@
 //! Tests for the operations of `tensor`, one module per module of `tensor`.
 
+use base::differentiable::T;
+use theory::tensor::sort::Real;
+
+/// The tangent `T` applied `n` times to `s`: the real matrices of degree `n`
+/// above it.
+fn tangent(n: u8, s: Real) -> Real {
+    (0..n).fold(s, |s, _| T(s))
+}
+
 /// Tests for `tensor::Any` and the logics.
 mod any {
+    use super::tangent;
     use base::boundary::{Boundary, Poly};
+    use base::differentiable::T;
     use theory::tensor::*;
 
     /// A tensor carrying its shape only, enough to compute boundaries.
@@ -216,7 +227,7 @@ mod any {
     fn the_zero_rate_of_change_of_a_real_is_the_zero_matrix_of_its_degree() {
         use theory::Differential;
         // a real rate of change: the zero matrix, of its degree
-        let rate: sort::Any = sort::Real::with_degree([2, 3], 1).into();
+        let rate: sort::Any = T(sort::Real::new([2, 3])).into();
         let op = Any::zero(&rate);
         assert!(matches!(&op, Any::Real(real::NRA::Zero(z)) if z.degree() == 1));
         assert!(LRA::try_from(Any::zero(&rate)).is_ok());
@@ -228,22 +239,22 @@ mod any {
 
     #[test]
     fn real_operations_take_the_degree_of_their_operands() {
-        let r = |shape, degree| -> sort::Any { sort::Real::with_degree(shape, degree).into() };
+        let r = |shape, degree| -> sort::Any { tangent(degree, sort::Real::new(shape)).into() };
         let b = |shape| -> sort::Any { sort::Bool::new(shape).into() };
 
         // kept by maps, choices and extrema
-        let op = real(real::Abs::with_dom([sort::Real::with_degree([2, 3], 1); 1]).unwrap());
+        let op = real(real::Abs::with_dom([T(sort::Real::new([2, 3])); 1]).unwrap());
         assert_eq!(op.cod(), base::mono![r([2, 3], 1)].into());
-        let op = real(real::Transpose::with_dom([sort::Real::with_degree([2, 3], 2); 1]).unwrap());
+        let op = real(real::Transpose::with_dom([T(T(sort::Real::new([2, 3]))); 1]).unwrap());
         assert_eq!(op.dom(), base::mono![r([2, 3], 2)].into());
         assert_eq!(op.cod(), base::mono![r([3, 2], 2)].into());
-        let op = real(real::Max::with_dom([sort::Real::with_degree([2, 3], 1); 2]).unwrap());
+        let op = real(real::Max::with_dom([T(sort::Real::new([2, 3])); 2]).unwrap());
         assert_eq!(op.dom(), base::mono![r([2, 3], 1); 2].into());
         let op = real(
             real::Ite::with_dom([
                 sort::Bool::new([2, 3]).into(),
-                sort::Real::with_degree([2, 3], 1).into(),
-                sort::Real::with_degree([2, 3], 1).into(),
+                T(sort::Real::new([2, 3])).into(),
+                T(sort::Real::new([2, 3])).into(),
             ])
             .unwrap(),
         );
@@ -254,45 +265,35 @@ mod any {
         assert_eq!(op.cod(), base::mono![r([2, 3], 1)].into());
 
         // compared, writing booleans; an index is a plain real
-        let op = real(real::Lt::with_dom([sort::Real::with_degree([2, 3], 1); 2]).unwrap());
+        let op = real(real::Lt::with_dom([T(sort::Real::new([2, 3])); 2]).unwrap());
         assert_eq!(op.dom(), base::mono![r([2, 3], 1); 2].into());
         assert_eq!(op.cod(), base::mono![b([2, 3])].into());
-        let op = real(real::Argmax::with_dom([sort::Real::with_degree([2, 3], 1); 1]).unwrap());
+        let op = real(real::Argmax::with_dom([T(sort::Real::new([2, 3])); 1]).unwrap());
         assert_eq!(op.dom(), base::mono![r([2, 3], 1)].into());
         assert_eq!(op.cod(), base::mono![r([1, 1], 0)].into());
 
         // the degrees of the factors of a matrix product add up
         let op = real(
-            real::MatMul::with_dom([
-                sort::Real::with_degree([2, 3], 1),
-                sort::Real::with_degree([3, 4], 1),
-            ])
-            .unwrap(),
+            real::MatMul::with_dom([T(sort::Real::new([2, 3])), T(sort::Real::new([3, 4]))])
+                .unwrap(),
         );
         assert_eq!(op.dom(), base::mono![r([2, 3], 1), r([3, 4], 1)].into());
         assert_eq!(op.cod(), base::mono![r([2, 4], 2)].into());
         assert!(
             real::MatMul::with_dom([
-                sort::Real::with_degree([2, 3], u8::MAX),
-                sort::Real::with_degree([3, 4], 1)
+                tangent(u8::MAX, sort::Real::new([2, 3])),
+                T(sort::Real::new([3, 4]))
             ])
             .is_err()
         );
 
         // constants and the linear maps of a constant are of a degree too
-        let op =
-            real(real::Const::with_cod(Mat([2, 3]), [sort::Real::with_degree([2, 3], 1)]).unwrap());
+        let op = real(real::Const::with_cod(Mat([2, 3]), [T(sort::Real::new([2, 3]))]).unwrap());
         assert_eq!(op.cod(), base::mono![r([2, 3], 1)].into());
-        let op =
-            real(real::Scale::with_dom(Mat([2, 3]), [sort::Real::with_degree([2, 3], 1)]).unwrap());
+        let op = real(real::Scale::with_dom(Mat([2, 3]), [T(sort::Real::new([2, 3]))]).unwrap());
         assert_eq!(op.dom(), base::mono![r([2, 3], 1)].into());
         let op = real(
-            real::Affine::with_dom(
-                Mat([2, 3]),
-                Mat([2, 4]),
-                [sort::Real::with_degree([3, 4], 1)],
-            )
-            .unwrap(),
+            real::Affine::with_dom(Mat([2, 3]), Mat([2, 4]), [T(sort::Real::new([3, 4]))]).unwrap(),
         );
         assert_eq!(op.dom(), base::mono![r([3, 4], 1)].into());
         assert_eq!(op.cod(), base::mono![r([2, 4], 1)].into());
@@ -300,13 +301,10 @@ mod any {
 
     #[test]
     fn division_takes_off_the_degree_of_the_divisor_and_is_partial() {
-        let r = |degree| -> sort::Any { sort::Real::with_degree([2, 3], degree).into() };
+        let r = |degree| -> sort::Any { tangent(degree, sort::Real::new([2, 3])).into() };
         let op = real(
-            real::Div::with_dom([
-                sort::Real::with_degree([2, 3], 2),
-                sort::Real::with_degree([2, 3], 1),
-            ])
-            .unwrap(),
+            real::Div::with_dom([T(T(sort::Real::new([2, 3]))), T(sort::Real::new([2, 3]))])
+                .unwrap(),
         );
         assert_eq!(op.dom(), base::mono![r(2), r(1)].into());
         assert_eq!(op.cod(), base::mono![r(1)].into());
@@ -318,25 +316,17 @@ mod any {
         );
         // a negative degree is not defined
         assert!(
-            real::Div::with_dom([
-                sort::Real::with_degree([2, 3], 0),
-                sort::Real::with_degree([2, 3], 1)
-            ])
-            .is_err()
+            real::Div::with_dom([sort::Real::new([2, 3]), T(sort::Real::new([2, 3]))]).is_err()
         );
         assert!(
-            real::Div::with_dom([
-                sort::Real::with_degree([2, 3], 1),
-                sort::Real::with_degree([2, 3], 1)
-            ])
-            .is_ok()
+            real::Div::with_dom([T(sort::Real::new([2, 3])), T(sort::Real::new([2, 3]))]).is_ok()
         );
     }
 
     #[test]
     fn negation_keeps_the_degree_of_reals() {
-        let op = real(real::Neg::with_dom([sort::Real::with_degree([2, 3], 1); 1]).unwrap());
-        let sort: Poly<sort::Any> = base::mono![sort::Real::with_degree([2, 3], 1).into()].into();
+        let op = real(real::Neg::with_dom([T(sort::Real::new([2, 3])); 1]).unwrap());
+        let sort: Poly<sort::Any> = base::mono![T(sort::Real::new([2, 3])).into()].into();
         assert_eq!(op.dom(), sort);
         assert_eq!(op.cod(), sort);
         assert_eq!(
@@ -834,7 +824,9 @@ mod int {
 
 /// Tests for `tensor::real`.
 mod real {
+    use super::tangent;
     use base::boundary::{Boundary, Poly};
+    use base::differentiable::T;
     use base::mono;
     use theory::tensor::real::*;
     use theory::tensor::sort::{Bool, Real};
@@ -893,40 +885,28 @@ mod real {
 
     #[test]
     fn mul_adds_the_degrees_of_its_factors() {
-        let r = |d| Real::with_degree([2, 3], d);
-        let rates =
-            Mul::with_dom([Real::with_degree([2, 3], 1), Real::with_degree([2, 3], 1)]).unwrap();
+        let r = |d| tangent(d, Real::new([2, 3]));
+        let rates = Mul::with_dom([T(Real::new([2, 3])), T(Real::new([2, 3]))]).unwrap();
         assert_eq!(rates.dom(), two(r(1)));
         assert_eq!(rates.cod(), one(r(2)));
-        let scaled =
-            Mul::with_dom([Real::with_degree([2, 3], 1), Real::with_degree([2, 3], 0)]).unwrap();
+        let scaled = Mul::with_dom([T(Real::new([2, 3])), Real::new([2, 3])]).unwrap();
         let dom: Poly<Real> = mono![r(1), r(0)].into();
         assert_eq!(scaled.dom(), dom);
         assert_eq!(scaled.cod(), one(r(1)));
         assert_eq!(
             Mul::with_dom([Real::new([2, 3]); 2]).unwrap(),
-            Mul::with_dom([Real::with_degree([2, 3], 0), Real::with_degree([2, 3], 0)]).unwrap()
+            Mul::with_dom([Real::new([2, 3]), Real::new([2, 3])]).unwrap()
         );
     }
 
     #[test]
     fn mul_checks_the_degree_of_its_product() {
         assert!(
-            Mul::with_dom([
-                Real::with_degree([2, 3], u8::MAX),
-                Real::with_degree([2, 3], 1)
-            ])
-            .is_err()
+            Mul::with_dom([tangent(u8::MAX, Real::new([2, 3])), T(Real::new([2, 3]))]).is_err()
         );
-        assert!(
-            Mul::with_dom([
-                Real::with_degree([2, 3], u8::MAX),
-                Real::with_degree([2, 3], 0)
-            ])
-            .is_ok()
-        );
+        assert!(Mul::with_dom([tangent(u8::MAX, Real::new([2, 3])), Real::new([2, 3])]).is_ok());
         assert_eq!(
-            Mul::with_dom([Real::with_degree([2, 3], 1), Real::with_degree([2, 3], 0)])
+            Mul::with_dom([T(Real::new([2, 3])), Real::new([2, 3])])
                 .unwrap()
                 .degrees(),
             [1, 0]
@@ -935,34 +915,26 @@ mod real {
 
     #[test]
     fn sums_keep_the_degree_of_their_terms() {
-        let r = Real::with_degree([2, 3], 1);
+        let r = T(Real::new([2, 3]));
         assert_eq!(
-            Add::with_dom([Real::with_degree([2, 3], 1); 2])
-                .unwrap()
-                .dom(),
+            Add::with_dom([T(Real::new([2, 3])); 2]).unwrap().dom(),
             two(r)
         );
         assert_eq!(
-            Add::with_dom([Real::with_degree([2, 3], 1); 2])
-                .unwrap()
-                .cod(),
+            Add::with_dom([T(Real::new([2, 3])); 2]).unwrap().cod(),
             one(r)
         );
         assert_eq!(
-            Sub::with_dom([Real::with_degree([2, 3], 1); 2])
-                .unwrap()
-                .dom(),
+            Sub::with_dom([T(Real::new([2, 3])); 2]).unwrap().dom(),
             two(r)
         );
         assert_eq!(
-            Sub::with_dom([Real::with_degree([2, 3], 1); 2])
-                .unwrap()
-                .cod(),
+            Sub::with_dom([T(Real::new([2, 3])); 2]).unwrap().cod(),
             one(r)
         );
         assert_eq!(
             Add::with_dom([Real::new([2, 3]); 2]).unwrap(),
-            Add::with_dom([Real::with_degree([2, 3], 0); 2]).unwrap()
+            Add::with_dom([Real::new([2, 3]); 2]).unwrap()
         );
     }
 
@@ -1578,6 +1550,7 @@ mod word {
 /// domain is the one given, and fails on a domain of no instance.
 mod with_dom {
     use base::boundary::{Boundary, Mono, Poly};
+    use base::differentiable::T;
     use theory::tensor::sort::{Bool, Int, Real, Word};
     use theory::tensor::*;
 
@@ -1606,8 +1579,8 @@ mod with_dom {
 
     #[test]
     fn real_operations_read_their_domain() {
-        let x = Real::with_degree([2, 3], 1);
-        let y = Real::with_degree([2, 3], 2);
+        let x = T(Real::new([2, 3]));
+        let y = T(T(Real::new([2, 3])));
         reads(real::Add::with_dom([x, x]).unwrap(), [x, x]);
         reads(real::Neg::with_dom([y]).unwrap(), [y]);
         reads(real::Transpose::with_dom([x]).unwrap(), [x]);
@@ -1623,21 +1596,21 @@ mod with_dom {
         // `A` of shape `[5, 2]` takes `x` of shape `[2, 3]` to `[5, 3]`
         let l = real::Linear::with_dom(Mat([5, 2]), [x]).unwrap();
         reads(real::Linear::with_dom(Mat([5, 2]), [x]).unwrap(), [x]);
-        assert_eq!(l.cod(), base::mono![Real::with_degree([5, 3], 1)].into());
+        assert_eq!(l.cod(), base::mono![T(Real::new([5, 3]))].into());
         let c = Bool::new([2, 3]);
         let dom = [c.into(), x.into(), x.into()];
         reads(real::Ite::with_dom(dom).unwrap(), dom);
         let cmp = real::Lt::with_dom([y, y]).unwrap();
         assert_eq!(
             cmp,
-            real::Lt::with_dom([Real::with_degree([2, 3], 2); 2]).unwrap()
+            real::Lt::with_dom([T(T(Real::new([2, 3]))); 2]).unwrap()
         );
     }
 
     #[test]
     fn real_operations_reject_domains_of_no_instance() {
         let x = Real::new([2, 3]);
-        let y = Real::with_degree([2, 3], 1);
+        let y = T(Real::new([2, 3]));
         let z = Real::new([3, 2]);
         assert!(real::Add::with_dom([x, y]).is_err());
         assert!(real::Eq::with_dom([x, z]).is_err());
@@ -1720,6 +1693,7 @@ mod with_dom {
 /// a codomain of no instance.
 mod with_cod {
     use base::boundary::{Boundary, Mono, Poly};
+    use base::differentiable::T;
     use theory::tensor::sort::{Bool, Int, Real, Word};
     use theory::tensor::*;
 
@@ -1748,14 +1722,14 @@ mod with_cod {
 
     #[test]
     fn real_operations_write_their_codomain() {
-        let x = Real::with_degree([2, 3], 1);
+        let x = T(Real::new([2, 3]));
         writes(real::Zero::with_cod([x]).unwrap(), [x]);
         writes(real::Add::with_cod([x]).unwrap(), [x]);
         writes(real::ReLU::with_cod([x]).unwrap(), [x]);
         writes(real::Transpose::with_cod([x]).unwrap(), [x]);
         assert_eq!(
             real::Transpose::with_cod([x]).unwrap(),
-            real::Transpose::with_dom([Real::with_degree([3, 2], 1); 1]).unwrap()
+            real::Transpose::with_dom([T(Real::new([3, 2])); 1]).unwrap()
         );
         writes(real::Ite::with_cod([x]).unwrap(), [x.into()]);
         writes(real::Scale::with_cod(Mat([2, 3]), [x]).unwrap(), [x]);
@@ -1766,7 +1740,7 @@ mod with_cod {
         // `A` of shape `[2, 5]` writes `[2, 3]` from `[5, 3]`, of the same degree
         let l = real::Linear::with_cod(Mat([2, 5]), [x]).unwrap();
         writes(real::Linear::with_cod(Mat([2, 5]), [x]).unwrap(), [x]);
-        assert_eq!(l.dom(), base::mono![Real::with_degree([5, 3], 1)].into());
+        assert_eq!(l.dom(), base::mono![T(Real::new([5, 3]))].into());
         assert!(real::Linear::with_cod(Mat([3, 5]), [x]).is_err());
         assert!(real::Scale::with_cod(Mat([3, 2]), [x]).is_err());
         let e = real::Affine::with_cod(Mat([3, 5]), Mat([3, 3]), [x]).unwrap_err();

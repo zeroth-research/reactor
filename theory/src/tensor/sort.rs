@@ -77,9 +77,11 @@ pub struct Real {
 }
 
 impl Real {
-    /// Plain real matrices of the given shape, of degree 0.
-    pub fn new(shape: [usize; 2]) -> Self {
-        Real { degree: 0, shape }
+    /// Real matrices of the given shape, of the given `degree`: the
+    /// `degree`-th order rates of change of plain ones. Outside this crate,
+    /// they are written with the tangent, `T(Real::new(shape))`.
+    pub(crate) fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Real { degree, shape }
     }
 
     pub fn degree(&self) -> u8 {
@@ -94,12 +96,11 @@ impl Real {
 /// Python matches a `Real` by `shape`.
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Real {
-    /// Real matrices of the given shape, of the given `degree`: the
-    /// `degree`-th order rates of change of plain ones.
+    /// Plain real matrices of the given shape, of degree 0; those of a
+    /// higher degree are their tangents, `T(Real(shape))`.
     #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Real { degree, shape }
+    pub fn new(shape: [usize; 2]) -> Self {
+        Real { degree: 0, shape }
     }
 
     #[cfg(feature = "pyo3")]

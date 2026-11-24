@@ -17,7 +17,7 @@ from .reactor import Wire, Term, Var
 from .reactor.tensor import Skip, real, int as int_, bool as bool_, word
 from .reactor.tensor.word import signed, unsigned
 from .sort import Real, Int, Bool, Word, Zero
-from .sort import shape as _shape, with_shape as _with_shape, width as _width
+from .sort import shape as _shape, width as _width
 
 
 def _wire(t) -> Wire:
@@ -39,14 +39,6 @@ def _dtype(t) -> Real | Int | Bool | Word | Zero:
 
 def _is_bool(t) -> bool:
     return isinstance(_dtype(t), Bool)
-
-
-def _normalize_shape(shape: list) -> list:
-    if len(shape) == 0:
-        return [1, 1]
-    if len(shape) == 1:
-        return [1, shape[0]]
-    return shape
 
 
 class TheoryError(Exception):
@@ -101,18 +93,18 @@ class TermBuilder:
 
     def linear(self, x, weight, bias = None) -> list:
         """Emit [Transpose-in, Linear, Transpose-out]. Last write[0] is the output wire."""
-        x_wire = _wire(x)
-        in_features = _shape(x_wire.dtype)[-1]  # [1, in_features] row-major
+        x_wire = _wire(x)  # [1, in_features] row-major
         out_features = weight.shape[0]
 
-        input_col_wire = Wire(_with_shape(x_wire.dtype, [in_features, 1]))
+        # the column `[in_features, 1]` that the transpose writes
         t_in = self.transpose(x_wire)
-        t_in = Term(t_in.itype, [input_col_wire], [x_wire])
+        input_col_wire = t_in.write[0]
 
-        linear_out_wire = Wire(_with_shape(x_wire.dtype, [out_features, 1]))
         if bias is None or bias.numel() == 0:
             bias = torch.zeros(out_features, 1, dtype=weight.dtype)
         linear = self._linear(weight, bias.reshape(out_features, 1), input_col_wire.dtype)
+        # the column `[out_features, 1]` that the affine map writes
+        linear_out_wire = Wire(linear.cod)
         t_lin = Term(linear, [linear_out_wire], [input_col_wire])
 
         t_out = self.transpose(linear_out_wire)
@@ -223,8 +215,8 @@ class TermBuilder:
         return self.const(torch.tensor([value]), output_wire=output_wire)
 
     def const(self, tensor, output_wire=None) -> Term:
-        shape = _normalize_shape(list(tensor.size()))
-        tensor = tensor.reshape(shape)  # theory const ops require a 2-D initializer
+        tensor = torch.atleast_2d(tensor)  # theory const ops require a 2-D initializer
+        shape = list(tensor.shape)
         if output_wire is not None:
             sort = output_wire.dtype
         elif tensor.dtype == torch.bool:

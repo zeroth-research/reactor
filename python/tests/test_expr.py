@@ -458,11 +458,14 @@ def test_single_entry_point_spec():
     assert isinstance(b, RExpr)
     assert isinstance(b + 1, RExpr)  # raw operand coerces
 
-    # list / tensor constants; matmul with a raw tensor coerces the tensor
+    # list / tensor constants; a raw operand of matmul is coerced to my sort, shape
+    # included, so a factor of another shape is built explicitly
     t = expr([0.1, 1.0], sort=Real)
     assert isinstance(t, RExpr)
-    u = t @ torch.tensor([[0.2], [0.5]])
-    assert isinstance(u, RExpr)
+    with pytest.raises(TypeError):
+        t @ torch.tensor([[0.2], [0.5]])
+    u = t @ expr(torch.tensor([[0.2], [0.5]]), sort=Real)
+    assert isinstance(u, RExpr) and u.dtype == Real([1, 1])
 
     # not idempotent: passing an Expr back into expr() is an error
     with pytest.raises(TypeError):
