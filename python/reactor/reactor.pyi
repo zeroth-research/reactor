@@ -9,7 +9,11 @@ and the namespace `tensor` of the operations and sorts, mirroring the `theory` c
 `tensor` holds the structural operations `Havoc` and `Skip`, `tensor.zero` the operation
 `Zero` of the singleton sort, and the namespaces
 `tensor.real`, `.int`, `.bool`, `.word` (with `.signed` and `.unsigned`) hold the
-operations of each theory, sized by their shapes (`tensor.real.Add([m, n])`), and
+operations of each theory, each built from the parameters its sorts do not determine,
+then its domain, a single sort bare and several as a list, and optionally its codomain,
+which must agree (`tensor.real.Add([x, y])`, `tensor.word.Extract(i, j, x)`); an
+operation that reads nothing is built from its codomain (`tensor.real.Zero(x)`), except
+`tensor.zero.Zero()`, whose codomain, the singleton sort, carries no information. And
 `tensor.sort` the sorts (`Real([rows, cols])`, `Word(width, [rows, cols])`). Those are
 typed loosely here, as `Sort` and `Op`: a stub file cannot describe the nested
 namespaces of a single extension module. A `Var` bundles the latched, next (`X(v)`),

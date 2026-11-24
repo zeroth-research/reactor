@@ -499,6 +499,31 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Any {
     }
 }
 
+/// Extracts a sort of the theories of each subset from an instance of its
+/// class, as a sort of [`Any`] that the subset holds: the Python constructor
+/// of `Ite` reads them.
+#[cfg(feature = "pyo3")]
+macro_rules! extract_subset {
+    ($($subset:ident),*) => {$(
+        impl<'a, 'py> FromPyObject<'a, 'py> for $subset {
+            type Error = PyErr;
+
+            fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+                let sort = ob.extract::<Any>()?;
+                $subset::try_from(sort).map_err(|_| {
+                    PyTypeError::new_err(format!(
+                        "expected a sort of {}, got {sort}",
+                        stringify!($subset)
+                    ))
+                })
+            }
+        }
+    )*};
+}
+
+#[cfg(feature = "pyo3")]
+extract_subset!(Reals, Ints, Words);
+
 /// Converts a sort into an instance of its class.
 #[cfg(feature = "pyo3")]
 impl<'py> IntoPyObject<'py> for Any {

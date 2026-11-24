@@ -53,6 +53,21 @@ pub struct Const<T> {
     tensor: T,
 }
 
+impl<T: Tensor> Const<T> {
+    /// The constant held in `tensor`, writing the integer matrix of `cod`; fails
+    /// unless `tensor` is of its shape.
+    pub fn with_cod(tensor: T, cod: [Int; 1]) -> Result<Self, crate::Error> {
+        let [x] = cod;
+        if tensor.shape() != x.shape() {
+            return Err(crate::tensor::unexpected_cod(
+                &format!("1 sort of the shape {:?} of the constant", tensor.shape()),
+                &cod,
+            ));
+        }
+        Ok(Self::new(tensor))
+    }
+}
+
 impl<T> Const<T> {
     /// The constant held in `tensor`.
     pub fn new(tensor: T) -> Self {
@@ -1184,16 +1199,24 @@ impl Add {
         let [s] = cod;
         Ok(Self::new(s.shape()))
     }
+
+    pub fn new(shape: [usize; 2]) -> Self {
+        Add { shape }
+    }
 }
 
 // The Python constructors of the operations carrying no tensor: each takes
 // its sizes positionally, in the order of its fields, the shape as a list.
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Add {
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Add { shape }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -1236,15 +1259,23 @@ impl Sub {
         let [s] = cod;
         Ok(Self::new(s.shape()))
     }
-}
 
-#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
-impl Sub {
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Sub { shape }
     }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Sub {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
+    }
 
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
@@ -1286,15 +1317,23 @@ impl Mul {
         let [s] = cod;
         Ok(Self::new(s.shape()))
     }
-}
 
-#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
-impl Mul {
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Mul { shape }
     }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Mul {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
+    }
 
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
@@ -1336,15 +1375,23 @@ impl Div {
         let [s] = cod;
         Ok(Self::new(s.shape()))
     }
-}
 
-#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
-impl Div {
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Div { shape }
     }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Div {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
+    }
 
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
@@ -1386,15 +1433,23 @@ impl Mod {
         let [s] = cod;
         Ok(Self::new(s.shape()))
     }
-}
 
-#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
-impl Mod {
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Mod { shape }
     }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Mod {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
+    }
 
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
@@ -1436,15 +1491,23 @@ impl Neg {
         let [s] = cod;
         Ok(Self::new(s.shape()))
     }
-}
 
-#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
-impl Neg {
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Neg { shape }
     }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Neg {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: Int, cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom([dom]), cod)
+    }
 
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
@@ -1486,15 +1549,23 @@ impl Abs {
         let [s] = cod;
         Ok(Self::new(s.shape()))
     }
-}
 
-#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
-impl Abs {
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Abs { shape }
     }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Abs {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: Int, cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom([dom]), cod)
+    }
 
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
@@ -1536,15 +1607,23 @@ impl ReLU {
         let [s] = cod;
         Ok(Self::new(s.shape()))
     }
-}
 
-#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
-impl ReLU {
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         ReLU { shape }
     }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl ReLU {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: Int, cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom([dom]), cod)
+    }
 
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
@@ -1580,14 +1659,22 @@ impl Argmax {
         let s = crate::tensor::same_sort(dom)?;
         Ok(Self::new(s.shape()))
     }
+
+    pub fn new(shape: [usize; 2]) -> Self {
+        Argmax { shape }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Argmax {
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Argmax { shape }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: Int, cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom([dom]), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -1630,15 +1717,23 @@ impl Min {
         let [s] = cod;
         Ok(Self::new(s.shape()))
     }
-}
 
-#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
-impl Min {
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Min { shape }
     }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Min {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
+    }
 
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
@@ -1680,14 +1775,22 @@ impl Max {
         let [s] = cod;
         Ok(Self::new(s.shape()))
     }
+
+    pub fn new(shape: [usize; 2]) -> Self {
+        Max { shape }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Max {
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Max { shape }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -1731,14 +1834,22 @@ impl Transpose {
         let [m, n] = s.shape();
         Ok(Self::new([n, m]))
     }
+
+    pub fn new(shape: [usize; 2]) -> Self {
+        Transpose { shape }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Transpose {
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Transpose { shape }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: Int, cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom([dom]), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -1776,14 +1887,9 @@ impl MatMul {
         let [x, y] = dom;
         Self::new([x.shape(), y.shape()])
     }
-}
 
-#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
-impl MatMul {
     /// Fails unless the columns of the first shape are the rows of the
     /// second.
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shapes, /)))]
     pub fn new(shapes: [[usize; 2]; 2]) -> Result<Self, crate::Error> {
         let [lhs, rhs] = shapes;
         if lhs[1] != rhs[0] {
@@ -1792,6 +1898,19 @@ impl MatMul {
             )));
         }
         Ok(MatMul { shapes })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl MatMul {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -1835,14 +1954,22 @@ impl Lt {
         let [s] = cod;
         Ok(Self::new(s.shape()))
     }
+
+    pub fn new(shape: [usize; 2]) -> Self {
+        Lt { shape }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Lt {
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Lt { shape }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -1894,14 +2021,22 @@ impl Ite {
         let [s] = cod;
         Ok(Self::new(s.shape()))
     }
+
+    pub fn new(shape: [usize; 2]) -> Self {
+        Ite { shape }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Ite {
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Ite { shape }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Sort; 3], cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -1944,15 +2079,23 @@ impl Le {
         let [s] = cod;
         Ok(Self::new(s.shape()))
     }
-}
 
-#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
-impl Le {
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Le { shape }
     }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Le {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
+    }
 
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
@@ -1994,15 +2137,23 @@ impl Gt {
         let [s] = cod;
         Ok(Self::new(s.shape()))
     }
-}
 
-#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
-impl Gt {
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Gt { shape }
     }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Gt {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
+    }
 
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
@@ -2044,15 +2195,23 @@ impl Ge {
         let [s] = cod;
         Ok(Self::new(s.shape()))
     }
-}
 
-#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
-impl Ge {
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Ge { shape }
     }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Ge {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
+    }
 
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
@@ -2094,15 +2253,23 @@ impl Eq {
         let [s] = cod;
         Ok(Self::new(s.shape()))
     }
-}
 
-#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
-impl Eq {
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
     pub fn new(shape: [usize; 2]) -> Self {
         Eq { shape }
     }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Eq {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
+    }
 
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
@@ -2144,14 +2311,22 @@ impl Ne {
         let [s] = cod;
         Ok(Self::new(s.shape()))
     }
+
+    pub fn new(shape: [usize; 2]) -> Self {
+        Ne { shape }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Ne {
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /)))]
-    pub fn new(shape: [usize; 2]) -> Self {
-        Ne { shape }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it

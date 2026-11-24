@@ -1,5 +1,6 @@
 //! The Python class of the constants of propositional logic.
 
+use crate::tensor::sort::Bool;
 use pyo3::prelude::*;
 use pyo3_tch::PyTensor;
 
@@ -14,10 +15,12 @@ unsafe impl Sync for Const {}
 
 #[pymethods]
 impl Const {
-    /// Fails when `tensor` is not a `torch.Tensor` of two dimensions and
-    /// boolean elements.
+    /// The constant held in `tensor`, writing `cod`. Fails when `tensor` is
+    /// not a `torch.Tensor` of two dimensions and boolean elements, or `cod`
+    /// not of its shape.
     #[new]
-    fn new(tensor: PyTensor) -> Result<Self, crate::Error> {
+    #[pyo3(signature = (tensor, /, cod))]
+    fn new(tensor: PyTensor, cod: Bool) -> Result<Self, crate::Error> {
         super::check_matrix(&tensor)?;
         if tensor.kind() != tch::Kind::Bool {
             return Err(crate::Error(format!(
@@ -25,7 +28,8 @@ impl Const {
                 tensor.kind()
             )));
         }
-        Ok(Const(tensor.0))
+        let op = crate::tensor::bool::Const::with_cod(tensor.0, [cod])?;
+        Ok(Const(op.tensor().shallow_clone()))
     }
 
     #[getter]

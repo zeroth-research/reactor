@@ -10,8 +10,9 @@ are split by *operation family* (the sort picks the class):
     WExpr  — Word          Word           arithmetic + bitwise + signed/unsigned + width
 
 The operations are those of the namespace of the operands' sort, ``reactor.tensor.real``,
-``.int``, ``.bool`` or ``.word``, sized by their shape: ``x + y`` on ``Real([2, 3])``
-builds ``real.Add([2, 3])``, and on ``Word(8, [1, 1])`` builds ``word.Add(8, [1, 1])``.
+``.int``, ``.bool`` or ``.word``, built from the operands' sorts, their domain: ``x + y`` on
+``Real([2, 3])`` builds ``real.Add([Real([2, 3]), Real([2, 3])])``, and writes the sort of
+its codomain.
 
 An ``Expr`` itself is a pure handle — it stores its wire, the ``next`` wire (for a
 variable), and, for a constant, its tensor ``value``. It does **not** hold the term: terms
@@ -186,14 +187,9 @@ class Expr:
         _emit(term)
         return _wrap(term.write[0], signed=getattr(self, "_signed", False))
 
-    def _binop(self, op, out: Real | Int | Bool | Word | Zero, o) -> "Expr":
-        """Coerce `o` to my sort, then build a binary Term with `op` and output sort `out`."""
-        o = self._coerce_same(o)
-        return self._result(Term(op, [Wire(out)], [self._wire, o._wire]))
-
-    def _unop(self, op, out: Real | Int | Bool | Word | Zero | None = None) -> "Expr":
-        out = out if out is not None else self.dtype
-        return self._result(Term(op, [Wire(out)], [self._wire]))
+    def _apply(self, op, *args: "Expr") -> "Expr":
+        """The Term of `op` reading `args`, writing a wire of its codomain."""
+        return self._result(Term(op, [Wire(op.cod)], [a._wire for a in args]))
 
     @override
     def __repr__(self) -> str:
@@ -208,20 +204,22 @@ class Expr:
 
 class AExpr(Expr):
     def __add__(self, o):
+        o = self._coerce_same(o)
         match self.dtype:
-            case Real(s):
-                op = tensor.real.Add(s, degree=self.dtype.degree)
-            case Int(s):
-                op = tensor.int.Add(s)
-        return self._binop(op, self.dtype, o)
+            case Real():
+                op = tensor.real.Add([self.dtype, o.dtype])
+            case Int():
+                op = tensor.int.Add([self.dtype, o.dtype])
+        return self._apply(op, self, o)
 
     def __sub__(self, o):
+        o = self._coerce_same(o)
         match self.dtype:
-            case Real(s):
-                op = tensor.real.Sub(s, degree=self.dtype.degree)
-            case Int(s):
-                op = tensor.int.Sub(s)
-        return self._binop(op, self.dtype, o)
+            case Real():
+                op = tensor.real.Sub([self.dtype, o.dtype])
+            case Int():
+                op = tensor.int.Sub([self.dtype, o.dtype])
+        return self._apply(op, self, o)
 
     def __mul__(self, o):
         self_is_constant = self._value is not None
@@ -252,14 +250,14 @@ class AExpr(Expr):
         assert isinstance(o, Expr) and o._value is None, "the other factor must be a variable"
         assert self._value is None, "a constant factor goes second, as a Scale"
         assert o.shape == self.shape, f"cannot multiply {self.shape} and {o.shape} pointwise"
+        o = self._coerce_same(o)
         match self.dtype:
-            case Real(s):
+            case Real():
                 # the degrees of the factors add up
-                p, q = self.dtype.degree, o.dtype.degree
-                return self._binop(tensor.real.Mul(s, degrees=[p, q]), Real(s, degree=p + q), o)
-            case Int(s):
-                op = tensor.int.Mul(s)
-        return self._binop(op, self.dtype, o)
+                op = tensor.real.Mul([self.dtype, o.dtype])
+            case Int():
+                op = tensor.int.Mul([self.dtype, o.dtype])
+        return self._apply(op, self, o)
 
     def _scale(self, c) -> "Expr":
         """The linear map `x ↦ C ⊙ x` by the constant `c` of my shape, sharing its tensor
@@ -268,38 +266,37 @@ class AExpr(Expr):
         assert list(c.shape) == self.shape, f"cannot scale {self.shape} by a constant of {list(c.shape)}"
         match self.dtype:
             case Real():
-                op = tensor.real.Scale(c if c.is_floating_point() else c.float(), degree=self.dtype.degree)
+                op = tensor.real.Scale(c if c.is_floating_point() else c.float(), self.dtype)
             case Int():
                 integer = not c.is_floating_point() and c.dtype != torch.bool
-                op = tensor.int.Scale(c if integer else c.long())
-        return self._unop(op)
+                op = tensor.int.Scale(c if integer else c.long(), self.dtype)
+        return self._apply(op, self)
 
     def __neg__(self):
         match self.dtype:
-            case Real(s):
-                op = tensor.real.Neg(s, degree=self.dtype.degree)
-            case Int(s):
-                op = tensor.int.Neg(s)
-        return self._unop(op)
+            case Real():
+                op = tensor.real.Neg(self.dtype)
+            case Int():
+                op = tensor.int.Neg(self.dtype)
+        return self._apply(op, self)
 
     def __abs__(self):
         match self.dtype:
-            case Real(s):
-                op = tensor.real.Abs(s, degree=self.dtype.degree)
-            case Int(s):
-                op = tensor.int.Abs(s)
-        return self._unop(op)
+            case Real():
+                op = tensor.real.Abs(self.dtype)
+            case Int():
+                op = tensor.int.Abs(self.dtype)
+        return self._apply(op, self)
 
     def __truediv__(self, o):
+        o = self._coerce_same(o)
+        # of reals, the degree of the divisor is taken off that of the dividend
         match self.dtype:
-            case Real(s):
-                # the degree of the divisor is taken off that of the dividend
-                o = self._coerce_same(o)
-                p, q = self.dtype.degree, o.dtype.degree
-                return self._binop(tensor.real.Div(s, degrees=[p, q]), Real(s, degree=p - q), o)
-            case Int(s):
-                op = tensor.int.Div(s)
-        return self._binop(op, self.dtype, o)
+            case Real():
+                op = tensor.real.Div([self.dtype, o.dtype])
+            case Int():
+                op = tensor.int.Div([self.dtype, o.dtype])
+        return self._apply(op, self, o)
 
     def __radd__(self, o):  return self._coerce(o).__add__(self)
 
@@ -311,65 +308,68 @@ class AExpr(Expr):
 
     def __matmul__(self, o):
         o = self._coerce_same(o)
-        out = _with_shape(self.dtype, [self.shape[0], o.shape[1]])
+        # of reals, the degrees of the factors add up
         match self.dtype:
-            case Real(s):
-                # the degrees of the factors add up
-                p, q = self.dtype.degree, o.dtype.degree
-                op = tensor.real.MatMul([s, o.shape], degrees=[p, q])
-                out = Real(out.shape, degree=p + q)
-            case Int(s):
-                op = tensor.int.MatMul([s, o.shape])
-        return self._result(Term(op, [Wire(out)], [self._wire, o._wire]))
+            case Real():
+                op = tensor.real.MatMul([self.dtype, o.dtype])
+            case Int():
+                op = tensor.int.MatMul([self.dtype, o.dtype])
+        return self._apply(op, self, o)
 
     # comparisons -> Bool -> BExpr
     def __eq__(self, o):
+        o = self._coerce_same(o)
         match self.dtype:
-            case Real(s):
-                op = tensor.real.Eq(s, degree=self.dtype.degree)
-            case Int(s):
-                op = tensor.int.Eq(s)
-        return self._binop(op, Bool(self.shape), o)
+            case Real():
+                op = tensor.real.Eq([self.dtype, o.dtype])
+            case Int():
+                op = tensor.int.Eq([self.dtype, o.dtype])
+        return self._apply(op, self, o)
 
     def __ne__(self, o):
+        o = self._coerce_same(o)
         match self.dtype:
-            case Real(s):
-                op = tensor.real.Ne(s, degree=self.dtype.degree)
-            case Int(s):
-                op = tensor.int.Ne(s)
-        return self._binop(op, Bool(self.shape), o)
+            case Real():
+                op = tensor.real.Ne([self.dtype, o.dtype])
+            case Int():
+                op = tensor.int.Ne([self.dtype, o.dtype])
+        return self._apply(op, self, o)
 
     def __lt__(self, o):
+        o = self._coerce_same(o)
         match self.dtype:
-            case Real(s):
-                op = tensor.real.Lt(s, degree=self.dtype.degree)
-            case Int(s):
-                op = tensor.int.Lt(s)
-        return self._binop(op, Bool(self.shape), o)
+            case Real():
+                op = tensor.real.Lt([self.dtype, o.dtype])
+            case Int():
+                op = tensor.int.Lt([self.dtype, o.dtype])
+        return self._apply(op, self, o)
 
     def __le__(self, o):
+        o = self._coerce_same(o)
         match self.dtype:
-            case Real(s):
-                op = tensor.real.Le(s, degree=self.dtype.degree)
-            case Int(s):
-                op = tensor.int.Le(s)
-        return self._binop(op, Bool(self.shape), o)
+            case Real():
+                op = tensor.real.Le([self.dtype, o.dtype])
+            case Int():
+                op = tensor.int.Le([self.dtype, o.dtype])
+        return self._apply(op, self, o)
 
     def __gt__(self, o):
+        o = self._coerce_same(o)
         match self.dtype:
-            case Real(s):
-                op = tensor.real.Gt(s, degree=self.dtype.degree)
-            case Int(s):
-                op = tensor.int.Gt(s)
-        return self._binop(op, Bool(self.shape), o)
+            case Real():
+                op = tensor.real.Gt([self.dtype, o.dtype])
+            case Int():
+                op = tensor.int.Gt([self.dtype, o.dtype])
+        return self._apply(op, self, o)
 
     def __ge__(self, o):
+        o = self._coerce_same(o)
         match self.dtype:
-            case Real(s):
-                op = tensor.real.Ge(s, degree=self.dtype.degree)
-            case Int(s):
-                op = tensor.int.Ge(s)
-        return self._binop(op, Bool(self.shape), o)
+            case Real():
+                op = tensor.real.Ge([self.dtype, o.dtype])
+            case Int():
+                op = tensor.int.Ge([self.dtype, o.dtype])
+        return self._apply(op, self, o)
 
 
 # ---------------------------------------------------------------------------
@@ -378,17 +378,28 @@ class AExpr(Expr):
 
 
 class BExpr(Expr):
-    def __eq__(self, o):   return self._binop(tensor.bool.Eq(self.shape), self.dtype, o)
+    def __eq__(self, o):
+        o = self._coerce_same(o)
+        return self._apply(tensor.bool.Eq([self.dtype, o.dtype]), self, o)
 
-    def __ne__(self, o):   return self._binop(tensor.bool.Ne(self.shape), self.dtype, o)
+    def __ne__(self, o):
+        o = self._coerce_same(o)
+        return self._apply(tensor.bool.Ne([self.dtype, o.dtype]), self, o)
 
-    def __and__(self, o):  return self._binop(tensor.bool.And(self.shape), self.dtype, o)
+    def __and__(self, o):
+        o = self._coerce_same(o)
+        return self._apply(tensor.bool.And([self.dtype, o.dtype]), self, o)
 
-    def __or__(self, o):   return self._binop(tensor.bool.Or(self.shape), self.dtype, o)
+    def __or__(self, o):
+        o = self._coerce_same(o)
+        return self._apply(tensor.bool.Or([self.dtype, o.dtype]), self, o)
 
-    def __xor__(self, o):  return self._binop(tensor.bool.Xor(self.shape), self.dtype, o)
+    def __xor__(self, o):
+        o = self._coerce_same(o)
+        return self._apply(tensor.bool.Xor([self.dtype, o.dtype]), self, o)
 
-    def __invert__(self):  return self._unop(tensor.bool.Not(self.shape))
+    def __invert__(self):
+        return self._apply(tensor.bool.Not(self.dtype), self)
 
 
 # ---------------------------------------------------------------------------
@@ -405,20 +416,26 @@ class WExpr(Expr):
     def signed(self) -> bool:
         return self._signed
 
-    def _w(self):
-        """The sizes of my word operations: the width, and the shape."""
-        return self._bw(), self.shape
+    def __eq__(self, o):
+        o = self._coerce_same(o)
+        return self._apply(tensor.word.Eq([self.dtype, o.dtype]), self, o)
 
-    def __eq__(self, o):   return self._binop(tensor.word.Eq(*self._w()), Bool(self.shape), o)
-
-    def __ne__(self, o):   return self._binop(tensor.word.Ne(*self._w()), Bool(self.shape), o)
+    def __ne__(self, o):
+        o = self._coerce_same(o)
+        return self._apply(tensor.word.Ne([self.dtype, o.dtype]), self, o)
 
     # arithmetic, modulo 2^width
-    def __add__(self, o):  return self._binop(tensor.word.Add(*self._w()), self.dtype, o)
+    def __add__(self, o):
+        o = self._coerce_same(o)
+        return self._apply(tensor.word.Add([self.dtype, o.dtype]), self, o)
 
-    def __sub__(self, o):  return self._binop(tensor.word.Sub(*self._w()), self.dtype, o)
+    def __sub__(self, o):
+        o = self._coerce_same(o)
+        return self._apply(tensor.word.Sub([self.dtype, o.dtype]), self, o)
 
-    def __mul__(self, o):  return self._binop(tensor.word.Mul(*self._w()), self.dtype, o)
+    def __mul__(self, o):
+        o = self._coerce_same(o)
+        return self._apply(tensor.word.Mul([self.dtype, o.dtype]), self, o)
 
     def __radd__(self, o):  return self._coerce(o).__add__(self)
 
@@ -426,41 +443,73 @@ class WExpr(Expr):
 
     def __rmul__(self, o):  return self._coerce(o).__mul__(self)
 
-    def __neg__(self):     return self._unop(tensor.word.Neg(*self._w()))
+    def __neg__(self):
+        return self._apply(tensor.word.Neg(self.dtype), self)
 
     def __floordiv__(self, o):
-        op = tensor.word.signed.Div(*self._w()) if self._signed else tensor.word.unsigned.Div(*self._w())
-        return self._binop(op, self.dtype, o)
+        o = self._coerce_same(o)
+        if self._signed:
+            op = tensor.word.signed.Div([self.dtype, o.dtype])
+        else:
+            op = tensor.word.unsigned.Div([self.dtype, o.dtype])
+        return self._apply(op, self, o)
 
     def __mod__(self, o):
-        op = tensor.word.signed.Mod(*self._w()) if self._signed else tensor.word.unsigned.Rem(*self._w())
-        return self._binop(op, self.dtype, o)
+        o = self._coerce_same(o)
+        if self._signed:
+            op = tensor.word.signed.Mod([self.dtype, o.dtype])
+        else:
+            op = tensor.word.unsigned.Rem([self.dtype, o.dtype])
+        return self._apply(op, self, o)
 
     # comparisons pick signed/unsigned; they write booleans
     def __lt__(self, o):
-        op = tensor.word.signed.Lt(*self._w()) if self._signed else tensor.word.unsigned.Lt(*self._w())
-        return self._binop(op, Bool(self.shape), o)
+        o = self._coerce_same(o)
+        if self._signed:
+            op = tensor.word.signed.Lt([self.dtype, o.dtype])
+        else:
+            op = tensor.word.unsigned.Lt([self.dtype, o.dtype])
+        return self._apply(op, self, o)
 
     def __le__(self, o):
-        op = tensor.word.signed.Le(*self._w()) if self._signed else tensor.word.unsigned.Le(*self._w())
-        return self._binop(op, Bool(self.shape), o)
+        o = self._coerce_same(o)
+        if self._signed:
+            op = tensor.word.signed.Le([self.dtype, o.dtype])
+        else:
+            op = tensor.word.unsigned.Le([self.dtype, o.dtype])
+        return self._apply(op, self, o)
 
     def __gt__(self, o):
-        op = tensor.word.signed.Gt(*self._w()) if self._signed else tensor.word.unsigned.Gt(*self._w())
-        return self._binop(op, Bool(self.shape), o)
+        o = self._coerce_same(o)
+        if self._signed:
+            op = tensor.word.signed.Gt([self.dtype, o.dtype])
+        else:
+            op = tensor.word.unsigned.Gt([self.dtype, o.dtype])
+        return self._apply(op, self, o)
 
     def __ge__(self, o):
-        op = tensor.word.signed.Ge(*self._w()) if self._signed else tensor.word.unsigned.Ge(*self._w())
-        return self._binop(op, Bool(self.shape), o)
+        o = self._coerce_same(o)
+        if self._signed:
+            op = tensor.word.signed.Ge([self.dtype, o.dtype])
+        else:
+            op = tensor.word.unsigned.Ge([self.dtype, o.dtype])
+        return self._apply(op, self, o)
 
     # bitwise, width-preserving
-    def __and__(self, o):  return self._binop(tensor.word.And(*self._w()), self.dtype, o)
+    def __and__(self, o):
+        o = self._coerce_same(o)
+        return self._apply(tensor.word.And([self.dtype, o.dtype]), self, o)
 
-    def __or__(self, o):   return self._binop(tensor.word.Or(*self._w()), self.dtype, o)
+    def __or__(self, o):
+        o = self._coerce_same(o)
+        return self._apply(tensor.word.Or([self.dtype, o.dtype]), self, o)
 
-    def __xor__(self, o):  return self._binop(tensor.word.Xor(*self._w()), self.dtype, o)
+    def __xor__(self, o):
+        o = self._coerce_same(o)
+        return self._apply(tensor.word.Xor([self.dtype, o.dtype]), self, o)
 
-    def __invert__(self):  return self._unop(tensor.word.Not(*self._w()))
+    def __invert__(self):
+        return self._apply(tensor.word.Not(self.dtype), self)
 
 
 # ---------------------------------------------------------------------------
@@ -513,13 +562,13 @@ def _term_from_torch(value, sort, bw=None, degree=0):
             raise TypeError(f"expr() unsupported literal type {type(value)} / {sort}")
     match out:
         case Bool():
-            op = tensor.bool.Const(value)
+            op = tensor.bool.Const(value, out)
         case Real():
-            op = tensor.real.Const(value, degree=degree)
+            op = tensor.real.Const(value, out)
         case Int():
-            op = tensor.int.Const(value)
+            op = tensor.int.Const(value, out)
         case Word():
-            op = tensor.word.Const(value, bw)
+            op = tensor.word.Const(value, out)
     return Term.constant(op, [Wire(out)]), value
 
 
@@ -663,36 +712,36 @@ def ite(cond: Expr, iftrue, iffalse) -> Expr:
     if _family(a.dtype) != _family(b.dtype):
         raise TypeError(f"ite branches have different sorts {a.dtype}, {b.dtype}; use cast()")
     match a.dtype:
-        case Real(s):
-            op = tensor.real.Ite(s, degree=a.dtype.degree)
-        case Int(s):
-            op = tensor.int.Ite(s)
-        case Bool(s):
-            op = tensor.bool.Ite(s)
-        case Word(w, s):
-            op = tensor.word.Ite(w, s)
-    term = Term(op, [Wire(a.dtype)], [cond._wire, a._wire, b._wire])
-    _emit(term)
-    return _wrap(term.write[0], signed=getattr(a, "_signed", False))
+        case Real():
+            op = tensor.real.Ite([cond.dtype, a.dtype, b.dtype])
+        case Int():
+            op = tensor.int.Ite([cond.dtype, a.dtype, b.dtype])
+        case Bool():
+            op = tensor.bool.Ite([cond.dtype, a.dtype, b.dtype])
+        case Word():
+            op = tensor.word.Ite([cond.dtype, a.dtype, b.dtype])
+    return a._apply(op, cond, a, b)
 
 
 def relu(e: Expr) -> Expr:
     match e.dtype:
-        case Real(s):
-            return e._unop(tensor.real.ReLU(s, degree=e.dtype.degree))
-        case Int(s):
-            return e._unop(tensor.int.ReLU(s))
-    raise TypeError(f"relu() needs a Real or Int operand, got {e.dtype}")
+        case Real():
+            op = tensor.real.ReLU(e.dtype)
+        case Int():
+            op = tensor.int.ReLU(e.dtype)
+        case _:
+            raise TypeError(f"relu() needs a Real or Int operand, got {e.dtype}")
+    return e._apply(op, e)
 
 
 def argmax(e: Expr) -> Expr:
     """The index of a maximal entry, as a [1, 1] matrix of the operand's sort."""
     match e.dtype:
-        case Real(s):
+        case Real():
             # the index is a plain real
-            return e._unop(tensor.real.Argmax(s, degree=e.dtype.degree), out=Real([1, 1]))
-        case Int(s):
-            op = tensor.int.Argmax(s)
+            op = tensor.real.Argmax(e.dtype)
+        case Int():
+            op = tensor.int.Argmax(e.dtype)
         case _:
             raise TypeError(f"argmax() needs a Real or Int operand, got {e.dtype}")
-    return e._unop(op, out=_with_shape(e.dtype, [1, 1]))
+    return e._apply(op, e)

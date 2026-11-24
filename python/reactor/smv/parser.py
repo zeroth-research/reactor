@@ -30,11 +30,11 @@ def _const_op(value, sort):
     integer, or a word reduced modulo 2^width."""
     match sort:
         case Bool():
-            return tensor.bool.Const(torch.tensor([[bool(value)]]))
+            return tensor.bool.Const(torch.tensor([[bool(value)]]), sort)
         case Int():
-            return tensor.int.Const(torch.tensor([[int(value)]], dtype=torch.int64))
+            return tensor.int.Const(torch.tensor([[int(value)]], dtype=torch.int64), sort)
         case Word(w):
-            return tensor.word.Const(torch.tensor([[int(value) % (1 << w)]], dtype=torch.int64), w)
+            return tensor.word.Const(torch.tensor([[int(value) % (1 << w)]], dtype=torch.int64), sort)
     raise TypeError(f"no constant of sort {sort}")
 
 
@@ -432,21 +432,22 @@ class _Lowerer:
 
     def _binary_op(self, name: str, left: Wire, right: Wire, target=None) -> Wire:
         sort = left.dtype
+        dom = [left.dtype, right.dtype]
         match sort:
-            case Bool(s):
+            case Bool():
                 if name == "Xnor":  # x <-> y is x = y
-                    return self._emit(tensor.bool.Eq(s), sort, [left, right], target)
-                return self._emit(getattr(tensor.bool, name)(s), sort, [left, right], target)
-            case Int(s) if name in ("Add", "Sub", "Mul", "Div", "Mod"):
-                return self._emit(getattr(tensor.int, name)(s), sort, [left, right], target)
-            case Word(w, s):
+                    return self._emit(tensor.bool.Eq(dom), sort, [left, right], target)
+                return self._emit(getattr(tensor.bool, name)(dom), sort, [left, right], target)
+            case Int() if name in ("Add", "Sub", "Mul", "Div", "Mod"):
+                return self._emit(getattr(tensor.int, name)(dom), sort, [left, right], target)
+            case Word():
                 signed = self._is_signed(left) or self._is_signed(right)
                 if name == "Div":
-                    op = tensor.word.signed.Div(w, s) if signed else tensor.word.unsigned.Div(w, s)
+                    op = (tensor.word.signed.Div if signed else tensor.word.unsigned.Div)(dom)
                 elif name == "Mod":
-                    op = tensor.word.signed.Rem(w, s) if signed else tensor.word.unsigned.Rem(w, s)
+                    op = (tensor.word.signed.Rem if signed else tensor.word.unsigned.Rem)(dom)
                 else:
-                    op = getattr(tensor.word, name)(w, s)
+                    op = getattr(tensor.word, name)(dom)
                 return self._emit(op, sort, [left, right], target)
         raise TypeError(f"no {name} on {sort}")
 
@@ -474,19 +475,20 @@ class _Lowerer:
 
     def _compare(self, op_tok: str, left: Wire, right: Wire, target=None) -> Wire:
         out = Bool(_SCALAR)
+        dom = [left.dtype, right.dtype]
         match left.dtype:
-            case Bool(s):
+            case Bool():
                 if op_tok not in _CMP_FIXED:
                     raise TypeError(f"no ordering {op_tok} on booleans")
-                op = getattr(tensor.bool, _CMP_FIXED[op_tok])(s)
+                op = getattr(tensor.bool, _CMP_FIXED[op_tok])(dom)
                 return self._emit(op, out, [left, right], target)
-            case Word(w, s):
+            case Word():
                 if op_tok in _CMP_FIXED:
-                    op = getattr(tensor.word, _CMP_FIXED[op_tok])(w, s)
+                    op = getattr(tensor.word, _CMP_FIXED[op_tok])(dom)
                 elif self._is_signed(left) or self._is_signed(right):
-                    op = getattr(tensor.word.signed, _CMP_ORDERED[op_tok])(w, s)
+                    op = getattr(tensor.word.signed, _CMP_ORDERED[op_tok])(dom)
                 else:
-                    op = getattr(tensor.word.unsigned, _CMP_ORDERED[op_tok])(w, s)
+                    op = getattr(tensor.word.unsigned, _CMP_ORDERED[op_tok])(dom)
                 return self._emit(op, out, [left, right], target)
         raise TypeError(f"no comparison on {left.dtype}")
 
@@ -521,26 +523,27 @@ class _Lowerer:
         match op_name, x.dtype:
             case "Not", _:
                 return self._enforce(self._not(x), target)
-            case "Neg", Word(w, s):
-                return self._enforce(self._emit(tensor.word.Neg(w, s), x.dtype, [x]), target)
-            case "Abs", Word(w, s):
-                return self._enforce(self._emit(tensor.word.signed.Abs(w, s), x.dtype, [x]), target)
+            case "Neg", Word():
+                return self._enforce(self._emit(tensor.word.Neg(x.dtype), x.dtype, [x]), target)
+            case "Abs", Word():
+                return self._enforce(self._emit(tensor.word.signed.Abs(x.dtype), x.dtype, [x]), target)
         raise TypeError(f"no {op_name} on {x.dtype}")
 
     def _not(self, x: Wire) -> Wire:
         match x.dtype:
-            case Bool(s):
-                return self._emit(tensor.bool.Not(s), x.dtype, [x])
-            case Word(w, s):
-                return self._emit(tensor.word.Not(w, s), x.dtype, [x])
+            case Bool():
+                return self._emit(tensor.bool.Not(x.dtype), x.dtype, [x])
+            case Word():
+                return self._emit(tensor.word.Not(x.dtype), x.dtype, [x])
         raise TypeError(f"no Not on {x.dtype}")
 
     def _ite(self, cond: Wire, then_w: Wire, else_w: Wire, target=None) -> Wire:
+        dom = [cond.dtype, then_w.dtype, else_w.dtype]
         match then_w.dtype:
-            case Bool(s):
-                op = tensor.bool.Ite(s)
-            case Word(w, s):
-                op = tensor.word.Ite(w, s)
+            case Bool():
+                op = tensor.bool.Ite(dom)
+            case Word():
+                op = tensor.word.Ite(dom)
             case other:
                 raise TypeError(f"no Ite on {other}")
         w = self._emit(op, then_w.dtype, [cond, then_w, else_w], target)
@@ -558,10 +561,10 @@ class _Lowerer:
 
     def _bool_of_word1(self, w: Wire) -> Wire:
         """`bool(x)` of a word `x`: its lowest bit, `Extract(0, 0, x) = 1`."""
-        width, s = _bw(w.dtype), list(w.dtype.shape)
-        bit = self._emit(tensor.word.Extract(0, 0, width, s), Word(1, s), [w])
+        s = list(w.dtype.shape)
+        bit = self._emit(tensor.word.Extract(0, 0, w.dtype), Word(1, s), [w])
         one = self._emit(_const_op(1, Word(1, s)), Word(1, s), [])
-        return self._emit(tensor.word.Eq(1, s), Bool(s), [bit, one])
+        return self._emit(tensor.word.Eq([Word(1, s), Word(1, s)]), Bool(s), [bit, one])
 
     # --- builtin_call -------------------------------------------------------
 
@@ -580,14 +583,16 @@ class _Lowerer:
             # a boolean as a 1-bit word: if b then 1 else 0
             one = self._emit(_const_op(1, Word(1, _SCALAR)), Word(1, _SCALAR), [])
             zero = self._emit(_const_op(0, Word(1, _SCALAR)), Word(1, _SCALAR), [])
-            w = self._emit(tensor.word.Ite(1, _SCALAR), Word(1, _SCALAR), [self._as_bool(arg_w), one, zero])
+            cond = self._as_bool(arg_w)
+            op = tensor.word.Ite([cond.dtype, one.dtype, zero.dtype])
+            w = self._emit(op, Word(1, _SCALAR), [cond, one, zero])
         elif fn_name in ("signed", "unsigned"):
             w = self._emit(Skip(arg_w.dtype), arg_w.dtype, [arg_w])
             self._wire_types[id(w)] = _SMVType(w.dtype, signed=(fn_name == "signed"))
         elif fn_name == "extend":
             extra = int(str(_peel(exprs[1])))
             width = _bw(arg_w.dtype)
-            op = (tensor.word.signed.Extend if self._is_signed(arg_w) else tensor.word.unsigned.Extend)(extra, width, _SCALAR)
+            op = (tensor.word.signed.Extend if self._is_signed(arg_w) else tensor.word.unsigned.Extend)(extra, arg_w.dtype)
             w = self._emit(op, Word(width + extra, _SCALAR), [arg_w])
             self._propagate_type(w, arg_w)
         else:
@@ -722,7 +727,7 @@ class _Lowerer:
         ):
             bs = tree.children[idx]
             high, low = int(str(bs.children[0])), int(str(bs.children[1]))
-            op = tensor.word.Extract(high, low, _bw(base_w.dtype), _SCALAR)
+            op = tensor.word.Extract(high, low, base_w.dtype)
             w = self._fresh(target, Word(high - low + 1, _SCALAR))
             self.terms.append(Term(op, [w], [base_w]))
             return self._enforce(w, target)

@@ -6,6 +6,7 @@ use base::boundary::Boundary;
 use pyo3::prelude::*;
 use pyo3_tch::PyTensor;
 use theory::tensor;
+use theory::tensor::sort::{Bool, Int, Real, Word};
 use theory::torch::*;
 
 /// Starts Python and imports `torch` once for all tests, before any of
@@ -24,6 +25,11 @@ fn prepare_python_with_torch() {
 /// A tensor of `value`s of shape `[rows, cols]` and element `kind`.
 fn full(rows: i64, cols: i64, value: f64, kind: tch::Kind) -> tch::Tensor {
     tch::Tensor::full([rows, cols], value, (kind, tch::Device::Cpu))
+}
+
+/// The Python object of the sort `s`.
+fn sort<'py>(py: Python<'py>, s: impl Into<tensor::sort::Any>) -> Bound<'py, PyAny> {
+    s.into().into_pyobject(py).unwrap()
 }
 
 /// The Python `torch.Tensor` of `tensor`, sharing it.
@@ -59,17 +65,30 @@ fn constants_are_built_from_tensors_of_their_theory_only() {
         let boolean = py.get_type::<bool::Const>();
         let word = py.get_type::<word::Const>();
 
-        assert!(real.call1((&floats,)).is_ok());
+        let reals = sort(py, Real::new([2, 3]));
+        let integers = sort(py, Int::new([2, 3]));
+        let booleans = sort(py, Bool::new([2, 3]));
+        let words = sort(py, Word::new_unchecked(8, [2, 3]));
+
+        assert!(real.call1((&floats, &reals)).is_ok());
         // integers are reals too, kept as given
-        assert!(real.call1((&ints,)).is_ok());
-        assert!(real.call1((&bools,)).is_err());
-        assert!(int.call1((&ints,)).is_ok());
-        assert!(int.call1((&bools,)).is_err());
-        assert!(boolean.call1((&bools,)).is_ok());
-        assert!(boolean.call1((&floats,)).is_err());
-        assert!(word.call1((&ints, 8)).is_ok());
-        assert!(word.call1((&floats, 8)).is_err());
-        assert!(real.call1((42,)).is_err());
+        assert!(real.call1((&ints, &reals)).is_ok());
+        assert!(real.call1((&bools, &reals)).is_err());
+        assert!(int.call1((&ints, &integers)).is_ok());
+        assert!(int.call1((&bools, &integers)).is_err());
+        assert!(boolean.call1((&bools, &booleans)).is_ok());
+        assert!(boolean.call1((&floats, &booleans)).is_err());
+        assert!(word.call1((&ints, &words)).is_ok());
+        assert!(word.call1((&floats, &words)).is_err());
+        assert!(real.call1((42, &reals)).is_err());
+
+        // a constant writes its codomain, which is of the shape of its tensor
+        assert!(real.call1((&floats,)).is_err());
+        assert!(real.call1((&floats, sort(py, Real::new([3, 2])))).is_err());
+        assert!(
+            word.call1((&ints, sort(py, Word::new_unchecked(8, [3, 2]))))
+                .is_err()
+        );
     });
 }
 
@@ -78,7 +97,10 @@ fn constants_extract_from_the_class_of_their_theory() {
     prepare_python_with_torch();
     Python::attach(|py| {
         let floats = python(py, full(2, 3, 0.0, tch::Kind::Float));
-        let constant = py.get_type::<real::Const>().call1((&floats,)).unwrap();
+        let constant = py
+            .get_type::<real::Const>()
+            .call1((&floats, sort(py, Real::new([2, 3]))))
+            .unwrap();
         let op = constant
             .extract::<tensor::real::Const<tch::Tensor>>()
             .unwrap();
@@ -101,7 +123,10 @@ fn constants_extract_from_the_class_of_their_theory() {
         );
 
         let ints = python(py, full(2, 3, 0.0, tch::Kind::Int64));
-        let constant = py.get_type::<word::Const>().call1((&ints, 8)).unwrap();
+        let constant = py
+            .get_type::<word::Const>()
+            .call1((&ints, sort(py, Word::new_unchecked(8, [2, 3]))))
+            .unwrap();
         let op = constant
             .extract::<tensor::word::Const<tch::Tensor>>()
             .unwrap();
@@ -116,19 +141,34 @@ fn linear_maps_are_built_from_tensors_of_their_theory_and_shapes() {
         let a = python(py, full(4, 2, 1.0, tch::Kind::Float));
         let b = python(py, full(4, 1, 1.0, tch::Kind::Float));
         let real = py.get_type::<real::Linear>();
-        assert!(real.call1((&a, &b)).is_ok());
+        let reals = sort(py, Real::new([2, 1]));
+        assert!(real.call1((&a, &b, &reals)).is_ok());
 
         // `B` must have the rows of `A`
         let wrong_rows = python(py, full(3, 1, 1.0, tch::Kind::Float));
-        assert!(real.call1((&a, &wrong_rows)).is_err());
+        assert!(real.call1((&a, &wrong_rows, &reals)).is_err());
 
         // and both must be matrices of the theory
         let ints = python(py, full(4, 1, 1.0, tch::Kind::Int64));
-        assert!(real.call1((&a, &ints)).is_err());
+        assert!(real.call1((&a, &ints, &reals)).is_err());
         let int = py.get_type::<int::Linear>();
+        let integers = sort(py, Int::new([2, 1]));
         let ia = python(py, full(4, 2, 1.0, tch::Kind::Int64));
-        assert!(int.call1((&ia, &ints)).is_ok());
-        assert!(int.call1((&a, &b)).is_err());
+        assert!(int.call1((&ia, &ints, &integers)).is_ok());
+        assert!(int.call1((&a, &b, &integers)).is_err());
+
+        // a map reads its domain, of the columns of `A` and of `B`, and writes the
+        // codomain, if given, of the rows of `A`
+        assert!(real.call1((&a, &b)).is_err());
+        assert!(real.call1((&a, &b, sort(py, Real::new([2, 3])))).is_err());
+        assert!(
+            real.call1((&a, &b, &reals, sort(py, Real::new([4, 1]))))
+                .is_ok()
+        );
+        assert!(
+            real.call1((&a, &b, &reals, sort(py, Real::new([1, 4]))))
+                .is_err()
+        );
     });
 }
 
@@ -138,7 +178,10 @@ fn linear_maps_extract_from_the_class_of_their_theory() {
     Python::attach(|py| {
         let a = python(py, full(4, 2, 1.0, tch::Kind::Float));
         let b = python(py, full(4, 3, 1.0, tch::Kind::Float));
-        let class = py.get_type::<real::Linear>().call1((&a, &b)).unwrap();
+        let class = py
+            .get_type::<real::Linear>()
+            .call1((&a, &b, sort(py, Real::new([2, 3]))))
+            .unwrap();
         let linear = class
             .extract::<tensor::real::Linear<tch::Tensor>>()
             .unwrap();
@@ -164,21 +207,40 @@ fn any_extracts_constants_and_linear_maps_with_torch_tensors() {
     prepare_python_with_torch();
     Python::attach(|py| {
         let ints = python(py, full(2, 3, 0.0, tch::Kind::Int64));
-        let constant = py.get_type::<int::Const>().call1((&ints,)).unwrap();
+        let integers = sort(py, Int::new([2, 3]));
+        let constant = py
+            .get_type::<int::Const>()
+            .call1((&ints, &integers))
+            .unwrap();
         let any = constant.extract::<tensor::Any<tch::Tensor>>().unwrap();
         assert!(matches!(any, tensor::Any::Int(tensor::int::NIA::Const(_))));
 
-        let scale = py.get_type::<int::Scale>().call1((&ints,)).unwrap();
+        let scale = py
+            .get_type::<int::Scale>()
+            .call1((&ints, &integers))
+            .unwrap();
         let any = scale.extract::<tensor::Any<tch::Tensor>>().unwrap();
         assert!(matches!(any, tensor::Any::Int(tensor::int::NIA::Scale(_))));
         // the class decides the operation and the theory
         assert!(scale.extract::<tensor::int::Const<tch::Tensor>>().is_err());
         let floats = python(py, full(2, 3, 0.0, tch::Kind::Float));
-        assert!(py.get_type::<int::Scale>().call1((&floats,)).is_err());
-        assert!(py.get_type::<real::Scale>().call1((&floats,)).is_ok());
+        let reals = sort(py, Real::new([2, 3]));
+        assert!(
+            py.get_type::<int::Scale>()
+                .call1((&floats, &integers))
+                .is_err()
+        );
+        assert!(
+            py.get_type::<real::Scale>()
+                .call1((&floats, &reals))
+                .is_ok()
+        );
 
         let bools = python(py, full(2, 3, 0.0, tch::Kind::Bool));
-        let constant = py.get_type::<bool::Const>().call1((&bools,)).unwrap();
+        let constant = py
+            .get_type::<bool::Const>()
+            .call1((&bools, sort(py, Bool::new([2, 3]))))
+            .unwrap();
         let any = constant.extract::<tensor::Any<tch::Tensor>>().unwrap();
         assert!(matches!(
             any,
@@ -187,7 +249,10 @@ fn any_extracts_constants_and_linear_maps_with_torch_tensors() {
 
         let a = python(py, full(4, 2, 1.0, tch::Kind::Int64));
         let b = python(py, full(4, 1, 1.0, tch::Kind::Int64));
-        let linear = py.get_type::<int::Linear>().call1((&a, &b)).unwrap();
+        let linear = py
+            .get_type::<int::Linear>()
+            .call1((&a, &b, sort(py, Int::new([2, 1]))))
+            .unwrap();
         let any = linear.extract::<tensor::Any<tch::Tensor>>().unwrap();
         assert!(matches!(any, tensor::Any::Int(tensor::int::NIA::Linear(_))));
     });
@@ -263,15 +328,41 @@ fn constants_are_built_from_matrices_only() {
         let boolean = py.get_type::<bool::Const>();
         let word = py.get_type::<word::Const>();
 
+        // a codomain of a matrix, so that only the tensor is wrong
+        let reals = sort(py, Real::new([1, 1]));
+        let integers = sort(py, Int::new([1, 1]));
+        let booleans = sort(py, Bool::new([1, 1]));
+        let words = sort(py, Word::new_unchecked(8, [1, 1]));
         for size in [&[][..], &[3], &[2, 2, 2]] {
-            assert!(real.call1((tensor(size, tch::Kind::Float),)).is_err());
-            assert!(int.call1((tensor(size, tch::Kind::Int64),)).is_err());
-            assert!(boolean.call1((tensor(size, tch::Kind::Bool),)).is_err());
-            assert!(word.call1((tensor(size, tch::Kind::Int64), 8)).is_err());
+            assert!(
+                real.call1((tensor(size, tch::Kind::Float), &reals))
+                    .is_err()
+            );
+            assert!(
+                int.call1((tensor(size, tch::Kind::Int64), &integers))
+                    .is_err()
+            );
+            assert!(
+                boolean
+                    .call1((tensor(size, tch::Kind::Bool), &booleans))
+                    .is_err()
+            );
+            assert!(
+                word.call1((tensor(size, tch::Kind::Int64), &words))
+                    .is_err()
+            );
         }
 
         // matrices may be empty
-        assert!(real.call1((tensor(&[0, 3], tch::Kind::Float),)).is_ok());
-        assert!(word.call1((tensor(&[2, 0], tch::Kind::Int64), 8)).is_ok());
+        let empty_reals = sort(py, Real::new([0, 3]));
+        let empty_words = sort(py, Word::new_unchecked(8, [2, 0]));
+        assert!(
+            real.call1((tensor(&[0, 3], tch::Kind::Float), &empty_reals))
+                .is_ok()
+        );
+        assert!(
+            word.call1((tensor(&[2, 0], tch::Kind::Int64), &empty_words))
+                .is_ok()
+        );
     });
 }

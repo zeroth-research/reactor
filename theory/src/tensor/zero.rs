@@ -36,11 +36,27 @@ impl fmt::Display for Zero {
     }
 }
 
-#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Zero {
-    #[cfg_attr(feature = "pyo3", new)]
+    /// The operation writing the only value of the sort of `cod`.
+    pub fn with_cod(cod: [sort::Zero; 1]) -> Result<Self, crate::Error> {
+        let [_] = cod;
+        Ok(Zero)
+    }
+
     pub fn new() -> Self {
         Zero
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Zero {
+    /// Python builds it from nothing: its codomain, the singleton sort, carries no
+    /// information.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = ())]
+    fn py_new() -> Self {
+        Self::new()
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it

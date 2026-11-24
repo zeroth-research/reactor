@@ -1,6 +1,8 @@
 //! The Python classes of the operations of integer arithmetic carrying
 //! tensors.
 
+use crate::tensor::int;
+use crate::tensor::sort::Int;
 use pyo3::prelude::*;
 use pyo3_tch::PyTensor;
 
@@ -16,10 +18,13 @@ unsafe impl Sync for Linear {}
 
 #[pymethods]
 impl Linear {
-    /// Fails when `a` and `b` are not `torch.Tensor`s of integer
-    /// elements, of shapes `[m, n]` and `[m, k]`.
+    /// The map of the tensors `a` and `b`, reading `dom`; its codomain `cod`,
+    /// when given, must be the one it writes. Fails when `a` and `b` are not
+    /// `torch.Tensor`s of integer elements, of shapes `[m, n]` and `[m, k]`,
+    /// or `dom` not of shape `[n, k]`.
     #[new]
-    fn new(a: PyTensor, b: PyTensor) -> Result<Self, crate::Error> {
+    #[pyo3(signature = (a, b, /, dom, cod = None))]
+    fn new(a: PyTensor, b: PyTensor, dom: Int, cod: Option<Int>) -> Result<Self, crate::Error> {
         if !super::is_integer(a.kind()) || !super::is_integer(b.kind()) {
             return Err(crate::Error(format!(
                 "expected tensors of integer elements, got {:?} and {:?}",
@@ -28,7 +33,8 @@ impl Linear {
             )));
         }
         super::check_affine(&a, &b)?;
-        Ok(Linear(a.0, b.0))
+        let op = crate::tensor::check_cod(int::Linear::with_dom(a.0, b.0, [dom]), cod)?;
+        Ok(Linear(op.a().shallow_clone(), op.b().shallow_clone()))
     }
 
     #[getter]
@@ -87,10 +93,12 @@ unsafe impl Sync for Const {}
 
 #[pymethods]
 impl Const {
-    /// Fails when `tensor` is not a `torch.Tensor` of two dimensions and
-    /// integer elements.
+    /// The constant held in `tensor`, writing `cod`. Fails when `tensor` is
+    /// not a `torch.Tensor` of two dimensions and integer elements, or `cod`
+    /// not of its shape.
     #[new]
-    fn new(tensor: PyTensor) -> Result<Self, crate::Error> {
+    #[pyo3(signature = (tensor, /, cod))]
+    fn new(tensor: PyTensor, cod: Int) -> Result<Self, crate::Error> {
         super::check_matrix(&tensor)?;
         if !super::is_integer(tensor.kind()) {
             return Err(crate::Error(format!(
@@ -98,7 +106,8 @@ impl Const {
                 tensor.kind()
             )));
         }
-        Ok(Const(tensor.0))
+        let op = int::Const::with_cod(tensor.0, [cod])?;
+        Ok(Const(op.tensor().shallow_clone()))
     }
 
     #[getter]
@@ -151,10 +160,13 @@ unsafe impl Sync for Scale {}
 
 #[pymethods]
 impl Scale {
-    /// Fails when `tensor` is not a `torch.Tensor` of two dimensions and
-    /// integer elements.
+    /// The product with the constant held in `tensor`, reading `dom`; its
+    /// codomain `cod`, when given, must be the one it writes. Fails when
+    /// `tensor` is not a `torch.Tensor` of two dimensions and integer
+    /// elements, or `dom` not of its shape.
     #[new]
-    fn new(tensor: PyTensor) -> Result<Self, crate::Error> {
+    #[pyo3(signature = (tensor, /, dom, cod = None))]
+    fn new(tensor: PyTensor, dom: Int, cod: Option<Int>) -> Result<Self, crate::Error> {
         super::check_matrix(&tensor)?;
         if !super::is_integer(tensor.kind()) {
             return Err(crate::Error(format!(
@@ -162,7 +174,8 @@ impl Scale {
                 tensor.kind()
             )));
         }
-        Ok(Scale(tensor.0))
+        let op = crate::tensor::check_cod(int::Scale::with_dom(tensor.0, [dom]), cod)?;
+        Ok(Scale(op.tensor().shallow_clone()))
     }
 
     #[getter]

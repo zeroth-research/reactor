@@ -1,5 +1,6 @@
 //! The Python class of the constants of fixed-size bit-vectors.
 
+use crate::tensor::sort::Word;
 use pyo3::prelude::*;
 use pyo3_tch::PyTensor;
 
@@ -15,19 +16,21 @@ unsafe impl Sync for Const {}
 
 #[pymethods]
 impl Const {
-    /// Fails when `tensor` is not a `torch.Tensor` of two dimensions and
-    /// integer elements, or `width` is zero.
+    /// The constant held in `tensor`, writing `cod`. Fails when `tensor` is
+    /// not a `torch.Tensor` of two dimensions and integer elements, or `cod`
+    /// not of its shape.
     #[new]
-    fn new(tensor: PyTensor, width: usize) -> Result<Self, crate::Error> {
+    #[pyo3(signature = (tensor, /, cod))]
+    fn new(tensor: PyTensor, cod: Word) -> Result<Self, crate::Error> {
         super::check_matrix(&tensor)?;
-        crate::tensor::sort::check_width(width)?;
         if !super::is_integer(tensor.kind()) {
             return Err(crate::Error(format!(
                 "expected a tensor of integer elements, got {:?}",
                 tensor.kind()
             )));
         }
-        Ok(Const(tensor.0, width))
+        let op = crate::tensor::word::Const::with_cod(tensor.0, [cod])?;
+        Ok(Const(op.tensor().shallow_clone(), op.width()))
     }
 
     #[getter]

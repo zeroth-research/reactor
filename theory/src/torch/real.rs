@@ -1,5 +1,7 @@
 //! The Python classes of the operations of real arithmetic carrying tensors.
 
+use crate::tensor::real;
+use crate::tensor::sort::Real;
 use pyo3::prelude::*;
 use pyo3_tch::PyTensor;
 
@@ -15,12 +17,13 @@ unsafe impl Sync for Linear {}
 
 #[pymethods]
 impl Linear {
-    /// The map of real matrices of the given `degree`, which `B` is of;
-    /// fails when `a` and `b` are not `torch.Tensor`s of floating-point
-    /// elements, of shapes `[m, n]` and `[m, k]`.
+    /// The map of the tensors `a` and `b`, reading `dom`; its codomain `cod`,
+    /// when given, must be the one it writes. Fails when `a` and `b` are not
+    /// `torch.Tensor`s of floating-point elements, of shapes `[m, n]` and `[m, k]`,
+    /// or `dom` not of shape `[n, k]`.
     #[new]
-    #[pyo3(signature = (a, b, /, degree = 0))]
-    fn new(a: PyTensor, b: PyTensor, degree: u8) -> Result<Self, crate::Error> {
+    #[pyo3(signature = (a, b, /, dom, cod = None))]
+    fn new(a: PyTensor, b: PyTensor, dom: Real, cod: Option<Real>) -> Result<Self, crate::Error> {
         if !a.is_floating_point() || !b.is_floating_point() {
             return Err(crate::Error(format!(
                 "expected tensors of floating-point elements, got {:?} and {:?}",
@@ -29,7 +32,12 @@ impl Linear {
             )));
         }
         super::check_affine(&a, &b)?;
-        Ok(Linear(a.0, b.0, degree))
+        let op = crate::tensor::check_cod(real::Linear::with_dom(a.0, b.0, [dom]), cod)?;
+        Ok(Linear(
+            op.a().shallow_clone(),
+            op.b().shallow_clone(),
+            op.degree(),
+        ))
     }
 
     #[getter]
@@ -95,12 +103,12 @@ unsafe impl Sync for Const {}
 
 #[pymethods]
 impl Const {
-    /// The constant of the given `degree`; fails when `tensor` is not a
-    /// `torch.Tensor` of two dimensions and floating-point or integer
-    /// elements.
+    /// The constant held in `tensor`, writing `cod`. Fails when `tensor` is
+    /// not a `torch.Tensor` of two dimensions and floating-point or integer elements, or `cod`
+    /// not of its shape.
     #[new]
-    #[pyo3(signature = (tensor, /, degree = 0))]
-    fn new(tensor: PyTensor, degree: u8) -> Result<Self, crate::Error> {
+    #[pyo3(signature = (tensor, /, cod))]
+    fn new(tensor: PyTensor, cod: Real) -> Result<Self, crate::Error> {
         super::check_matrix(&tensor)?;
         if !tensor.is_floating_point() && !super::is_integer(tensor.kind()) {
             return Err(crate::Error(format!(
@@ -108,7 +116,8 @@ impl Const {
                 tensor.kind()
             )));
         }
-        Ok(Const(tensor.0, degree))
+        let op = real::Const::with_cod(tensor.0, [cod])?;
+        Ok(Const(op.tensor().shallow_clone(), op.degree()))
     }
 
     #[getter]
@@ -169,12 +178,13 @@ unsafe impl Sync for Scale {}
 
 #[pymethods]
 impl Scale {
-    /// The product of real matrices of the given `degree`; fails when
+    /// The product with the constant held in `tensor`, reading `dom`; its
+    /// codomain `cod`, when given, must be the one it writes. Fails when
     /// `tensor` is not a `torch.Tensor` of two dimensions and floating-point
-    /// elements.
+    /// elements, or `dom` not of its shape.
     #[new]
-    #[pyo3(signature = (tensor, /, degree = 0))]
-    fn new(tensor: PyTensor, degree: u8) -> Result<Self, crate::Error> {
+    #[pyo3(signature = (tensor, /, dom, cod = None))]
+    fn new(tensor: PyTensor, dom: Real, cod: Option<Real>) -> Result<Self, crate::Error> {
         super::check_matrix(&tensor)?;
         if !tensor.is_floating_point() {
             return Err(crate::Error(format!(
@@ -182,7 +192,8 @@ impl Scale {
                 tensor.kind()
             )));
         }
-        Ok(Scale(tensor.0, degree))
+        let op = crate::tensor::check_cod(real::Scale::with_dom(tensor.0, [dom]), cod)?;
+        Ok(Scale(op.tensor().shallow_clone(), op.degree()))
     }
 
     #[getter]

@@ -68,24 +68,27 @@ class TermBuilder:
 
     # --- low-level helpers ---
 
-    def _sized(self, op, sort, **kwargs):
-        """The operation `op` on values of `sort`, sized by its shape, with any further
-        arguments of `op`, such as the degree of reals."""
-        return op(_shape(sort), **kwargs)
+    def _apply(self, op, *args, output_wire=None) -> Term:
+        """The term of the operation `op` reading `args`, writing `output_wire`, or a wire
+        of its codomain."""
+        return Term(op, [output_wire or Wire(op.cod)], [_wire(a) for a in args])
 
-    def _unary(self, op, output_sort: Real | Int | Bool | Word | Zero, a) -> Term:
-        return Term(op, [Wire(output_sort)], [_wire(a)])
+    def _unary(self, op, a) -> Term:
+        """The term of the operation class `op`, built from the sort of `a`, its domain."""
+        return self._apply(op(_dtype(a)), a)
 
-    def _binary(self, op, output_sort: Real | Int | Bool | Word | Zero, a, b) -> Term:
-        return Term(op, [Wire(output_sort)], [_wire(a), _wire(b)])
+    def _binary(self, op, a, b) -> Term:
+        """The term of the operation class `op`, built from the sorts of `a` and `b`, its
+        domain."""
+        return self._apply(op([_dtype(a), _dtype(b)]), a, b)
 
     def _compare(self, op, a, b) -> Term:
         """The term of the comparison `op` of `a` and `b`, writing booleans of their shape."""
-        return self._binary(self._sized(op, _dtype(a)), Bool(_shape(_dtype(a))), a, b)
+        return self._binary(op, a, b)
 
     def _ite(self, op, cond, a, b, output_wire) -> Term:
-        w = output_wire or Wire(_dtype(a))
-        return Term(self._sized(op, _dtype(a)), [w], [_wire(cond), _wire(a), _wire(b)])
+        op = op([_dtype(cond), _dtype(a), _dtype(b)])
+        return self._apply(op, cond, a, b, output_wire=output_wire)
 
     def _unsupported(self, method):
         raise TheoryError(f"{method.__name__} is not supported by {type(self).__name__}")
@@ -109,14 +112,15 @@ class TermBuilder:
         linear_out_wire = Wire(_with_shape(x_wire.dtype, [out_features, 1]))
         if bias is None or bias.numel() == 0:
             bias = torch.zeros(out_features, 1, dtype=weight.dtype)
-        linear = self._linear(weight, bias.reshape(out_features, 1))
+        linear = self._linear(weight, bias.reshape(out_features, 1), input_col_wire.dtype)
         t_lin = Term(linear, [linear_out_wire], [input_col_wire])
 
         t_out = self.transpose(linear_out_wire)
         return [t_in, t_lin, t_out]
 
-    def _linear(self, weight, bias):
-        """The operation `weight @ x + bias`, for constant `weight` and `bias`."""
+    def _linear(self, weight, bias, dom):
+        """The operation `weight @ x + bias`, for constant `weight` and `bias`, reading
+        `x` of the sort `dom`."""
         self._unsupported(self.linear)
 
     def linear_symbolic(self, x, out_features: int):
@@ -134,16 +138,16 @@ class TermBuilder:
         self._unsupported(self.ite)
 
     def not_(self, a) -> Term:
-        return self._unary(self._sized(bool_.Not, _dtype(a)), _dtype(a), a)
+        return self._unary(bool_.Not, a)
 
     def and_(self, a, b) -> Term:
-        return self._binary(self._sized(bool_.And, _dtype(a)), _dtype(a), a, b)
+        return self._binary(bool_.And, a, b)
 
     def or_(self, a, b) -> Term:
-        return self._binary(self._sized(bool_.Or, _dtype(a)), _dtype(a), a, b)
+        return self._binary(bool_.Or, a, b)
 
     def xor_(self, a, b) -> Term:
-        return self._binary(self._sized(bool_.Xor, _dtype(a)), _dtype(a), a, b)
+        return self._binary(bool_.Xor, a, b)
 
     def eq(self, a, b) -> Term:
         if _is_bool(a):
@@ -228,7 +232,7 @@ class TermBuilder:
         else:
             sort = self.number(shape)
         if isinstance(sort, Bool):
-            op = bool_.Const(tensor.to(torch.bool))
+            op = bool_.Const(tensor.to(torch.bool), sort)
         else:
             op = self._const(tensor, sort)
         return Term.constant(op, [output_wire or Wire(sort)])
@@ -272,12 +276,6 @@ class RealTermBuilder(TermBuilder):
             return super().ite(cond, a, b, output_wire)
         return self._ite(real.Ite, cond, a, b, output_wire)
 
-    def _sized(self, op, sort, **kwargs):
-        # a real operation is of the degree of its operand, unless given its degrees
-        if isinstance(sort, Real) and "degree" not in kwargs and "degrees" not in kwargs:
-            kwargs["degree"] = sort.degree
-        return super()._sized(op, sort, **kwargs)
-
     def _degree(self, a, b) -> int:
         """The degree of both `a` and `b`, which their sum, difference, extremum or choice
         keeps, and which their comparison requires: reals of different degrees, rates of
@@ -298,17 +296,16 @@ class RealTermBuilder(TermBuilder):
         return super()._ite(op, cond, a, b, output_wire)
 
     def add(self, a, b) -> Term:
-        return self._binary(self._sized(real.Add, _dtype(a), degree=self._degree(a, b)), _dtype(a), a, b)
+        self._degree(a, b)
+        return self._binary(real.Add, a, b)
 
     def sub(self, a, b) -> Term:
-        return self._binary(self._sized(real.Sub, _dtype(a), degree=self._degree(a, b)), _dtype(a), a, b)
+        self._degree(a, b)
+        return self._binary(real.Sub, a, b)
 
     def mul(self, a, b) -> Term:
         # the degrees of the factors add up
-        sa, sb = _dtype(a), _dtype(b)
-        p, q = sa.degree, sb.degree
-        out = Real(_shape(sa), degree=p + q)
-        return self._binary(self._sized(real.Mul, sa, degrees=[p, q]), out, a, b)
+        return self._binary(real.Mul, a, b)
 
     def div(self, a, b) -> Term:
         # the degree of the divisor is taken off that of the dividend, which it must not
@@ -317,37 +314,31 @@ class RealTermBuilder(TermBuilder):
         p, q = sa.degree, sb.degree
         if q > p:
             raise TheoryError(f"cannot divide a real of degree {p} by one of degree {q}")
-        out = Real(_shape(sa), degree=p - q)
-        return self._binary(self._sized(real.Div, sa, degrees=[p, q]), out, a, b)
+        return self._binary(real.Div, a, b)
 
     def neg(self, a) -> Term:
         # the negation keeps the degree
-        return self._unary(self._sized(real.Neg, _dtype(a)), _dtype(a), a)
+        return self._unary(real.Neg, a)
 
     def abs_(self, a) -> Term:
-        return self._unary(self._sized(real.Abs, _dtype(a)), _dtype(a), a)
+        return self._unary(real.Abs, a)
 
     def relu(self, a) -> Term:
-        return self._unary(self._sized(real.ReLU, _dtype(a)), _dtype(a), a)
+        return self._unary(real.ReLU, a)
 
     def argmax(self, a) -> Term:
         # the index is written as a plain [1, 1] real
-        return self._unary(self._sized(real.Argmax, _dtype(a)), Real([1, 1]), a)
+        return self._unary(real.Argmax, a)
 
     def transpose(self, a) -> Term:
-        s = _dtype(a)
-        rows, cols = _shape(s)
-        return self._unary(self._sized(real.Transpose, s), _with_shape(s, [cols, rows]), a)
+        return self._unary(real.Transpose, a)
 
     def matmul(self, a, b) -> Term:
-        sa, sb = _dtype(a), _dtype(b)
         # the degrees of the factors add up, as for the pointwise product
-        p, q = sa.degree, sb.degree
-        out = Real([_shape(sa)[0], _shape(sb)[1]], degree=p + q)
-        return self._binary(real.MatMul([_shape(sa), _shape(sb)], degrees=[p, q]), out, a, b)
+        return self._binary(real.MatMul, a, b)
 
-    def _linear(self, weight, bias):
-        return real.Linear(weight, bias)
+    def _linear(self, weight, bias, dom):
+        return real.Linear(weight, bias, dom)
 
     def lt(self, a, b) -> Term:
         return self._compare(real.Lt, a, b)
@@ -372,7 +363,7 @@ class RealTermBuilder(TermBuilder):
         return self._compare(real.Ne, a, b)
 
     def _const(self, tensor, sort):
-        return real.Const(tensor.to(torch.float32), degree=sort.degree)
+        return real.Const(tensor.to(torch.float32), sort)
 
 
 class IntTermBuilder(TermBuilder):
@@ -387,42 +378,38 @@ class IntTermBuilder(TermBuilder):
         return self._ite(int_.Ite, cond, a, b, output_wire)
 
     def add(self, a, b) -> Term:
-        return self._binary(self._sized(int_.Add, _dtype(a)), _dtype(a), a, b)
+        return self._binary(int_.Add, a, b)
 
     def sub(self, a, b) -> Term:
-        return self._binary(self._sized(int_.Sub, _dtype(a)), _dtype(a), a, b)
+        return self._binary(int_.Sub, a, b)
 
     def mul(self, a, b) -> Term:
-        return self._binary(self._sized(int_.Mul, _dtype(a)), _dtype(a), a, b)
+        return self._binary(int_.Mul, a, b)
 
     def div(self, a, b) -> Term:
-        return self._binary(self._sized(int_.Div, _dtype(a)), _dtype(a), a, b)
+        return self._binary(int_.Div, a, b)
 
     def neg(self, a) -> Term:
-        return self._unary(self._sized(int_.Neg, _dtype(a)), _dtype(a), a)
+        return self._unary(int_.Neg, a)
 
     def abs_(self, a) -> Term:
-        return self._unary(self._sized(int_.Abs, _dtype(a)), _dtype(a), a)
+        return self._unary(int_.Abs, a)
 
     def relu(self, a) -> Term:
-        return self._unary(self._sized(int_.ReLU, _dtype(a)), _dtype(a), a)
+        return self._unary(int_.ReLU, a)
 
     def argmax(self, a) -> Term:
         # the index is written as a [1, 1] matrix of the operand's sort
-        return self._unary(self._sized(int_.Argmax, _dtype(a)), _with_shape(_dtype(a), [1, 1]), a)
+        return self._unary(int_.Argmax, a)
 
     def transpose(self, a) -> Term:
-        s = _dtype(a)
-        rows, cols = _shape(s)
-        return self._unary(self._sized(int_.Transpose, s), _with_shape(s, [cols, rows]), a)
+        return self._unary(int_.Transpose, a)
 
     def matmul(self, a, b) -> Term:
-        sa, sb = _dtype(a), _dtype(b)
-        out = _with_shape(sa, [_shape(sa)[0], _shape(sb)[1]])
-        return self._binary(int_.MatMul([_shape(sa), _shape(sb)]), out, a, b)
+        return self._binary(int_.MatMul, a, b)
 
-    def _linear(self, weight, bias):
-        return int_.Linear(weight, bias)
+    def _linear(self, weight, bias, dom):
+        return int_.Linear(weight, bias, dom)
 
     def lt(self, a, b) -> Term:
         return self._compare(int_.Lt, a, b)
@@ -447,7 +434,7 @@ class IntTermBuilder(TermBuilder):
         return self._compare(int_.Ne, a, b)
 
     def _const(self, tensor, sort):
-        return int_.Const(tensor.to(torch.int64))
+        return int_.Const(tensor.to(torch.int64), sort)
 
 
 class WordTermBuilder(TermBuilder):
@@ -461,45 +448,40 @@ class WordTermBuilder(TermBuilder):
     def number(self, shape: list) -> Word:
         return Word(self.width, shape)
 
-    def _sized(self, op, sort, **kwargs):
-        if isinstance(sort, Word):
-            return op(_width(sort), _shape(sort), **kwargs)
-        return super()._sized(op, sort, **kwargs)
-
     def ite(self, cond, a, b, output_wire=None) -> Term:
         if _is_bool(a):
             return super().ite(cond, a, b, output_wire)
         return self._ite(word.Ite, cond, a, b, output_wire)
 
     def not_(self, a) -> Term:
-        return super().not_(a) if _is_bool(a) else self._unary(self._sized(word.Not, _dtype(a)), _dtype(a), a)
+        return super().not_(a) if _is_bool(a) else self._unary(word.Not, a)
 
     def and_(self, a, b) -> Term:
-        return super().and_(a, b) if _is_bool(a) else self._binary(self._sized(word.And, _dtype(a)), _dtype(a), a, b)
+        return super().and_(a, b) if _is_bool(a) else self._binary(word.And, a, b)
 
     def or_(self, a, b) -> Term:
-        return super().or_(a, b) if _is_bool(a) else self._binary(self._sized(word.Or, _dtype(a)), _dtype(a), a, b)
+        return super().or_(a, b) if _is_bool(a) else self._binary(word.Or, a, b)
 
     def xor_(self, a, b) -> Term:
-        return super().xor_(a, b) if _is_bool(a) else self._binary(self._sized(word.Xor, _dtype(a)), _dtype(a), a, b)
+        return super().xor_(a, b) if _is_bool(a) else self._binary(word.Xor, a, b)
 
     def add(self, a, b) -> Term:
-        return self._binary(self._sized(word.Add, _dtype(a)), _dtype(a), a, b)
+        return self._binary(word.Add, a, b)
 
     def sub(self, a, b) -> Term:
-        return self._binary(self._sized(word.Sub, _dtype(a)), _dtype(a), a, b)
+        return self._binary(word.Sub, a, b)
 
     def mul(self, a, b) -> Term:
-        return self._binary(self._sized(word.Mul, _dtype(a)), _dtype(a), a, b)
+        return self._binary(word.Mul, a, b)
 
     def div(self, a, b) -> Term:
-        return self._binary(self._sized(unsigned.Div, _dtype(a)), _dtype(a), a, b)
+        return self._binary(unsigned.Div, a, b)
 
     def neg(self, a) -> Term:
-        return self._unary(self._sized(word.Neg, _dtype(a)), _dtype(a), a)
+        return self._unary(word.Neg, a)
 
     def abs_(self, a) -> Term:
-        return self._unary(self._sized(signed.Abs, _dtype(a)), _dtype(a), a)
+        return self._unary(signed.Abs, a)
 
     def lt(self, a, b) -> Term:
         return self._compare(unsigned.Lt, a, b)
@@ -524,17 +506,13 @@ class WordTermBuilder(TermBuilder):
         return self._compare(word.Ne, a, b)
 
     def bit_select(self, a, high: int, low: int) -> Term:
-        s = _dtype(a)
-        op = word.Extract(high, low, _width(s), _shape(s))
-        return self._unary(op, Word(high - low + 1, _shape(s)), a)
+        return self._apply(word.Extract(high, low, _dtype(a)), a)
 
     def extend(self, a, extra: int) -> Term:
-        s = _dtype(a)
-        op = unsigned.Extend(extra, _width(s), _shape(s))
-        return self._unary(op, Word(_width(s) + extra, _shape(s)), a)
+        return self._apply(unsigned.Extend(extra, _dtype(a)), a)
 
     def _const(self, tensor, sort):
-        return word.Const(tensor.to(torch.int64), _width(sort))
+        return word.Const(tensor.to(torch.int64), sort)
 
 
 def builder_for(number=Real) -> TermBuilder:

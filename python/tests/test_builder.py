@@ -39,7 +39,7 @@ def test_mul_adds_the_degrees_of_reals(p, q):
 
     term = builder.mul(x, y)
 
-    assert term.itype == tensor.real.Mul([2, 3], degrees=[p, q])
+    assert term.itype == tensor.real.Mul([Real([2, 3], degree=p), Real([2, 3], degree=q)])
     assert term.write[0].dtype == Real([2, 3], degree=p + q)
 
 
@@ -49,7 +49,7 @@ def test_add_keeps_the_degree_of_reals():
 
     term = builder.add(x, y)
 
-    assert term.itype == tensor.real.Add([2, 3], degree=1)
+    assert term.itype == tensor.real.Add([Real([2, 3], degree=1)] * 2)
     assert term.write[0].dtype == Real([2, 3], degree=1)
 
 

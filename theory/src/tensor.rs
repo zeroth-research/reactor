@@ -167,6 +167,31 @@ pub(crate) fn same_sort<S: Copy + PartialEq + fmt::Display, const N: usize>(
     Ok(s)
 }
 
+/// The operation a Python constructor builds from its domain, `op`, checked
+/// against its codomain `cod` when given: that must be the codomain of `op`.
+#[cfg(feature = "pyo3")]
+pub(crate) fn check_cod<Op, S, C>(
+    op: Result<Op, crate::Error>,
+    cod: Option<C>,
+) -> Result<Op, crate::Error>
+where
+    Op: Boundary<S>,
+    S: Clone + PartialEq + fmt::Display,
+    C: Into<S> + fmt::Display,
+{
+    let op = op?;
+    if let Some(c) = cod {
+        let expected: Poly<S> = base::mono![c.into()].into();
+        if op.cod() != expected {
+            return Err(crate::Error(format!(
+                "the operation reading this domain writes {}, not {expected}",
+                op.cod()
+            )));
+        }
+    }
+    Ok(op)
+}
+
 /// The sorts of the domain or codomain `poly` of an operation, as Python
 /// presents them: the sort alone when there is one, else their list.
 ///
@@ -221,12 +246,45 @@ impl fmt::Display for Skip {
     }
 }
 
-// The Python constructors of the structural operations, from their sort.
-#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Havoc {
-    #[cfg_attr(feature = "pyo3", new)]
+    /// The choice of a value of the sort of `cod`.
+    pub fn with_cod(cod: [sort::Any; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Havoc { sort: s })
+    }
+
     pub fn new(sort: sort::Any) -> Self {
         Havoc { sort }
+    }
+}
+
+impl Skip {
+    /// The identity reading the sort of `dom`.
+    pub fn with_dom(dom: [sort::Any; 1]) -> Result<Self, crate::Error> {
+        let [s] = dom;
+        Ok(Skip { sort: s })
+    }
+
+    /// The identity writing the sort of `cod`.
+    pub fn with_cod(cod: [sort::Any; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Skip { sort: s })
+    }
+
+    pub fn new(sort: sort::Any) -> Self {
+        Skip { sort }
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Havoc {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its codomain `cod`.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (cod))]
+    fn py_new(cod: sort::Any) -> Result<Self, crate::Error> {
+        Self::with_cod([cod])
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -252,9 +310,14 @@ impl Havoc {
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Skip {
-    #[cfg_attr(feature = "pyo3", new)]
-    pub fn new(sort: sort::Any) -> Self {
-        Skip { sort }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: sort::Any, cod: Option<sort::Any>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom([dom]), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it

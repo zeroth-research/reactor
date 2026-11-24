@@ -55,6 +55,21 @@ pub struct Const<T> {
     degree: u8,
 }
 
+impl<T: Tensor> Const<T> {
+    /// The constant held in `tensor`, writing the real matrix of `cod`; fails
+    /// unless `tensor` is of its shape.
+    pub fn with_cod(tensor: T, cod: [Real; 1]) -> Result<Self, crate::Error> {
+        let [x] = cod;
+        if tensor.shape() != x.shape() {
+            return Err(crate::tensor::unexpected_cod(
+                &format!("1 sort of the shape {:?} of the constant", tensor.shape()),
+                &cod,
+            ));
+        }
+        Ok(Self::with_degree(tensor, x.degree()))
+    }
+}
+
 impl<T> Const<T> {
     /// The plain constant held in `tensor`, of degree 0.
     pub fn new(tensor: T) -> Self {
@@ -1323,15 +1338,23 @@ impl Add {
         let [s] = cod;
         Ok(Self::with_degree(s.shape(), s.degree()))
     }
+
+    /// On real matrices of the given `degree`.
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Add { shape, degree }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Add {
-    /// On real matrices of the given `degree`.
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Add { shape, degree }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Real; 2], cod: Option<Real>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -1384,15 +1407,23 @@ impl Sub {
         let [s] = cod;
         Ok(Self::with_degree(s.shape(), s.degree()))
     }
+
+    /// On real matrices of the given `degree`.
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Sub { shape, degree }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Sub {
-    /// On real matrices of the given `degree`.
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Sub { shape, degree }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Real; 2], cod: Option<Real>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -1453,14 +1484,9 @@ impl Mul {
         }
         Self::with_degrees(x.shape(), [x.degree(), y.degree()])
     }
-}
 
-#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
-impl Mul {
     /// On real matrices of the given `degrees`, `[p, q]`, writing ones of
     /// degree `p + q`; fails when that degree is out of range.
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degrees = [0, 0])))]
     pub fn with_degrees(shape: [usize; 2], degrees: [u8; 2]) -> Result<Self, crate::Error> {
         let [p, q] = degrees;
         if p.checked_add(q).is_none() {
@@ -1469,6 +1495,19 @@ impl Mul {
             )));
         }
         Ok(Mul { shape, degrees })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Mul {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Real; 2], cod: Option<Real>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -1532,15 +1571,10 @@ impl Div {
         }
         Self::with_degrees(x.shape(), [x.degree(), y.degree()])
     }
-}
 
-#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
-impl Div {
     /// On real matrices of the given `degrees`, `[p, q]`, writing ones of
     /// degree `p - q`; fails when `q` exceeds `p`, as that degree would be
     /// negative.
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degrees = [0, 0])))]
     pub fn with_degrees(shape: [usize; 2], degrees: [u8; 2]) -> Result<Self, crate::Error> {
         let [p, q] = degrees;
         if q > p {
@@ -1549,6 +1583,19 @@ impl Div {
             )));
         }
         Ok(Div { shape, degrees })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Div {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Real; 2], cod: Option<Real>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The degrees of the dividend and the divisor, as a list: pyo3 would
@@ -1598,15 +1645,22 @@ impl Zero {
         let [s] = cod;
         Ok(Self::with_degree(s.shape(), s.degree()))
     }
+
+    /// The zero matrix of the given `degree`.
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Zero { shape, degree }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Zero {
-    /// The zero matrix of the given `degree`.
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Zero { shape, degree }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its codomain `cod`.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (cod))]
+    fn py_new(cod: Real) -> Result<Self, crate::Error> {
+        Self::with_cod([cod])
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -1652,15 +1706,23 @@ impl Neg {
         let [s] = cod;
         Ok(Self::with_degree(s.shape(), s.degree()))
     }
+
+    /// On real matrices of the given `degree`.
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Neg { shape, degree }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Neg {
-    /// On real matrices of the given `degree`.
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Neg { shape, degree }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: Real, cod: Option<Real>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom([dom]), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -1713,15 +1775,23 @@ impl Abs {
         let [s] = cod;
         Ok(Self::with_degree(s.shape(), s.degree()))
     }
+
+    /// On real matrices of the given `degree`.
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Abs { shape, degree }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Abs {
-    /// On real matrices of the given `degree`.
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Abs { shape, degree }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: Real, cod: Option<Real>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom([dom]), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1774,15 +1844,23 @@ impl ReLU {
         let [s] = cod;
         Ok(Self::with_degree(s.shape(), s.degree()))
     }
+
+    /// On real matrices of the given `degree`.
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        ReLU { shape, degree }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl ReLU {
-    /// On real matrices of the given `degree`.
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        ReLU { shape, degree }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: Real, cod: Option<Real>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom([dom]), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1829,15 +1907,23 @@ impl Argmax {
         let s = crate::tensor::same_sort(dom)?;
         Ok(Self::with_degree(s.shape(), s.degree()))
     }
+
+    /// On real matrices of the given `degree`.
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Argmax { shape, degree }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Argmax {
-    /// On real matrices of the given `degree`.
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Argmax { shape, degree }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: Real, cod: Option<Real>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom([dom]), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1890,15 +1976,23 @@ impl Min {
         let [s] = cod;
         Ok(Self::with_degree(s.shape(), s.degree()))
     }
+
+    /// On real matrices of the given `degree`.
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Min { shape, degree }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Min {
-    /// On real matrices of the given `degree`.
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Min { shape, degree }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Real; 2], cod: Option<Real>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1951,15 +2045,23 @@ impl Max {
         let [s] = cod;
         Ok(Self::with_degree(s.shape(), s.degree()))
     }
+
+    /// On real matrices of the given `degree`.
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Max { shape, degree }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Max {
-    /// On real matrices of the given `degree`.
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Max { shape, degree }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Real; 2], cod: Option<Real>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2013,15 +2115,23 @@ impl Transpose {
         let [m, n] = s.shape();
         Ok(Self::with_degree([n, m], s.degree()))
     }
+
+    /// On real matrices of the given `degree`.
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Transpose { shape, degree }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Transpose {
-    /// On real matrices of the given `degree`.
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Transpose { shape, degree }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: Real, cod: Option<Real>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom([dom]), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2075,15 +2185,10 @@ impl MatMul {
         let [x, y] = dom;
         Self::with_degrees([x.shape(), y.shape()], [x.degree(), y.degree()])
     }
-}
 
-#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
-impl MatMul {
     /// On real matrices of the given `degrees`, `[p, q]`, writing one of
     /// degree `p + q`; fails unless the columns of the first shape are the
     /// rows of the second, and that degree is in range.
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shapes, /, degrees = [0, 0])))]
     pub fn with_degrees(shapes: [[usize; 2]; 2], degrees: [u8; 2]) -> Result<Self, crate::Error> {
         let [lhs, rhs] = shapes;
         if lhs[1] != rhs[0] {
@@ -2098,6 +2203,19 @@ impl MatMul {
             )));
         }
         Ok(MatMul { shapes, degrees })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl MatMul {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Real; 2], cod: Option<Real>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The degrees of the factors, as a list: pyo3 would make `[u8; 2]`
@@ -2148,15 +2266,23 @@ impl Lt {
         let s = crate::tensor::same_sort(dom)?;
         Ok(Self::with_degree(s.shape(), s.degree()))
     }
+
+    /// On real matrices of the given `degree`.
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Lt { shape, degree }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Lt {
-    /// On real matrices of the given `degree`.
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Lt { shape, degree }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Real; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2218,15 +2344,23 @@ impl Ite {
         let [s] = cod;
         Ok(Self::with_degree(s.shape(), s.degree()))
     }
+
+    /// On real matrices of the given `degree`.
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Ite { shape, degree }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Ite {
-    /// On real matrices of the given `degree`.
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Ite { shape, degree }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Sort; 3], cod: Option<Real>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2273,15 +2407,23 @@ impl Le {
         let s = crate::tensor::same_sort(dom)?;
         Ok(Self::with_degree(s.shape(), s.degree()))
     }
+
+    /// On real matrices of the given `degree`.
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Le { shape, degree }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Le {
-    /// On real matrices of the given `degree`.
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Le { shape, degree }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Real; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2328,15 +2470,23 @@ impl Gt {
         let s = crate::tensor::same_sort(dom)?;
         Ok(Self::with_degree(s.shape(), s.degree()))
     }
+
+    /// On real matrices of the given `degree`.
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Gt { shape, degree }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Gt {
-    /// On real matrices of the given `degree`.
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Gt { shape, degree }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Real; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2383,15 +2533,23 @@ impl Ge {
         let s = crate::tensor::same_sort(dom)?;
         Ok(Self::with_degree(s.shape(), s.degree()))
     }
+
+    /// On real matrices of the given `degree`.
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Ge { shape, degree }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Ge {
-    /// On real matrices of the given `degree`.
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Ge { shape, degree }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Real; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2438,15 +2596,23 @@ impl Eq {
         let s = crate::tensor::same_sort(dom)?;
         Ok(Self::with_degree(s.shape(), s.degree()))
     }
+
+    /// On real matrices of the given `degree`.
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Eq { shape, degree }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Eq {
-    /// On real matrices of the given `degree`.
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Eq { shape, degree }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Real; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2493,15 +2659,23 @@ impl Ne {
         let s = crate::tensor::same_sort(dom)?;
         Ok(Self::with_degree(s.shape(), s.degree()))
     }
+
+    /// On real matrices of the given `degree`.
+    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Ne { shape, degree }
+    }
 }
 
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Ne {
-    /// On real matrices of the given `degree`.
-    #[cfg_attr(feature = "pyo3", new)]
-    #[cfg_attr(feature = "pyo3", pyo3(signature = (shape, /, degree = 0)))]
-    pub fn with_degree(shape: [usize; 2], degree: u8) -> Self {
-        Ne { shape, degree }
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Real; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
+        crate::tensor::check_cod(Self::with_dom(dom), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
