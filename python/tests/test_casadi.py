@@ -388,3 +388,22 @@ def test_the_new_builders_check_their_arguments():
     with pytest.raises(ValueError, match="initial-state function"):
         y = cs.SX.sym("y")
         differential(cs.Function("f", [y], [-y]), init=cs.Function("y0", [], [cs.SX(1.0)]))
+
+
+def test_what_the_init_round_reads_must_be_awaited():
+    """The init round has no latched values: a combinatorial module or an initial-state
+    function that depends on a latched input group is refused up front, by name."""
+    from reactor.casadi import combinatorial
+
+    x, u, z = cs.SX.sym("x"), cs.SX.sym("u"), cs.SX.sym("z")
+    g = cs.Function("g", [u], [2 * u])
+    with pytest.raises(ValueError, match=r"g: a combinatorial module .* group\(s\) \[0\]"):
+        combinatorial(g, wait=False)
+    with pytest.raises(ValueError, match=r"group\(s\) \[1\]"):
+        combinatorial(cs.Function("h", [x, u], [x + u]), wait=[True, False])
+    step = cs.Function("f", [x, u, z], [x + u + z])
+    with pytest.raises(ValueError, match=r"an initial-state function .* group\(s\) \[0\]"):
+        sequential(step, init=cs.Function("x0", [u, z], [u + z]), wait=[False, True])
+    # a latched group the initial state does not depend on is fine
+    sequential(step, init=cs.Function("x0", [u, z], [2 * z]), wait=[False, True])
+    combinatorial(cs.Function("c", [x, u], [3 * x]), wait=[True, False])

@@ -545,6 +545,7 @@ def _prepare(f, init, state, inputs, what, wait=None):
                              "groups (not the state)")
         if init.numel_out(0) != n:
             raise ValueError(f"{init.name()}: first output must have the state's {n} elements")
+        _check_init_reads(init, wait, "an initial-state function")
     else:
         init = list(init) if init is not None else [None] * n
         if len(init) != n:
@@ -560,6 +561,17 @@ def _wait(wait, k: int) -> tuple[bool, ...]:
     if len(wait) != k:
         raise ValueError(f"expected {k} wait flags (one per input group), got {len(wait)}")
     return wait
+
+
+def _check_init_reads(f: cs.Function, wait, what: str) -> None:
+    """The init block may read only this round's values (``X(v)``): refuse a latched input
+    group that `f` depends on, which the core would reject later with a bare wire id."""
+    x = [cs.SX.sym(f"i{i}", f.sparsity_in(i)) for i in range(f.n_in())]
+    y = cs.vertcat(*[cs.vec(o) for o in f.call(x)])
+    latched = [i for i, w in enumerate(wait) if not w and cs.depends_on(y, x[i])]
+    if latched:
+        raise ValueError(f"{f.name()}: {what} runs in the init round, which reads only this round's "
+                         f"values; input group(s) {latched} are read latched (pass wait=True for them)")
 
 
 def _read(inputs, wait) -> list[list[AExpr]]:
@@ -598,7 +610,8 @@ def sequential(
             external, and whose first output is the next state (same size).
         init: Initial value per state entry; ``None`` (or an entry ``None``) leaves it
             unconstrained (a havoc). Or a CasADi function of the input groups (not the
-            state) whose first output is the initial state, read as `wait` says.
+            state) whose first output is the initial state; the groups it depends on must be
+            awaited (`wait`), since the init round has no latched values.
         state: Variables for the state, created if not given.
         inputs: Variables for each further input, created if not given.
         wait: Per input group (or one flag for all), whether the module reads this
@@ -633,7 +646,8 @@ def combinatorial(
         inputs: Variables for each input, created if not given.
         outputs: Variables for the output, created if not given (the module controls them).
         wait: Per input group (or one flag for all), whether it reads this round's value
-            ``X(v)`` (default) or the latched one.
+            ``X(v)`` (default) or the latched one. A group `f` depends on must be awaited:
+            the module also runs in the init round, which has no latched values yet.
         hide: Variables to hide in the built module.
 
     The returned `CasadiModule` has the outputs as its `state` (what it controls).
@@ -652,6 +666,7 @@ def combinatorial(
         if len(u) != f.numel_in(i):
             raise ValueError(f"input group {i}: expected {f.numel_in(i)} variables, got {len(u)}")
     wait = _wait(wait, len(inputs))
+    _check_init_reads(f, wait, "a combinatorial module")
     with collecting() as terms:
         y = translate(f, _read(inputs, wait))[0]
         for v, val in zip(outputs, y):
