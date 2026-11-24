@@ -1,12 +1,11 @@
 //! Tapes: one flat, normalized representation for both control flow and data
 //! flow.
 //!
-//! **Status: draft for discussion.** This module defines the *data
-//! structures* only: the frozen [`Tape`], its parts, their
-//! [`Boundary`](base::boundary::Boundary) implementations, and a
-//! well-formedness check.
-//! The builder (the combinators that produce tapes in normal form) is not
-//! written yet; see [Not done yet](#not-done-yet).
+//! **Status: draft for discussion.** This module defines the frozen
+//! [`Tape`], its parts, their [`Boundary`](base::boundary::Boundary)
+//! implementations and a well-formedness check, and a [`Builder`] that puts
+//! tapes together from combinators and freezes them in normal form. See
+//! [Not done yet](#not-done-yet) for what is missing.
 //!
 //! # Goals
 //!
@@ -217,23 +216,65 @@
 //! conditions being booleans, and draws bound before use with consistent
 //! levels.
 //!
-//! The **normal form** is a stronger, canonical shape, which the builder (not
-//! written yet) is meant to produce. It is *not* checked here:
+//! The **normal form** is a stronger, canonical shape, which
+//! [`Builder::freeze`] produces. It is *not* checked by [`Tape::new`]:
 //!
 //! 1. *Circuits:* deterministic nodes are hash-consed (no two with the same
-//!    operation and arguments); there are no dead nodes or unused draws; and
-//!    nodes are numbered by a depth-first post-order traversal from the
-//!    routing DAG. Two isomorphic circuits then become equal arrays.
-//! 2. *Routing DAGs:* reduced (no split with `hi == lo`, no two equal
-//!    routes) and ordered (along every path, conditions are tested in one
-//!    fixed order, so no value is tested twice on a path).
+//!    operation and arguments), and so are draws (no two with the same
+//!    operation, arguments and level); there are no dead nodes or unused
+//!    draws.
+//! 2. *Routing DAGs:* reduced: no split with `hi == lo`, and no two equal
+//!    routes.
 //! 3. *Binders:* each draw is bound at the lowest route dominating its uses.
+//!    Draws bound at the same route are in the order of their first use in
+//!    the traversal below.
+//! 4. *Numbering:* nodes and routes are numbered in the order of a
+//!    depth-first traversal from the root of each arm: at a split, its
+//!    condition, then `hi`, then `lo`, then the split itself; at an end, its
+//!    values, then the end itself. A node comes after its arguments. So two
+//!    isomorphic arms become equal arrays.
+//! 5. *Spans:* an empty list is always [`Span::EMPTY`].
+//!
+//! Splits are **not ordered** yet, as in an ordered decision diagram: two
+//! programs that test independent conditions in different orders give
+//! different tapes, and a value already tested on a path may be tested
+//! again. (Ordering needs a canonical order on conditions. That order is
+//! hard to define when a condition depends on a draw, since a draw has no
+//! canonical name until its level is known.)
 //!
 //! The normal form is canonical with respect to the structural laws: the
 //! laws of tapes with `⊕` and `⊗`, and copy and discard of strings. It is not
 //! canonical with respect to equations between the opaque operations, such as
 //! `x + y = y + x`, nor, since booleans are opaque too, with respect to the
 //! laws of boolean logic.
+//!
+//! # Building tapes
+//!
+//! A [`Builder`] owns *drafts*, tapes under construction, referred to by
+//! [`Draft`] handles. Its combinators each create a new draft:
+//!
+//! | combinator | type | |
+//! |---|---|---|
+//! | [`lift(op)`](Builder::lift) | `M → N` | one operation |
+//! | [`case(m)`](Builder::case) | `m ⊗ B → m ⊕ m` | split on a boolean |
+//! | [`copy(m)`](Builder::copy) | `m → m ⊗ m` | |
+//! | [`discard(m)`](Builder::discard) | `m → I` | |
+//! | [`cross(a, b)`](Builder::cross) | `a ⊗ b → b ⊗ a` | |
+//! | [`wiring(m, outputs)`](Builder::wiring) | `m → N` | any mix of the three above: output `k` carries input `outputs[k]` |
+//! | [`id(p)`](Builder::id) | `p → p` | |
+//! | [`swap(p, q)`](Builder::swap) | `p ⊕ q → q ⊕ p` | |
+//! | [`merge(p)`](Builder::merge) | `p ⊕ p → p` | join tapes |
+//! | [`initial(p)`](Builder::initial) | `0 → p` | with `sum`, the injections |
+//! | [`sum(t, s)`](Builder::sum) | `t ⊕ s` | |
+//! | [`whisker(l, t, r)`](Builder::whisker) | `l ⊗ t ⊗ r` | strings alongside a tape |
+//! | [`compose(t, s)`](Builder::compose) | `t ; s` | |
+//!
+//! Drafts are kept in a cheaper, unnormalized form. Any draft can be frozen
+//! at any time with [`Builder::freeze`], which returns a [`Tape`] in normal
+//! form and leaves the draft usable. [`Builder::import`] brings a tape back
+//! as a draft. The tests build the two example tapes of this module from
+//! combinators, and check laws such as `id ; t = t`, associativity of `;`, and
+//! `case ; (f ⊕ f) ; merge = f`, as equalities of frozen tapes.
 //!
 //! # Booleans: what the tape assumes
 //!
@@ -309,13 +350,15 @@
 //!
 //! # Not done yet
 //!
-//! - The builder: the combinators (`lift`, `case`, `id`, `swap`, `merge`,
-//!   `discard`, `⊕`, `;`, whiskering by a [`Mono`](base::boundary::Mono)) that produce tapes in
-//!   normal form, and the final canonicalization pass.
+//! - More normalization: resolving a split on a value already tested on the
+//!   path, and ordering independent splits (see
+//!   [Well-formedness and normal form](#well-formedness-and-normal-form)).
 //! - Checking the normal form (only well-formedness is checked).
 //! - `⊗` of two tapes: it needs a convention for distributing
 //!   `(A ⊕ B) ⊗ (C ⊕ D)`, and it may not be needed beyond whiskering.
 
+mod build;
+mod canon;
 mod check;
 mod display;
 mod ids;
@@ -324,6 +367,7 @@ mod node;
 mod route;
 mod view;
 
+pub use build::{Builder, Draft, DraftRef};
 pub use ids::{NodeId, RouteId, Span, Value};
 pub use layout::{Arm, Tape, TapeParts};
 pub use node::{Node, NodeKind, Operation};
