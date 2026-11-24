@@ -16,7 +16,7 @@ from .arrays import as_torch
 from .sort import Real, Int, Bool, Word, shape as _shape
 
 from .reactor import tensor
-from .reactor import d as _d
+from .reactor import X, d as _d
 from .reactor import jax as _jax
 from .reactor import mixed as _mixed
 
@@ -357,7 +357,9 @@ def flowing(atoms) -> list:
     rate of change (every other sort, and a real held by a `Zero` rate, has rate zero)."""
     out = []
     for atom in atoms:
-        writes = {w for term in atom.delay for w in term.write}
+        # the rates written by an operation other than `Zero` (the rate of a variable
+        # that does not change, which a sequential module's delay block holds)
+        writes = {w for term in atom.delay if not isinstance(term.itype, Zero) for w in term.write}
         for v in atom.ctrl:
             if isinstance(v.dtype, Real) and _d(v) in writes:
                 out.append(v)
@@ -402,6 +404,164 @@ def execute_flow(state, atoms, dt: float, method: str = "rk4"):
         raise ValueError(f"unknown method {method!r}: use 'euler' or 'rk4'")
     for v, value in zip(variables, new):
         state[v] = value
+
+
+# ============================================================================
+# Compiled evaluation: a block resolved once, then run many times
+# ============================================================================
+#
+# `execute_*` interpret a block afresh at every call: they read each term's
+# operation, read and write wires from the extension, look the values up by wire
+# (hashed in Rust), and dispatch on the operation in `eval_itype`. For a module run
+# for thousands of steps that overhead dominates (about 9 µs per term, against ~2 µs
+# for the torch operation itself). A `Program` does all of it once: it numbers the
+# wires (slots), and binds each term to a kernel, a function of the read values.
+
+
+def _kernel(itype, out_sort):
+    """A function computing `itype` from the list of its read values, with the data it
+    holds extracted once. The common operations get a direct kernel; any other falls
+    back to `eval_itype`, so both always compute the same."""
+    match itype:
+        case Skip(_):
+            return lambda r: [r[0]]  # values are never mutated in place: no copy needed
+        case (tensor.real.Const(t) | tensor.int.Const(t) | tensor.bool.Const(t)
+              | _jax.real.Const(t) | _jax.int.Const(t) | _jax.bool.Const(t)
+              | _mixed.real.Const(t) | _mixed.int.Const(t) | _mixed.bool.Const(t)):
+            value = _held(t).clone()
+            return lambda r: [value]
+        case (tensor.real.Scale(c) | tensor.int.Scale(c) | _jax.real.Scale(c) | _jax.int.Scale(c)
+              | _mixed.real.Scale(c) | _mixed.int.Scale(c)):
+            c = _held(c)
+            return lambda r: [c * r[0]]
+        case (tensor.real.Linear(a, b) | tensor.int.Linear(a, b) | _jax.real.Linear(a, b)
+              | _jax.int.Linear(a, b) | _mixed.real.Linear(a, b) | _mixed.int.Linear(a, b)):
+            a, b = _held(a), _held(b)
+            return lambda r: [a @ r[0] + b]
+        case tensor.real.Add(_) | tensor.int.Add(_):
+            return lambda r: [r[0] + r[1]]
+        case tensor.real.Sub(_) | tensor.int.Sub(_):
+            return lambda r: [r[0] - r[1]]
+        case tensor.real.Mul(_) | tensor.int.Mul(_):
+            return lambda r: [r[0] * r[1]]
+        case tensor.real.Div(_):
+            return lambda r: [r[0] / r[1]]
+        case tensor.real.Neg(_) | tensor.int.Neg(_):
+            return lambda r: [-r[0]]
+        case tensor.real.Ite(_) | tensor.int.Ite(_) | tensor.bool.Ite(_):
+            return lambda r: [torch.where(r[0], r[1], r[2])]
+    return lambda r: eval_itype(itype, r, out_sort)
+
+
+class Program:
+    """A sequence of terms compiled against a table of slots (see `Runner`): each term
+    is a kernel, the slots it reads and the slots it writes."""
+
+    def __init__(self, terms, slot):
+        self.ops = []
+        for term in terms:
+            write = list(term.write)
+            out_sort = write[0].dtype if write else None
+            self.ops.append((_kernel(term.itype, out_sort), [slot(w) for w in term.read],
+                             [slot(w) for w in write]))
+
+    def run(self, values: list) -> None:
+        """Evaluate the terms in order, reading and writing `values`, indexed by slot."""
+        for kernel, reads, writes in self.ops:
+            results = kernel([values[i] for i in reads])
+            for j, value in zip(writes, results):
+                values[j] = value
+
+    def __len__(self) -> int:
+        return len(self.ops)
+
+
+class Runner:
+    """A module (or its atoms) compiled once, to be run many times: its init, update
+    and delay blocks as `Program`s over one table of slots, one per wire.
+
+    Values are set and read by wire or variable (``runner[v] = tensor``). Then:
+
+    - `init()` runs the init block, and latches the controlled variables (``v ← X(v)``);
+    - `update()` runs the update block and latches them: one discrete step;
+    - `flow(dt, method)` lets the flowing variables flow for `dt`, as `execute_flow`.
+
+    It computes exactly what `execute_init`, `execute_update` and `execute_flow` compute,
+    the same tensor operations in the same order, several times faster.
+    """
+
+    def __init__(self, module_or_atoms):
+        atoms = list(getattr(module_or_atoms, "atoms", module_or_atoms))
+        self._slots: dict = {}
+        slot = self._slot
+        self.init_program = Program([t for a in atoms for t in a.init], slot)
+        self.update_program = Program([t for a in atoms for t in a.update], slot)
+        self.delay_program = Program([t for a in atoms for t in a.delay], slot)
+        self.ctrl = [v for a in atoms for v in a.ctrl]
+        self._latch = [(slot(X(v)), slot(v)) for v in self.ctrl]
+        self.flowing = flowing(atoms)
+        self._flow = [slot(v) for v in self.flowing]
+        self._rate = [slot(_d(v)) for v in self.flowing]
+        self.values: list = [None] * len(self._slots)
+
+    def _slot(self, wire) -> int:
+        if wire not in self._slots:
+            self._slots[wire] = len(self._slots)
+        return self._slots[wire]
+
+    def __getitem__(self, wire):
+        return self.values[self._slots[wire]]
+
+    def __setitem__(self, wire, value) -> None:
+        if wire not in self._slots:
+            raise KeyError(f"{wire!r} is neither read nor written by the module")
+        self.values[self._slots[wire]] = value
+
+    def latch(self) -> None:
+        """``v ← X(v)`` for every controlled variable whose next value was written."""
+        for nxt, cur in self._latch:
+            if self.values[nxt] is not None:
+                self.values[cur] = self.values[nxt]
+
+    def init(self) -> None:
+        self.init_program.run(self.values)
+        self.latch()
+
+    def update(self) -> None:
+        self.update_program.run(self.values)
+        self.latch()
+
+    def rates(self) -> list:
+        """The rates of change of the flowing variables at the current values (left as
+        they are)."""
+        values = self.values.copy()
+        self.delay_program.run(values)
+        return [values[j] for j in self._rate]
+
+    def flow(self, dt: float, method: str = "rk4") -> None:
+        """One step of `method` (``"euler"`` or ``"rk4"``) of the flow of the delay
+        blocks, holding the other values; as `execute_flow`."""
+        x = [self.values[i] for i in self._flow]
+
+        def f(xs):
+            values = self.values.copy()
+            for i, xi in zip(self._flow, xs):
+                values[i] = xi
+            self.delay_program.run(values)
+            return [values[j] for j in self._rate]
+
+        if method == "euler":
+            new = [xi + dt * ki for xi, ki in zip(x, f(x))]
+        elif method == "rk4":
+            k1 = f(x)
+            k2 = f([xi + dt / 2 * ki for xi, ki in zip(x, k1)])
+            k3 = f([xi + dt / 2 * ki for xi, ki in zip(x, k2)])
+            k4 = f([xi + dt * ki for xi, ki in zip(x, k3)])
+            new = [xi + dt / 6 * (a + 2 * b + 2 * c + e) for xi, a, b, c, e in zip(x, k1, k2, k3, k4)]
+        else:
+            raise ValueError(f"unknown method {method!r}: use 'euler' or 'rk4'")
+        for i, value in zip(self._flow, new):
+            self.values[i] = value
 
 
 def read_wire(state, wire):

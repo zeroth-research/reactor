@@ -103,3 +103,55 @@ def test_an_unknown_method_is_refused():
     m, _ = _decay(1.0)
     with pytest.raises(ValueError, match="unknown method"):
         execute_flow(_start(m), m.atoms, 0.1, "midpoint")
+
+
+# ── Runner: the compiled evaluation ──────────────────────────────
+
+
+def _oscillator():
+    cs = pytest.importorskip("casadi")
+    x, u = cs.SX.sym("x", 2), cs.SX.sym("u")
+    return cs.Function("f", [x, u], [cs.vertcat(x[1], -4 * x[0] * x[0] * x[1] - x[0] + cs.sin(u))])
+
+
+@pytest.mark.parametrize("method", ["euler", "rk4"])
+def test_a_runner_flows_exactly_as_execute_flow(method):
+    from reactor.casadi import differential
+    from reactor.eval import Runner
+
+    cm = differential(_oscillator(), init=[1.0, 0.0])
+    (uvar,) = cm.inputs[0]
+    state, runner = _start(cm.module), Runner(cm.module)
+    runner.init()
+    assert runner.flowing == flowing(cm.module.atoms)
+    for k in range(50):
+        state[uvar] = runner[uvar] = _f64(math.sin(0.1 * k))
+        execute_flow(state, cm.module.atoms, 0.01, method)
+        runner.flow(0.01, method)
+    assert all(torch.equal(state[v], runner[v]) for v in cm.state)
+
+
+def test_a_runner_steps_exactly_as_execute_update():
+    from reactor.casadi import rk4, sequential
+    from reactor.eval import Runner, execute_update
+
+    cm = sequential(rk4(_oscillator(), 0.01), init=[1.0, 0.0])
+    (uvar,) = cm.inputs[0]
+    state, runner = _start(cm.module), Runner(cm.module)
+    runner.init()
+    for k in range(50):
+        state[uvar] = runner[uvar] = _f64(math.sin(0.1 * k))
+        execute_update(state, cm.module.atoms)
+        for v in cm.state:
+            state[v] = state[X(v)]
+        runner.update()
+    assert all(torch.equal(state[v], runner[v]) for v in cm.state)
+    assert [float(r) for r in Runner(cm.module).rates()] == []  # a sequential module does not flow
+
+
+def test_a_runner_refuses_a_wire_the_module_does_not_use():
+    from reactor.eval import Runner
+
+    m, _ = _decay(1.0)
+    with pytest.raises(KeyError):
+        Runner(m)[Var(Real([1, 1]))] = _f64(0.0)
