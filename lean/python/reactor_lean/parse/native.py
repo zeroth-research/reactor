@@ -98,10 +98,6 @@ class _Term:
     def _lift(self, o) -> "_Term":
         return lift(self._x, o, like=self._v)
 
-    def _bits(self) -> bool:
-        v = self._v
-        return not isinstance(v, (Lit, Matrix)) and isinstance(v.dtype, Word)
-
     def __gt__(self, o): return self._apply(">", self, self._lift(o))
     def __lt__(self, o): return self._apply("<", self, self._lift(o))
     def __ge__(self, o): return self._apply(">=", self, self._lift(o))
@@ -114,24 +110,12 @@ class _Term:
     def __rsub__(self, o): return self._apply("-", self._lift(o), self)
     def __mul__(self, o): return self._apply("*", self, self._lift(o))
     def __rmul__(self, o): return self._apply("*", self._lift(o), self)
-
-    def __and__(self, o):
-        return self._apply("bvand" if self._bits() else "and", self, self._lift(o))
-
-    def __rand__(self, o):
-        return self._apply("bvand" if self._bits() else "and", self._lift(o), self)
-
-    def __or__(self, o):
-        return self._apply("bvor" if self._bits() else "or", self, self._lift(o))
-
-    def __ror__(self, o):
-        return self._apply("bvor" if self._bits() else "or", self._lift(o), self)
-
-    def __neg__(self):
-        return self._apply("bvneg" if self._bits() else "-", self)
-
-    def __invert__(self):
-        return self._apply("bvnot" if self._bits() else "not", self)
+    def __and__(self, o): return self._apply("and", self, self._lift(o))
+    def __rand__(self, o): return self._apply("and", self._lift(o), self)
+    def __or__(self, o): return self._apply("or", self, self._lift(o))
+    def __ror__(self, o): return self._apply("or", self._lift(o), self)
+    def __neg__(self): return self._apply("-", self)
+    def __invert__(self): return self._apply("not", self)
 
     __hash__ = None
 

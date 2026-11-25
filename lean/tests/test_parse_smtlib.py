@@ -14,7 +14,7 @@ from reactor_lean.errors import Unreadable
 from reactor_lean.lowering.sorts import itype_name, theory_of
 from reactor_lean.parse.formula import family
 from reactor_lean.lowering.elements import ModuleWires
-from reactor_lean.parse.native import scope_of
+from reactor_lean.parse.native import parse_predicate, scope_of
 from reactor_lean.parse.smtlib import Scope, read_smtlib
 
 
@@ -81,8 +81,6 @@ READ = [
     "(= s3 -3)",
     "(= s3 #b0101)",
     "(= s3 (_ bv5 4))",
-    "(bvult s3 #x5)",
-    "(= (bvadd s3 #b0001) #b0000)",
     "(ite s1 s0 e0)",
     "(ite s1 s2 1.0)",
     "(ite s1 s3 #b0000)",
@@ -90,7 +88,6 @@ READ = [
     "(let ((x (+ s0 1)) (y 2)) (> (* x x) y))",
     "(let ((s0 1)) (let ((s0 (+ s0 1)) (y s0)) (= s0 (+ y 1))))",
     "(> ((_ tuple.select 3) s4) ((_ tuple.select 0) s4))",
-    "(xor s1 (> s0 0))",
     "(not (not s1))",
     "(and s1)",
     "(- 5)",
@@ -147,6 +144,15 @@ def test_a_bit_vector_comparison_is_read_as_a_bool():
     assert _ops("(= s3 5)") == ["word.Const", "word.Eq"]
 
 
+@pytest.mark.parametrize("src", ["(s3[0][0] & 1) == 0", "~s3[0][0] == 0", "-s3[0][0] == 0"])
+def test_the_python_syntax_reads_no_bit_vector_operation_either(src):
+    """`&`, `~` and `-` on a word were `bvand`, `bvnot` and `bvneg`, which
+    no predicate has a Lean form for; they are the Bool and arithmetic
+    operators, which refuse a word."""
+    with pytest.raises(Unreadable, match="wants a Bool|is arithmetic"):
+        parse_predicate(ModuleWires.of(MODULE), src)
+
+
 @pytest.mark.parametrize("src, why", [
     ("(> s0 0) (< s0 5)", "text after the expression"),
     ("(> s0 0))", "text after the expression"),
@@ -161,6 +167,9 @@ def test_a_bit_vector_comparison_is_read_as_a_bool():
     ("(= s3 (_ bv5 8))", "compares \\(_ BitVec 4\\) with \\(_ BitVec 8\\)"),
     ("(abs s0)", "`abs` is no function"),
     ("(/ s2 2)", "`/` is no function"),
+    ("(xor s1 (> s0 0))", "`xor` is no function"),
+    ("(bvult s3 #x5)", "`bvult` is no function"),
+    ("(= (bvadd s3 #b0001) #b0000)", "`bvadd` is no function"),
     ("(not s0 s1)", "takes 1 argument"),
     ("(mod s0 1 2)", "takes 2 arguments"),
     ("(div s2 2)", "integer division"),

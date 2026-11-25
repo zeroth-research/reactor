@@ -4,7 +4,7 @@
 and inputs -- `s0..`, `e0..` and `el0..`, as a `Scope` binds them -- into a
 `Formula`. It reads the fragment a certificate is written in: the core
 theory, integer and real arithmetic, `to_real`,
-`to_int` and `ubv_to_int`, bit-vector literals and comparisons, `let`, and
+`to_int` and `ubv_to_int`, bit-vector literals, `let`, and
 `((_ tuple.select k) v)` on a matrix variable. Of these:
 
 * a chain `(< a b c)` or `(= a b c)` is the conjunction of its links;
@@ -17,7 +17,8 @@ theory, integer and real arithmetic, `to_real`,
   numeral at `v`'s width, which plain SMT-LIB does not.
 
 `(distinct a b c)` is every pair distinct. What this parser does not read
--- `/`, `abs` -- is refused, by name.
+-- `/`, `abs`, `xor`, the bit-vector operations, which a predicate has no
+Lean form for (`proof.from_ir`) -- is refused, by name.
 """
 
 from __future__ import annotations
@@ -80,31 +81,12 @@ class Scope:
 _NEG_NUMBER = re.compile(r"-(0|[1-9][0-9]*)(\.[0-9]+)?$")
 _BV_LITERAL = re.compile(r"bv([0-9]+)$")
 _CHAINS = {"<": "Lt", "<=": "Le", ">": "Gt", ">=": "Ge"}
-# The operations of words, by their SMT-LIB names: the namespace of
-# `reactor.tensor` each is in, and its class there.
-_W, _S, _U = tensor.word, tensor.word.signed, tensor.word.unsigned
-_BV_COMPARE = {
-    "bvult": _U.Lt, "bvule": _U.Le, "bvugt": _U.Gt, "bvuge": _U.Ge,
-    "bvslt": _S.Lt, "bvsle": _S.Le, "bvsgt": _S.Gt, "bvsge": _S.Ge,
-}
-_BV_BINARY = {
-    "bvadd": _W.Add, "bvsub": _W.Sub, "bvmul": _W.Mul, "bvand": _W.And,
-    "bvor": _W.Or, "bvxor": _W.Xor, "bvudiv": _U.Div, "bvsdiv": _S.Div,
-    "bvurem": _U.Rem, "bvsrem": _S.Rem, "bvsmod": _S.Mod,
-}
-_BV_ASSOCIATIVE = ("bvadd", "bvmul", "bvand", "bvor", "bvxor")
-_BV_UNARY = {"bvneg": _W.Neg, "bvnot": _W.Not}
 _ARITH = {"Int": tensor.int, "Real": tensor.real}
 
 
 def _scalar(cls):
     """A maker of `cls` on 1×1 matrices, for the folds."""
     return lambda: cls(SCALAR)
-
-
-def _word(cls, width: int):
-    """A maker of `cls` on 1×1 matrices of `width`-bit words."""
-    return lambda: cls(width, SCALAR)
 
 
 def read_smtlib(scope: Scope, src: str) -> Formula:
@@ -305,10 +287,6 @@ class Elaborator:
             need(2, at_least=True)
             return self.fold_right(_scalar(tensor.bool.Implies),
                                    [self.boolean(v, what) for v in vals], Bool(SCALAR))
-        if name == "xor":
-            need(2, at_least=True)
-            return self.fold_left(_scalar(tensor.bool.Xor),
-                                  [self.boolean(v, what) for v in vals], Bool(SCALAR))
         if name == "ite":
             need(3)
             return self.ite(vals, what)
@@ -363,21 +341,7 @@ class Elaborator:
             need(1)
             (w,) = self.bitvecs(vals, what)
             return self.b.apply(tensor.cast.UbvToInt(w.dtype.width, SCALAR), [w], Int(SCALAR))
-        if name in _BV_COMPARE:
-            need(2)
-            ws = self.bitvecs(vals, what)
-            op = _BV_COMPARE[name](ws[0].dtype.width, SCALAR)
-            return self.b.apply(op, ws, Bool(SCALAR))
-        if name in _BV_BINARY:
-            need(2, at_least=name in _BV_ASSOCIATIVE)
-            ws = self.bitvecs(vals, what)
-            return self.fold_left(_word(_BV_BINARY[name], ws[0].dtype.width), ws, ws[0].dtype)
-        if name in _BV_UNARY:
-            need(1)
-            (w,) = self.bitvecs(vals, what)
-            return self.b.apply(_BV_UNARY[name](w.dtype.width, SCALAR), [w], w.dtype)
-        raise Unreadable(f"`{what}`: `{name}` is no function reactor's terms "
-                         f"have a term for")
+        raise Unreadable(f"`{what}`: `{name}` is no function this parser reads")
 
     def equal(self, a, b, what: str, *, ne: bool):
         """`a = b`, or `a ≠ b`: a Bool wire."""
