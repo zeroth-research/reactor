@@ -140,6 +140,10 @@ CODEGEN = [
      Certificate("(<= s0 5.0)", "(to_int s0)")),
     ("real_safety", _real_countdown, Claim(prp="(<= s0 5.0)", kind="safety"),
      Certificate("(<= s0 5.0)")),
+    # Three atoms, its state `(z, x, wrap, y)`: the functional encoding
+    # composes them, and the certificate is stated over it as over any.
+    ("composed", lambda: fixture("composed"), Claim(prp="(<= s1 3)", kind="safety"),
+     Certificate("(and (>= s1 0) (<= s1 3) (>= s3 0))")),
 ]
 
 

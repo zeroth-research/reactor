@@ -165,8 +165,6 @@ def runs(module, *, seed: int = 0, count: int = RUNS) -> list:
     where `inputs` maps each input variable to the value awaited that round
     and `state` lists the ctrl values after it, in `module.ctrl` order. The
     first runs of a seed are the same whatever `count` is."""
-    if len(list(module.atoms)) != 1:
-        raise Skip("more than one atom; the encodings take one")
     rng = random.Random(seed)
     out = []
     for _ in range(count):

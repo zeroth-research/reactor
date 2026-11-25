@@ -97,7 +97,7 @@ def main():
     print(module)
     claim, given = claim_from_flags(settings, problem.names)
     try:
-        ctx = lean_context(module)
+        ctx = lean_context(module, settings.encodings)
     except Refused as e:
         raise SystemExit(f"error: {e}") from e
 

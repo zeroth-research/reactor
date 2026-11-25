@@ -7,6 +7,7 @@ predicates recorded there and rendered as codegen takes them
 from __future__ import annotations
 
 
+from collections.abc import Iterable
 from pathlib import Path
 
 from ..artifacts import ARTIFACTS_DIR, ArtifactStore, module_digest
@@ -16,6 +17,7 @@ from ..core.certificate import Certificate, Claim, LeanAnswer
 from ..core.errors import Refused
 from ..parse import PARSERS
 from ..parse.native import read_predicates
+from ..project.scaffold import selected_encodings
 from ..proof.render import LeanCertificate, render_certificate
 from ..smt.queries import predicate_terms
 
@@ -110,12 +112,15 @@ def _module_of(smt):
     return smt().module if callable(smt) else smt
 
 
-def lean_context(module) -> LeanContext:
-    """The module's `LeanContext`, refusing a module with no Lean form.
+def lean_context(module, encodings: "Iterable[str] | None" = None) -> LeanContext:
+    """The module's `LeanContext`, refusing a module with no Lean form, or,
+    given the names of the `encodings` the run writes, with no form in one
+    of them (`project.scaffold.selected_encodings`).
 
     An operator with no Lean form is a fact about the module, said here
     once, before any of the project exists, rather than as a missing table
-    cell in the middle of a file.
+    cell in the middle of a file. So is a module of several atoms, which
+    only the functional encoding composes.
 
     Built once and threaded: its discovery pass interns every init/update
     term, and everything that prints the module needs the same one.
@@ -124,4 +129,6 @@ def lean_context(module) -> LeanContext:
     gaps = lean_gaps(ctx)
     if gaps:
         raise Refused("this module has no Lean form: " + "; also ".join(gaps))
+    if encodings is not None:
+        selected_encodings(ctx, encodings)
     return ctx

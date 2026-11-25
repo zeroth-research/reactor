@@ -240,6 +240,21 @@ def test_a_project_carries_every_encoding_but_the_circuit_one():
         assert "Circ" not in (project / "System.lean").read_text()
 
 
+def test_a_module_of_several_atoms_is_refused_before_writing(tmp_path):
+    """Only the functional encoding composes atoms, and a `certify` project
+    carries others. The refusal points at `reactor`, not at an
+    `--encodings` flag `certify` does not have."""
+    composed = VERITH_ROOT.parent / "lean" / "tests" / "fixtures" / "composed.py"
+    r = run_certify(str(composed), "-o", str(tmp_path), "-p", "C")
+    assert r.returncode == 1
+    assert r.stderr.strip().splitlines()[-1] == (
+        "error: the module has 3 atoms, and only the functional encoding "
+        "composes atoms: the other encodings a certify project carries take "
+        "a module of one. `reactor --encodings functional` writes the "
+        "functional encoding alone")
+    assert not (tmp_path / "C").exists()
+
+
 def test_certify_with_property():
     """A property without --infer writes prp as sorry (string not compiled to Terms)."""
     with tempfile.TemporaryDirectory() as tmpdir:

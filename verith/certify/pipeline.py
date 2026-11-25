@@ -84,8 +84,16 @@ def main(argv: "list[str] | None" = None) -> None:
     claim, given = claim_from_flags(settings, problem.names)
     prechecked = route_precheck(settings, module, claim, smt)
     try:
-        ctx = lean_context(module)
+        ctx = lean_context(module, settings.encodings)
     except Refused as e:                # about the module, not the route
+        if e.flag == "--encodings":     # a flag `certify` does not have
+            raise SystemExit(
+                f"error: the module has {len(list(module.atoms))} atoms, and "
+                "only the functional encoding composes atoms: the other "
+                "encodings a certify project carries take a module of one. "
+                "`reactor --encodings functional` writes the functional "
+                "encoding alone"
+            ) from e
         raise SystemExit(f"error: {e}") from e
 
     route = settings.route

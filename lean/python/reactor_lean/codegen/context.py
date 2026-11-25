@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from reactor import Module, Real, Var, Wire, X
+from reactor import Atom, Module, Real, Var, Wire, X
+from ..core.errors import Refused
 from ..lowering.elements import product_accessor
 from .literals import ConstantRegistry
 
@@ -13,17 +14,16 @@ class LeanContext:
     Runs a one-time discovery pass over the module's init/update terms to
     populate the constant registry and the wire-name bindings for each
     block. Read-only after construction; codegen consumers do not mutate it.
+
+    `atoms` are the module's atoms in the order it keeps them, which is
+    consistent with its await relation: an atom comes after every atom whose
+    variables it awaits. The functional encoding composes them; every other
+    encoding is written over the module's one atom (`atom`).
     """
 
     def __init__(self, module: Module):
-        atoms = list(module.atoms)
-        if len(atoms) != 1:
-            raise ValueError(
-                f"LeanContext currently supports single-atom modules, got {len(atoms)}"
-            )
-
         self.module = module
-        self.atom = atoms[0]
+        self.atoms: list[Atom] = list(module.atoms)
 
         self.extl_latched: list[Var] = list(module.extl)
         self.extl_next: list[Wire] = [X(v) for v in module.extl]
@@ -31,9 +31,7 @@ class LeanContext:
         self.ctrl_next: list[Wire] = [X(v) for v in module.ctrl]
 
         self.constants = ConstantRegistry()
-        for term in self.atom.init:
-            self.constants.intern(term)
-        for term in self.atom.update:
+        for term in self.terms("init") + self.terms("update"):
             self.constants.intern(term)
 
         # Modules that use Float/Real require `noncomputable` on defs that
@@ -43,8 +41,8 @@ class LeanContext:
             self.extl_next,
             self.ctrl_latched,
             self.ctrl_next,
-            [t.write[0] for t in self.atom.init],
-            [t.write[0] for t in self.atom.update],
+            [t.write[0] for t in self.terms("init")],
+            [t.write[0] for t in self.terms("update")],
         )
 
         self.init_wire_names = bind_wires([("extl_n", self.extl_next)])
@@ -55,6 +53,25 @@ class LeanContext:
                 ("extl_n", self.extl_next),
             ]
         )
+
+    @property
+    def atom(self) -> Atom:
+        """The module's one atom, which every encoding but the functional
+        one is written over. Refused for a module of any other number: the
+        functional encoding is the only one that composes atoms yet."""
+        if len(self.atoms) != 1:
+            raise Refused(
+                f"the module has {len(self.atoms)} atoms, and only its "
+                "functional encoding composes atoms: the other encodings "
+                "take a module of one"
+            )
+        return self.atoms[0]
+
+    def terms(self, block: str) -> list:
+        """Every atom's `block` ("init" or "update") terms, atom after atom:
+        one block in dataflow order, since an atom comes after the atoms it
+        awaits. It is how `reactor.eval` runs a round."""
+        return [t for atom in self.atoms for t in getattr(atom, block)]
 
 
 def any_float_wire(*wire_lists: list[Wire]) -> bool:

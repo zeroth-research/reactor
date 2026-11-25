@@ -93,8 +93,9 @@ def add_encodings(parser: argparse.ArgumentParser) -> None:
             f"of {', '.join(ENCODING_NAMES)} (default: all of them). The "
             f"{FUNCTIONAL} one is always written: the certificate and every "
             "other encoding are stated over it, and an encoding brings the "
-            "ones it imports with it (scalar-relational, scalar). With "
-            f"--cert-file the "
+            "ones it imports with it (scalar-relational, scalar). A module "
+            f"of several atoms has the {FUNCTIONAL} encoding alone, so it "
+            f"needs `--encodings {FUNCTIONAL}`. With --cert-file the "
             f"{FUNCTIONAL} encoding is inlined in the certificate and there "
             "is no circuit one."
         ),

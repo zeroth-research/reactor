@@ -66,8 +66,8 @@ def predicate_terms(
     the module, its encoding or a factory for one.
 
     A predicate that does not parse is refused by its role, and a module
-    with no encoding (`ModuleSMT` reads one atom, `elem_sort` four sorts,
-    and both raise `ValueError`) as the module's. Anything else is a bug,
+    with no encoding (`elem_sort` reads four sorts, and raises `ValueError`
+    for any other) as the module's. Anything else is a bug,
     and keeps its traceback.
     """
     try:

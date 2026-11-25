@@ -37,7 +37,7 @@ def standalone(cert_file: str, ctx: LeanContext, lean_cert,
     """
     out = Path(cert_file)
     try:
-        rows = selected_encodings(encodings)
+        rows = selected_encodings(ctx, encodings)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(generate_standalone_cert_lean(ctx, lean_cert, proofs))
     except (Refused, OSError) as e:

@@ -65,6 +65,9 @@ class Encoding:
     # its definitions, and the project builds without it. Only an encoding
     # no certificate reads can be optional.
     optional: bool = False
+    # Written for a module of several atoms too; the rest are written over
+    # the module's one atom (`LeanContext.atom`).
+    composes_atoms: bool = False
 
 
 ENCODINGS: tuple[Encoding, ...] = (
@@ -73,7 +76,8 @@ ENCODINGS: tuple[Encoding, ...] = (
     # certificate by `generate_standalone_cert_lean`, so it is not written
     # again there; `Circ` has no consumer on that route at all.
     Encoding(FUNCTIONAL, "", "Functional encoding", "Relational.Circ", (),
-             ModuleToLean4.to_lean_functional, cert_file=False),
+             ModuleToLean4.to_lean_functional, cert_file=False,
+             composes_atoms=True),
     Encoding("circuit", "Circ", "Circuit encoding", "Relational.Circ", ("",),
              ModuleToLean4.to_lean_circ, cert_file=False, optional=True),
     Encoding("relational", "Rel", "Matrix-domain relational encoding",
@@ -85,10 +89,17 @@ ENCODINGS: tuple[Encoding, ...] = (
 )
 
 
-def selected_encodings(names: Iterable[str] = ENCODING_NAMES) -> tuple[Encoding, ...]:
+def selected_encodings(
+    ctx: LeanContext, names: Iterable[str] = ENCODING_NAMES
+) -> tuple[Encoding, ...]:
     """The rows `names` selects, in table order: with the functional one,
     which the certificate and every other row are stated over, and each row
-    a selected one imports."""
+    a selected one imports.
+
+    Refused when the module has no form in one of them, before anything is
+    written: a module of several atoms is written in the functional
+    encoding alone, which is the only one that composes atoms yet.
+    """
     names = tuple(names)
     by_name = {e.name: e for e in ENCODINGS}
     by_suffix = {e.suffix: e for e in ENCODINGS}
@@ -104,7 +115,16 @@ def selected_encodings(names: Iterable[str] = ENCODING_NAMES) -> tuple[Encoding,
         if name not in want:
             want.add(name)
             todo += [by_suffix[s].name for s in by_name[name].needs]
-    return tuple(e for e in ENCODINGS if e.name in want)
+    rows = tuple(e for e in ENCODINGS if e.name in want)
+    if len(ctx.atoms) != 1:
+        cannot = [e.name for e in rows if not e.composes_atoms]
+        if cannot:
+            raise Refused(
+                f"the module has {len(ctx.atoms)} atoms, and only its "
+                f"functional encoding composes atoms: it has no "
+                f"{', '.join(cannot)} encoding. Select the functional one "
+                f"alone (`--encodings {FUNCTIONAL}`)", flag="--encodings")
+    return rows
 
 
 def write_encoding(
@@ -207,9 +227,12 @@ def create_project(
                            discovery pass runs once rather than once here
                            and again for every file rewritten later.
         `encodings`:       The names of the encodings the project carries
-                           (`selected_encodings`).
+                           (`selected_encodings`); refused, before anything
+                           is written, when the module has no form in one.
     """
-    rows = selected_encodings(encodings)
+    if ctx is None:
+        ctx = LeanContext(module)
+    rows = selected_encodings(ctx, encodings)
 
     project_dir = output_dir / project_name
     src_dir = project_dir / "System"
@@ -252,8 +275,6 @@ def create_project(
     # ----------------------------------------------------------
     # Generate reactive module (init and update)
     # ----------------------------------------------------------
-    if ctx is None:
-        ctx = LeanContext(module)
     m2l = ModuleToLean4(ctx)
 
     root_lean = project_dir / "System.lean"

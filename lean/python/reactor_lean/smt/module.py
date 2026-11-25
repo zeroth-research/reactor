@@ -66,18 +66,15 @@ class ModuleSMT:
     module: Module
 
     def __post_init__(self):
-        atoms = list(self.module.atoms)
-        if len(atoms) != 1:
-            raise ValueError(
-                f"ModuleSMT: expected single-atom module, got {len(atoms)}"
-            )
-        self.atom = atoms[0]
         # Snapshot init/update terms immediately — the Rust-backed
         # `Atom.init` / `Atom.update` iterators are one-shot in some
         # wrappers, so other consumers (e.g. `LeanContext`) could
-        # exhaust them before we get here.
-        self.init_terms: list = list(self.atom.init)
-        self.update_terms: list = list(self.atom.update)
+        # exhaust them before we get here. Every atom's, atom after atom:
+        # the module keeps its atoms in await order, so that is one block
+        # in dataflow order, the round `reactor.eval` runs.
+        atoms = list(self.module.atoms)
+        self.init_terms: list = [t for a in atoms for t in a.init]
+        self.update_terms: list = [t for a in atoms for t in a.update]
         self.ctrl_latched: list[Var] = list(self.module.ctrl)
         self.ctrl_next: list[Wire] = [X(v) for v in self.module.ctrl]
         self.extl_latched: list[Var] = list(self.module.extl)

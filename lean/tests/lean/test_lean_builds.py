@@ -143,6 +143,60 @@ def test_generated_executable_builds_and_runs(
 
 
 @pytest.mark.slow
+def test_a_module_of_several_atoms_builds_and_runs(generate_lean_files):
+    """`reactor --encodings functional -x` on a module of three atoms: the
+    functional encoding, each atom's functions and the module's composed of
+    them, builds, and so does the certificate stated over it; and the
+    program runs the rounds the interpreter does.
+
+    The state `(z, x, wrap, y)` is printed in that order, one round a line,
+    each round reading the input `e`: `x` counts modulo 4 and `wrap` says it
+    wrapped, `y` adds up `x`, and `z` is `y - e`.
+    """
+    from reactor_lean.codegen.context import LeanContext
+    from reactor_lean.core.certificate import Certificate, Claim
+    from reactor_lean.core.encodings import FUNCTIONAL
+    from reactor_lean.pipeline.certificate import render
+    from reactor_lean.project.lake_cache import LAKE_CACHE_ENV, lake_cache
+    from reactor_lean.project.lakefile import REACTLIB_ENV, reactlib_checkout
+    from reactor_lean.project.scaffold import create_project
+    from reactor_lean.proof.render import certificate_files
+
+    if lake_cache() is None:
+        pytest.skip(f"no Lake package cache: set ${LAKE_CACHE_ENV}")
+    if reactlib_checkout() is None:
+        pytest.skip(f"no ReactLib checkout: set ${REACTLIB_ENV}")
+
+    module = testdata.fixture("composed")
+    lean_cert = render(module, Claim(prp="(<= s1 3)", kind="safety"),
+                       Certificate("(and (>= s1 0) (<= s1 3) (>= s3 0))"))
+    with tempfile.TemporaryDirectory() as tmp:
+        project = create_project(
+            Path(tmp), module, "Rea", executable=True,
+            certificate=certificate_files(LeanContext(module), lean_cert),
+            encodings=(FUNCTIONAL,))
+        for target in ([], ["main"]):
+            build = subprocess.run(["lake", "build", *target], cwd=project,
+                                   capture_output=True, text=True, timeout=900)
+            assert build.returncode == 0, (
+                f"lake build {' '.join(target)} failed.\n"
+                f"stdout:\n{build.stdout[-2000:]}\nstderr:\n{build.stderr[-800:]}"
+            )
+        run = subprocess.run(
+            [str(project / ".lake" / "build" / "bin" / "main")],
+            input="1\n2\n3\n4\n5\n", capture_output=True, text=True, timeout=60,
+        )
+    assert run.returncode == 0, f"executable failed: {run.stderr[-500:]}"
+    assert [line.split() for line in run.stdout.splitlines()] == [
+        ["-1", "0", "0", "0"],
+        ["-1", "1", "0", "1"],
+        ["0", "2", "0", "3"],
+        ["2", "3", "0", "6"],
+        ["1", "0", "1", "6"],
+    ]
+
+
+@pytest.mark.slow
 @pytest.mark.parametrize("name", ["Scalar", "Vec6", "Counter", "Vec32", "RealHalf"])
 def test_scalar_encoding_builds(generate_lean_files, name):
     """The scalar encoding elaborates alongside the functional one.

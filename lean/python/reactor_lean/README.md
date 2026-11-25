@@ -59,7 +59,9 @@ NAME/
                                 circuit, relational, scalar and
                                 scalar-relational, each tied to the
                                 functional one by equivalence theorems
-                                (`--encodings` selects which)
+                                (`--encodings` selects which; a module
+                                of several atoms has the functional
+                                one alone)
   Certificate/Data.lean         the certificate: init_pre, update_pre, P,
                                 inv, ranking
   Certificate/Module.lean       RM and lts, the module as a ReactiveModule and
@@ -170,8 +172,13 @@ A **`Module`** is the top-level object.  It has:
   stands for its *latched* wire (the value from the previous step), and
   `X(v)` is its *next* wire, which `update` writes.
 - **`extl`** — external/environment inputs, also a sequence of `Var`s.
-- **atoms** — currently always a single atom (the combinational logic block).
-  Each atom has an **`init`** term list and an **`update`** term list.
+- **atoms** — one or more, each controlling some of `ctrl`. Each atom has an
+  **`init`** term list and an **`update`** term list, which read the latched
+  variables and the next values of the variables it *awaits*. The module
+  keeps its atoms in an order consistent with the await relation: an atom
+  comes after every atom whose variables it awaits. Only the functional
+  encoding composes several atoms; every other encoding takes a module of
+  one (`LeanContext.atom` refuses any other).
 
 A **`Wire`** carries a `Sort` (`Bool`, `Int`, `Real`, `BitVec`) and a shape,
 always 2-D here: `[1, 1]` = scalar, `[1, n]` = row vector, `[m, n]` = matrix.
@@ -273,6 +280,31 @@ ReactLib's, not Mathlib's (`Relational.Mat` says why).
 @[simp] def init (extl_n: Unit) : (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int) := ...
 @[simp] def update (ctrl: ...) (extl_l: ...) (extl_n: ...) : ... := ...
 ```
+
+A module of several atoms is each atom's own `init` and `update`, in a
+namespace `Atom<i>` (`i` the atom's place in the module's order), and the
+module's `init` and `update` composed of them. An atom's functions take
+the module's parameters and, when it awaits variables of other atoms, their
+next values in `wait`; they return the next values of the variables it
+controls. The composition applies each atom's function in turn and reads
+the next state off them in `ctrl` order (`tests/fixtures/composed.py`):
+
+```lean
+namespace Atom1
+@[simp] def init (extl_n: ...) (wait: ...) : ... := ...
+@[simp] def update (ctrl: ...) (extl_l: ...) (extl_n: ...) (wait: ...) : ... := ...
+end Atom1
+...
+@[simp] def update (ctrl: ...) (extl_l: ...) (extl_n: ...) : ... :=
+  let a0 := Atom0.update ctrl extl_l extl_n
+  let a1 := Atom1.update ctrl extl_l extl_n a0.1
+  let a2 := Atom2.update ctrl extl_l extl_n a1
+  (a2, a0.1, a0.2, a1)
+```
+
+`init` and `update` have the same types either way, so the certificate and
+`Main.lean`, which are stated over them, do not depend on the number of
+atoms. An awaited input is read from `extl_n`, as in a module of one atom.
 
 ---
 
@@ -389,7 +421,8 @@ The project writes one file per row of `project.scaffold.ENCODINGS` that
 `--encodings` selects (`selected_encodings`: the functional row always, and
 every row a selected one imports), each printed by the row's `producer`, a
 `ModuleToLean4.to_lean_*` method. A row's `name` is what `--encodings` calls
-it (`core.encodings`).
+it (`core.encodings`). A module of several atoms is refused, before anything
+is written, unless the functional row is the only one selected.
 
 ---
 
@@ -640,7 +673,7 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--invariant` | — | SMT-LIB 2 Bool invariant |
 | `--ranking` | — | SMT-LIB 2 Int ranking (`--buchi` only) |
 | `--cert-file` | — | Write standalone `.lean` file instead of full project |
-| `--encodings` | all | The encodings written, comma-separated, of `functional`, `circuit`, `relational`, `scalar`, `scalar-relational`; the functional one is always written |
+| `--encodings` | all | The encodings written, comma-separated, of `functional`, `circuit`, `relational`, `scalar`, `scalar-relational`; the functional one is always written. A module of several atoms needs `--encodings functional` |
 | `--artifacts` | `use` | What to do with the project's `artifacts/`: `use` lets the run read what an earlier run left, `ignore` reads nothing back but still records, `reset` empties it first |
 
 ### Writing a claim on the command line

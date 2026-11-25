@@ -50,7 +50,7 @@ def lean_gaps(ctx) -> list[str]:
         # Only what the next state is built from, which is what the encoders
         # walk: a term nothing reads is pruned before it is ever emitted, and
         # refusing a module over one would refuse a module that generates.
-        terms = reachable_terms(getattr(ctx.atom, block), ctx.ctrl_next)
+        terms = reachable_terms(ctx.terms(block), ctx.ctrl_next)
         for term in terms:
             name = itype_name(term.itype)
             why = None if name in seen else lean_gap(term.itype)
