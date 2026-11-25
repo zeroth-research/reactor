@@ -7,11 +7,12 @@ plus check the ctrl/extl partition and the config surface.
 """
 
 import pytest
+import torch
 
 import reactor
 from reactor import Module, Wire, sugar, Var, T, TheoryError
 from reactor.matrix.sort import Int, Real
-from reactor.sugar import ite, d, X, Zero
+from reactor.sugar import ite, d, X, Zero, expr
 from reactor.matrix import Skip
 from reactor.sort import ZeroSort
 from reactor.eval import eval_itype
@@ -120,6 +121,28 @@ def test_extl_is_external_and_module_is_open():
     assert m.open()
     assert len(list(m.ctrl)) == 1
     assert len(list(m.extl)) == 1
+
+
+# --- a scalar condition chooses between matrices ----------------------------
+
+
+A4 = torch.arange(16.0).reshape(4, 4)
+B4 = -A4 - 1
+
+
+class Choose(sugar.Module):
+    def update(self, m, x, y):
+        return ite(x < y, expr(A4, sort=Real), expr(B4, sort=Real))
+
+
+def test_ite_by_a_scalar_condition_chooses_between_matrices():
+    # x and y are scalars, [1, 1], and the branches [4, 4] matrices: the condition
+    # chooses the whole matrix
+    m, x, y = Var(Real([4, 4])), Var(Real1), Var(Real1)
+    module = Choose(ctrl=(m,), extl=(x, y))
+    for xv, yv, expected in [(1.0, 2.0, A4), (2.0, 1.0, B4)]:
+        state = {m: torch.zeros(4, 4), x: torch.tensor([[xv]]), y: torch.tensor([[yv]])}
+        assert torch.equal(_update(module, state)[reactor.X(m)], expected)
 
 
 # --- config surface ---------------------------------------------------------

@@ -112,6 +112,7 @@ impl<'py> IntoPyObject<'py> for crate::matrix::word::BV<tch::Tensor> {
             BV::Xnor(op) => op.into_pyobject(py).map(Bound::into_any),
             BV::Neg(op) => op.into_pyobject(py).map(Bound::into_any),
             BV::Ite(op) => op.into_pyobject(py).map(Bound::into_any),
+            BV::BroadcastIte(op) => op.into_pyobject(py).map(Bound::into_any),
             BV::Add(op) => op.into_pyobject(py).map(Bound::into_any),
             BV::Sub(op) => op.into_pyobject(py).map(Bound::into_any),
             BV::Mul(op) => op.into_pyobject(py).map(Bound::into_any),

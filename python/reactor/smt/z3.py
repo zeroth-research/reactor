@@ -128,7 +128,17 @@ def interpret(itype):
             return _np.frompyfunc(lambda x, y: _z3.Xor(x, y), 2, 1)
 
         # control flow
-        case matrix.real.Ite() | matrix.int.Ite() | matrix.bool.Ite() | matrix.word.Ite():
+        case (
+            matrix.real.Ite()
+            | matrix.int.Ite()
+            | matrix.bool.Ite()
+            | matrix.word.Ite()
+            | matrix.real.broadcast.Ite()
+            | matrix.int.broadcast.Ite()
+            | matrix.bool.broadcast.Ite()
+            | matrix.word.broadcast.Ite()
+        ):
+            # pointwise, or by a scalar condition, broadcast to the whole matrix
             return _np.frompyfunc(lambda c, tt, ff: _z3.If(c, tt, ff), 3, 1)
 
         # neural-ish / aggregate

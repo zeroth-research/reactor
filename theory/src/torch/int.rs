@@ -397,6 +397,7 @@ impl<'py> IntoPyObject<'py> for crate::matrix::int::NIA<tch::Tensor> {
             NIA::MatMul(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Lt(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Ite(op) => op.into_pyobject(py).map(Bound::into_any),
+            NIA::BroadcastIte(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Le(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Gt(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Ge(op) => op.into_pyobject(py).map(Bound::into_any),

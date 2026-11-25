@@ -23,6 +23,8 @@ information to compute its [`Boundary`]:
 - [`Argmax`] — the index of a maximal entry, counted row by row, as a
   `[1, 1]` matrix.
 - [`Ite`] — the pointwise choice `if c then x else y`, by a boolean matrix `c`.
+- [`broadcast::Ite`] — the choice of the whole matrices, by a scalar boolean
+  `c` of the shape `[1, 1]`.
 - [`Lt`], [`Le`], [`Gt`], [`Ge`], [`Eq`](struct@Eq), [`Ne`] — pointwise
   comparisons, which write boolean matrices of the same shape.
 
@@ -626,6 +628,8 @@ pub enum NRA<T> {
     #[subenum(LRA)]
     Ite(Ite),
     #[subenum(LRA)]
+    BroadcastIte(broadcast::Ite),
+    #[subenum(LRA)]
     Le(Le),
     #[subenum(LRA)]
     Gt(Gt),
@@ -665,6 +669,7 @@ where
             NRA::MatMul(op) => NRA::MatMul(*op),
             NRA::Lt(op) => NRA::Lt(*op),
             NRA::Ite(op) => NRA::Ite(*op),
+            NRA::BroadcastIte(op) => NRA::BroadcastIte(*op),
             NRA::Le(op) => NRA::Le(*op),
             NRA::Gt(op) => NRA::Gt(*op),
             NRA::Ge(op) => NRA::Ge(*op),
@@ -696,6 +701,7 @@ impl<T: fmt::Display> fmt::Display for NRA<T> {
             NRA::MatMul(op) => op.fmt(f),
             NRA::Lt(op) => op.fmt(f),
             NRA::Ite(op) => op.fmt(f),
+            NRA::BroadcastIte(op) => op.fmt(f),
             NRA::Le(op) => op.fmt(f),
             NRA::Gt(op) => op.fmt(f),
             NRA::Ge(op) => op.fmt(f),
@@ -730,6 +736,7 @@ where
             LRA::Transpose(op) => LRA::Transpose(*op),
             LRA::Lt(op) => LRA::Lt(*op),
             LRA::Ite(op) => LRA::Ite(*op),
+            LRA::BroadcastIte(op) => LRA::BroadcastIte(*op),
             LRA::Le(op) => LRA::Le(*op),
             LRA::Gt(op) => LRA::Gt(*op),
             LRA::Ge(op) => LRA::Ge(*op),
@@ -758,6 +765,7 @@ impl<T: fmt::Display> fmt::Display for LRA<T> {
             LRA::Transpose(op) => op.fmt(f),
             LRA::Lt(op) => op.fmt(f),
             LRA::Ite(op) => op.fmt(f),
+            LRA::BroadcastIte(op) => op.fmt(f),
             LRA::Le(op) => op.fmt(f),
             LRA::Gt(op) => op.fmt(f),
             LRA::Ge(op) => op.fmt(f),
@@ -789,6 +797,7 @@ impl<T: Matrix> Boundary<Sort> for NRA<T> {
             NRA::MatMul(op) => op.dom().map(Sort::from),
             NRA::Lt(op) => op.dom(),
             NRA::Ite(op) => op.dom(),
+            NRA::BroadcastIte(op) => op.dom(),
             NRA::Le(op) => op.dom(),
             NRA::Gt(op) => op.dom(),
             NRA::Ge(op) => op.dom(),
@@ -818,6 +827,7 @@ impl<T: Matrix> Boundary<Sort> for NRA<T> {
             NRA::MatMul(op) => op.cod().map(Sort::from),
             NRA::Lt(op) => op.cod(),
             NRA::Ite(op) => op.cod(),
+            NRA::BroadcastIte(op) => op.cod(),
             NRA::Le(op) => op.cod(),
             NRA::Gt(op) => op.cod(),
             NRA::Ge(op) => op.cod(),
@@ -845,6 +855,7 @@ impl<T: Matrix> Boundary<Sort> for LRA<T> {
             LRA::Transpose(op) => op.dom().map(Sort::from),
             LRA::Lt(op) => op.dom(),
             LRA::Ite(op) => op.dom(),
+            LRA::BroadcastIte(op) => op.dom(),
             LRA::Le(op) => op.dom(),
             LRA::Gt(op) => op.dom(),
             LRA::Ge(op) => op.dom(),
@@ -871,6 +882,7 @@ impl<T: Matrix> Boundary<Sort> for LRA<T> {
             LRA::Transpose(op) => op.cod().map(Sort::from),
             LRA::Lt(op) => op.cod(),
             LRA::Ite(op) => op.cod(),
+            LRA::BroadcastIte(op) => op.cod(),
             LRA::Le(op) => op.cod(),
             LRA::Gt(op) => op.cod(),
             LRA::Ge(op) => op.cod(),
@@ -1368,6 +1380,9 @@ where
         }
         if let Ok(op) = ob.extract::<Ite>() {
             return Ok(NRA::Ite(op));
+        }
+        if let Ok(op) = ob.extract::<broadcast::Ite>() {
+            return Ok(NRA::BroadcastIte(op));
         }
         if let Ok(op) = ob.extract::<Le>() {
             return Ok(NRA::Le(op));
@@ -2667,5 +2682,136 @@ impl Ne {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+/// The operations of the theory that broadcast a scalar operand, of the
+/// shape `[1, 1]`, to the shape of the others; the others are in the parent
+/// module.
+pub mod broadcast {
+    use super::*;
+
+    /// Choice `if c then x else y` between whole `[m, n]` real matrices `x` and
+    /// `y`, by the scalar boolean `c`, of the shape `[1, 1]`, read first: the
+    /// pointwise [`super::Ite`] by `c` broadcast to `[m, n]`.
+    ///
+    /// SMT-LIB2: `(ite c x y)`, by the only entry of `c`.
+    ///
+    /// Of branches of the same degree, which the choice keeps.
+    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(
+            frozen,
+            from_py_object,
+            eq,
+            str,
+            module = "reactor.matrix.real.broadcast"
+        )
+    )]
+    pub struct Ite {
+        shape: [usize; 2],
+        degree: u8,
+    }
+
+    impl Boundary<Sort> for Ite {
+        fn dom(&self) -> Poly<Sort> {
+            mono![
+                Bool::new([1, 1]).into(),
+                Real::with_degree(self.shape, self.degree).into(),
+                Real::with_degree(self.shape, self.degree).into()
+            ]
+            .into()
+        }
+
+        fn cod(&self) -> Poly<Sort> {
+            mono![Real::with_degree(self.shape, self.degree).into()].into()
+        }
+    }
+
+    impl fmt::Display for Ite {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "Ite")
+        }
+    }
+
+    impl Ite {
+        /// The choice reading the scalar boolean condition and the branches of
+        /// `dom`; fails unless the condition is of the shape `[1, 1]` and the
+        /// branches of the same sort.
+        pub fn with_dom(dom: [Sort; 3]) -> Result<Self, crate::Error> {
+            match dom {
+                [Sort::Bool(c), Sort::Real(x), Sort::Real(y)] if x == y && c.shape() == [1, 1] => {
+                    Ok(Ite {
+                        shape: x.shape(),
+                        degree: x.degree(),
+                    })
+                }
+                _ => Err(crate::matrix::unexpected_dom(
+                    "a condition Bool([1, 1]) and two branches Real of the same sort",
+                    &dom,
+                )),
+            }
+        }
+
+        /// The choice writing the real matrix of `cod`.
+        pub fn with_cod(cod: [Real; 1]) -> Result<Self, crate::Error> {
+            let [s] = cod;
+            Ok(Ite {
+                shape: s.shape(),
+                degree: s.degree(),
+            })
+        }
+    }
+
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+    impl Ite {
+        /// Python builds it from the parameters that its boundary does not determine,
+        /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+        /// writes.
+        #[cfg(feature = "pyo3")]
+        #[new]
+        #[pyo3(signature = (dom, cod = None))]
+        fn py_new(dom: [Sort; 3], cod: Option<Real>) -> Result<Self, crate::Error> {
+            crate::matrix::check_cod(Self::with_dom(dom), cod)
+        }
+
+        #[cfg_attr(feature = "pyo3", getter)]
+        pub fn degree(&self) -> u8 {
+            self.degree
+        }
+
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
+        #[cfg(feature = "pyo3")]
+        #[classattr]
+        fn __match_args__() -> (&'static str, &'static str) {
+            ("dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::matrix::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::matrix::py_sorts(py, Boundary::cod(self))
+        }
+
+        #[cfg_attr(feature = "pyo3", getter)]
+        pub fn shape(&self) -> [usize; 2] {
+            self.shape
+        }
     }
 }

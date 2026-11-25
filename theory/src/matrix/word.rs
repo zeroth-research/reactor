@@ -14,7 +14,9 @@ pointwise operations carry the `width` and the shape `[m, n]` of their
 arguments, as `Op(width, m, n)`, and indexed operations put their indices
 first, as SMT-LIB2 does with `(_ op i)`. The operations whose meaning
 depends on signedness are in the submodules [`signed`], reading words in
-two's complement, and [`unsigned`], reading them in binary.
+two's complement, and [`unsigned`], reading them in binary; the choice of
+whole matrices by a scalar boolean, [`broadcast::Ite`], is in the submodule
+[`broadcast`].
 
 | Operation | SMT-LIB2 | | Operation | SMT-LIB2 |
 |---|---|---|---|---|
@@ -39,6 +41,7 @@ two's complement, and [`unsigned`], reading them in binary.
 | [`Eq`](struct@Eq) | `=` | | | |
 | [`Ne`] | `distinct` | | | |
 | [`Ite`] | `ite` | | | |
+| [`broadcast::Ite`] | `ite` | | | |
 
 `=` and `distinct` belong to the SMT-LIB2 Core theory, which every logic
 includes, at the sort `(_ BitVec width)`; all the others belong to the
@@ -401,6 +404,7 @@ pub enum BV<T> {
     Xnor(Xnor),
     Neg(Neg),
     Ite(Ite),
+    BroadcastIte(broadcast::Ite),
     Add(Add),
     Sub(Sub),
     Mul(Mul),
@@ -448,6 +452,7 @@ where
             BV::Xnor(op) => BV::Xnor(*op),
             BV::Neg(op) => BV::Neg(*op),
             BV::Ite(op) => BV::Ite(*op),
+            BV::BroadcastIte(op) => BV::BroadcastIte(*op),
             BV::Add(op) => BV::Add(*op),
             BV::Sub(op) => BV::Sub(*op),
             BV::Mul(op) => BV::Mul(*op),
@@ -494,6 +499,7 @@ impl<T: fmt::Display> fmt::Display for BV<T> {
             BV::Xnor(op) => op.fmt(f),
             BV::Neg(op) => op.fmt(f),
             BV::Ite(op) => op.fmt(f),
+            BV::BroadcastIte(op) => op.fmt(f),
             BV::Add(op) => op.fmt(f),
             BV::Sub(op) => op.fmt(f),
             BV::Mul(op) => op.fmt(f),
@@ -540,6 +546,7 @@ impl<T: Matrix> Boundary<Sort> for BV<T> {
             BV::Xnor(op) => op.dom(),
             BV::Neg(op) => op.dom(),
             BV::Ite(op) => op.dom(),
+            BV::BroadcastIte(op) => op.dom(),
             BV::Add(op) => op.dom(),
             BV::Sub(op) => op.dom(),
             BV::Mul(op) => op.dom(),
@@ -584,6 +591,7 @@ impl<T: Matrix> Boundary<Sort> for BV<T> {
             BV::Xnor(op) => op.cod(),
             BV::Neg(op) => op.cod(),
             BV::Ite(op) => op.cod(),
+            BV::BroadcastIte(op) => op.cod(),
             BV::Add(op) => op.cod(),
             BV::Sub(op) => op.cod(),
             BV::Mul(op) => op.cod(),
@@ -2866,6 +2874,9 @@ where
         if let Ok(op) = ob.extract::<Ite>() {
             return Ok(BV::Ite(op));
         }
+        if let Ok(op) = ob.extract::<broadcast::Ite>() {
+            return Ok(BV::BroadcastIte(op));
+        }
         if let Ok(op) = ob.extract::<Add>() {
             return Ok(BV::Add(op));
         }
@@ -4296,5 +4307,134 @@ impl Ne {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+/// The operations of the theory that broadcast a scalar operand, of the
+/// shape `[1, 1]`, to the shape of the others; the others are in the parent
+/// module.
+pub mod broadcast {
+    use super::*;
+
+    /// Choice `if c then x else y` between whole `[m, n]` matrices of `width`-bit words `x` and
+    /// `y`, by the scalar boolean `c`, of the shape `[1, 1]`, read first: the
+    /// pointwise [`super::Ite`] by `c` broadcast to `[m, n]`.
+    ///
+    /// SMT-LIB2: `(ite c x y)`, by the only entry of `c`.
+    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(
+            frozen,
+            from_py_object,
+            eq,
+            str,
+            module = "reactor.matrix.word.broadcast"
+        )
+    )]
+    pub struct Ite {
+        width: usize,
+        shape: [usize; 2],
+    }
+
+    impl Boundary<Sort> for Ite {
+        fn dom(&self) -> Poly<Sort> {
+            mono![
+                Bool::new([1, 1]).into(),
+                Word::new_unchecked(self.width, self.shape).into(),
+                Word::new_unchecked(self.width, self.shape).into()
+            ]
+            .into()
+        }
+
+        fn cod(&self) -> Poly<Sort> {
+            mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        }
+    }
+
+    impl fmt::Display for Ite {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "Ite")
+        }
+    }
+
+    impl Ite {
+        /// The choice reading the scalar boolean condition and the branches of
+        /// `dom`; fails unless the condition is of the shape `[1, 1]` and the
+        /// branches of the same sort.
+        pub fn with_dom(dom: [Sort; 3]) -> Result<Self, crate::Error> {
+            match dom {
+                [Sort::Bool(c), Sort::Word(x), Sort::Word(y)] if x == y && c.shape() == [1, 1] => {
+                    Ok(Ite {
+                        width: x.width(),
+                        shape: x.shape(),
+                    })
+                }
+                _ => Err(crate::matrix::unexpected_dom(
+                    "a condition Bool([1, 1]) and two branches Word of the same sort",
+                    &dom,
+                )),
+            }
+        }
+
+        /// The choice writing the words of `cod`.
+        pub fn with_cod(cod: [Word; 1]) -> Result<Self, crate::Error> {
+            let [s] = cod;
+            Ok(Ite {
+                width: s.width(),
+                shape: s.shape(),
+            })
+        }
+    }
+
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+    impl Ite {
+        /// Python builds it from the parameters that its boundary does not determine,
+        /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+        /// writes.
+        #[cfg(feature = "pyo3")]
+        #[new]
+        #[pyo3(signature = (dom, cod = None))]
+        fn py_new(dom: [Sort; 3], cod: Option<Word>) -> Result<Self, crate::Error> {
+            crate::matrix::check_cod(Self::with_dom(dom), cod)
+        }
+
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
+        #[cfg(feature = "pyo3")]
+        #[classattr]
+        fn __match_args__() -> (&'static str, &'static str) {
+            ("dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::matrix::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::matrix::py_sorts(py, Boundary::cod(self))
+        }
+
+        #[cfg_attr(feature = "pyo3", getter)]
+        pub fn width(&self) -> usize {
+            self.width
+        }
+
+        #[cfg_attr(feature = "pyo3", getter)]
+        pub fn shape(&self) -> [usize; 2] {
+            self.shape
+        }
     }
 }

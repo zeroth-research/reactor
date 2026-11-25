@@ -9,8 +9,9 @@ the operation `Zero` writing the only value of the singleton sort `sort.ZeroSort
 special case at the top level; and the namespaces of the other operations and of the sorts, mirroring the
 `theory` crate: `sort` holds the sorts shared by all theories, the singleton `ZeroSort`;
 `matrix` holds the structural operations `Havoc` and `Skip`, and the namespaces
-`matrix.real`, `.int`, `.bool`, `.word` (with `.signed` and `.unsigned`) hold the
-operations of each theory, each built from the parameters its sorts do not determine,
+`matrix.real`, `.int`, `.bool`, `.word` (with `.signed` and `.unsigned`, and each with
+`.broadcast`, the choice of whole matrices by a scalar condition) hold the operations of
+each theory, each built from the parameters its sorts do not determine,
 then its domain, a single sort bare and several as a list, and optionally its codomain,
 which must agree (`matrix.real.Add([x, y])`, `matrix.word.Extract(i, j, x)`); an
 operation that reads nothing is built from its codomain (`matrix.real.Zero(x)`), except

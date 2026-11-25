@@ -11,6 +11,8 @@ information to compute its [`Boundary`]:
 - [`Not`] — pointwise negation.
 - [`Eq`](struct@Eq), [`Ne`] — pointwise equality and disequality.
 - [`Ite`] — the pointwise choice `if c then x else y`, by a boolean matrix `c`.
+- [`broadcast::Ite`] — the choice of the whole matrices, by a scalar boolean
+  `c` of the shape `[1, 1]`.
 */
 
 use super::sort::Bool;
@@ -141,6 +143,7 @@ pub enum Prop<T> {
     Eq(Eq),
     Ne(Ne),
     Ite(Ite),
+    BroadcastIte(broadcast::Ite),
 }
 
 impl<T> Clone for Prop<T>
@@ -157,6 +160,7 @@ where
             Prop::Eq(op) => Prop::Eq(*op),
             Prop::Ne(op) => Prop::Ne(*op),
             Prop::Ite(op) => Prop::Ite(*op),
+            Prop::BroadcastIte(op) => Prop::BroadcastIte(*op),
         }
     }
 }
@@ -172,6 +176,7 @@ impl<T: fmt::Display> fmt::Display for Prop<T> {
             Prop::Eq(op) => op.fmt(f),
             Prop::Ne(op) => op.fmt(f),
             Prop::Ite(op) => op.fmt(f),
+            Prop::BroadcastIte(op) => op.fmt(f),
         }
     }
 }
@@ -187,6 +192,7 @@ impl<T: Matrix> Boundary<Bool> for Prop<T> {
             Prop::Eq(op) => op.dom(),
             Prop::Ne(op) => op.dom(),
             Prop::Ite(op) => op.dom(),
+            Prop::BroadcastIte(op) => op.dom(),
         }
     }
 
@@ -200,6 +206,7 @@ impl<T: Matrix> Boundary<Bool> for Prop<T> {
             Prop::Eq(op) => op.cod(),
             Prop::Ne(op) => op.cod(),
             Prop::Ite(op) => op.cod(),
+            Prop::BroadcastIte(op) => op.cod(),
         }
     }
 }
@@ -366,6 +373,9 @@ where
         }
         if let Ok(op) = ob.extract::<Ite>() {
             return Ok(Prop::Ite(op));
+        }
+        if let Ok(op) = ob.extract::<broadcast::Ite>() {
+            return Ok(Prop::BroadcastIte(op));
         }
         if let Ok(op) = ob.extract::<Const<T>>() {
             return Ok(Prop::Const(op));
@@ -754,5 +764,121 @@ impl Ite {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+/// The operations of the theory that broadcast a scalar operand, of the
+/// shape `[1, 1]`, to the shape of the others; the others are in the parent
+/// module.
+pub mod broadcast {
+    use super::*;
+
+    /// Choice `if c then x else y` between whole `[m, n]` boolean matrices `x` and
+    /// `y`, by the scalar boolean `c`, of the shape `[1, 1]`, read first: the
+    /// pointwise [`super::Ite`] by `c` broadcast to `[m, n]`.
+    ///
+    /// SMT-LIB2: `(ite c x y)`, by the only entry of `c`.
+    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(
+            frozen,
+            from_py_object,
+            eq,
+            str,
+            module = "reactor.matrix.bool.broadcast"
+        )
+    )]
+    pub struct Ite {
+        shape: [usize; 2],
+    }
+
+    impl Boundary<Bool> for Ite {
+        fn dom(&self) -> Poly<Bool> {
+            mono![
+                Bool::new([1, 1]),
+                Bool::new(self.shape),
+                Bool::new(self.shape)
+            ]
+            .into()
+        }
+
+        fn cod(&self) -> Poly<Bool> {
+            mono![Bool::new(self.shape)].into()
+        }
+    }
+
+    impl fmt::Display for Ite {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "Ite")
+        }
+    }
+
+    impl Ite {
+        /// The choice reading the scalar boolean condition and the branches of
+        /// `dom`; fails unless the condition is of the shape `[1, 1]` and the
+        /// branches of the same sort.
+        pub fn with_dom(dom: [Bool; 3]) -> Result<Self, crate::Error> {
+            let [c, x, y] = dom;
+            if c.shape() != [1, 1] || x != y {
+                return Err(crate::matrix::unexpected_dom(
+                    "a condition Bool([1, 1]) and two branches Bool of the same sort",
+                    &dom,
+                ));
+            }
+            Ok(Ite { shape: x.shape() })
+        }
+
+        /// The choice writing the boolean matrix of `cod`.
+        pub fn with_cod(cod: [Bool; 1]) -> Result<Self, crate::Error> {
+            let [s] = cod;
+            Ok(Ite { shape: s.shape() })
+        }
+    }
+
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+    impl Ite {
+        /// Python builds it from the parameters that its boundary does not determine,
+        /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+        /// writes.
+        #[cfg(feature = "pyo3")]
+        #[new]
+        #[pyo3(signature = (dom, cod = None))]
+        fn py_new(dom: [Bool; 3], cod: Option<Bool>) -> Result<Self, crate::Error> {
+            crate::matrix::check_cod(Self::with_dom(dom), cod)
+        }
+
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
+        #[cfg(feature = "pyo3")]
+        #[classattr]
+        fn __match_args__() -> (&'static str, &'static str) {
+            ("dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::matrix::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::matrix::py_sorts(py, Boundary::cod(self))
+        }
+
+        #[cfg_attr(feature = "pyo3", getter)]
+        pub fn shape(&self) -> [usize; 2] {
+            self.shape
+        }
     }
 }

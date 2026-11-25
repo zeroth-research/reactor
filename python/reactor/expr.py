@@ -696,7 +696,9 @@ def d(v: Expr) -> Expr:
     return _wrap(reactor.d(v._wire), signed=isinstance(v, SExpr))
 
 
-def ite(cond: Expr, iftrue, iffalse) -> Expr:
+def ite(cond: "BExpr", iftrue, iffalse) -> Expr:
+    if not isinstance(cond, BExpr):
+        raise TypeError(f"ite(): the condition must be a boolean expression, got {cond!r}")
     a, b = iftrue, iffalse
     if not isinstance(a, Expr) and not isinstance(b, Expr):
         raise TypeError("ite(): at least one branch must be an Expr")
@@ -708,14 +710,26 @@ def ite(cond: Expr, iftrue, iffalse) -> Expr:
         raise TypeError(f"ite branches have different sorts {a.dtype}, {b.dtype}; use cast()")
     match a:
         case RExpr():
-            op = matrix.real.Ite([cond.dtype, a.dtype, b.dtype])
+            theory = matrix.real
         case IExpr():
-            op = matrix.int.Ite([cond.dtype, a.dtype, b.dtype])
+            theory = matrix.int
         case BExpr():
-            op = matrix.bool.Ite([cond.dtype, a.dtype, b.dtype])
+            theory = matrix.bool
         case WExpr():
-            op = matrix.word.Ite([cond.dtype, a.dtype, b.dtype])
-    return a._apply(op, cond, a, b)
+            theory = matrix.word
+    # a condition of the shape of the branches chooses pointwise; a scalar one, the whole
+    # matrix, by the choice of the theory that broadcasts it
+    if cond.shape == a.shape:
+        choice = theory.Ite
+    elif cond.shape == [1, 1]:
+        choice = theory.broadcast.Ite
+    else:
+        raise TypeError(
+            f"ite(): the condition must be of the shape {a.shape} of the branches, "
+            f"choosing pointwise, or a scalar, [1, 1], choosing the whole matrix; "
+            f"got {cond.shape}"
+        )
+    return a._apply(choice([cond.dtype, a.dtype, b.dtype]), cond, a, b)
 
 
 def relu(e: Expr) -> Expr:

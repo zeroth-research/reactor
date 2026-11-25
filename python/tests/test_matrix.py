@@ -59,6 +59,34 @@ def test_choice_reads_its_condition_and_branches():
         real.Ite([Real([2, 2])] * 3)
 
 
+def test_the_broadcast_choice_of_each_theory_reads_a_scalar_condition():
+    # the whole matrix, by a scalar condition, in each theory
+    for theory, s in [
+        (real, Real([4, 4])),
+        (real, T(Real([4, 4]))),
+        (int_, Int([4, 4])),
+        (bool_, Bool([4, 4])),
+        (word, Word(8, [4, 4])),
+    ]:
+        op = theory.broadcast.Ite([Bool([1, 1]), s, s])
+        assert op.dom == [Bool([1, 1]), s, s] and op.cod == s
+        assert type(op).__module__ == f"{theory.__name__}.broadcast"
+    assert real.broadcast.Ite([Bool([1, 1]), Real([4, 4]), Real([4, 4])], Real([4, 4])).cod == Real([4, 4])
+    for theory, dom in [
+        (real, [Bool([2, 2]), Real([2, 2]), Real([2, 2])]),  # pointwise: the theory's Ite
+        (int_, [Bool([2, 1]), Int([2, 2]), Int([2, 2])]),  # a condition of another shape
+        (real, [Real([1, 1]), Real([2, 2]), Real([2, 2])]),  # a condition that is not a Bool
+        (word, [Bool([1, 1]), Word(8, [2, 2]), Word(4, [2, 2])]),  # branches of different sorts
+        (real, [Bool([1, 1]), Real([2, 2]), T(Real([2, 2]))]),  # of different degrees
+    ]:
+        with pytest.raises(ValueError, match="condition"):
+            theory.broadcast.Ite(dom)
+    with pytest.raises(ValueError):
+        bool_.broadcast.Ite([Bool([2, 2])] * 3)
+    # the choice of whole matrices belongs to each theory, not to the namespace of all
+    assert not hasattr(reactor.matrix, "Ite")
+
+
 def test_the_codomain_is_optional_and_checked():
     x = T(Real([2, 3]))
     assert real.Add([x, x], x) == real.Add([x, x])

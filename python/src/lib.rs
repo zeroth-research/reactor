@@ -83,6 +83,12 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             real.add_class::<theory::matrix::real::Ge>()?;
             real.add_class::<theory::matrix::real::Eq>()?;
             real.add_class::<theory::matrix::real::Ne>()?;
+            {
+                let broadcast = PyModule::new(py, "broadcast")?;
+                broadcast.add_class::<theory::matrix::real::broadcast::Ite>()?;
+                real.add("broadcast", &broadcast)?;
+                namespaces.push(("matrix.real.broadcast", broadcast));
+            }
             matrix.add("real", &real)?;
             namespaces.push(("matrix.real", real));
         }
@@ -112,6 +118,12 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             int.add_class::<theory::matrix::int::Ge>()?;
             int.add_class::<theory::matrix::int::Eq>()?;
             int.add_class::<theory::matrix::int::Ne>()?;
+            {
+                let broadcast = PyModule::new(py, "broadcast")?;
+                broadcast.add_class::<theory::matrix::int::broadcast::Ite>()?;
+                int.add("broadcast", &broadcast)?;
+                namespaces.push(("matrix.int.broadcast", broadcast));
+            }
             matrix.add("int", &int)?;
             namespaces.push(("matrix.int", int));
         }
@@ -125,6 +137,12 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             bool.add_class::<theory::matrix::bool::Eq>()?;
             bool.add_class::<theory::matrix::bool::Ne>()?;
             bool.add_class::<theory::matrix::bool::Ite>()?;
+            {
+                let broadcast = PyModule::new(py, "broadcast")?;
+                broadcast.add_class::<theory::matrix::bool::broadcast::Ite>()?;
+                bool.add("broadcast", &broadcast)?;
+                namespaces.push(("matrix.bool.broadcast", broadcast));
+            }
             matrix.add("bool", &bool)?;
             namespaces.push(("matrix.bool", bool));
         }
@@ -178,6 +196,12 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
                 unsigned.add_class::<theory::matrix::word::unsigned::Ge>()?;
                 word.add("unsigned", &unsigned)?;
                 namespaces.push(("matrix.word.unsigned", unsigned));
+            }
+            {
+                let broadcast = PyModule::new(py, "broadcast")?;
+                broadcast.add_class::<theory::matrix::word::broadcast::Ite>()?;
+                word.add("broadcast", &broadcast)?;
+                namespaces.push(("matrix.word.broadcast", broadcast));
             }
             matrix.add("word", &word)?;
             namespaces.push(("matrix.word", word));

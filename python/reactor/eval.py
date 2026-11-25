@@ -137,7 +137,17 @@ def eval_itype(itype, read, out_sort=None):
             return [c * r[0]]
 
         # --- choice ---
-        case matrix.real.Ite() | matrix.int.Ite() | matrix.bool.Ite() | matrix.word.Ite():
+        case (
+            matrix.real.Ite()
+            | matrix.int.Ite()
+            | matrix.bool.Ite()
+            | matrix.word.Ite()
+            | matrix.real.broadcast.Ite()
+            | matrix.int.broadcast.Ite()
+            | matrix.bool.broadcast.Ite()
+            | matrix.word.broadcast.Ite()
+        ):
+            # pointwise, or by a scalar condition, broadcast to the whole matrix
             return [torch.where(r[0], r[1], r[2])]
 
         # --- real and integer arithmetic (exact) ---

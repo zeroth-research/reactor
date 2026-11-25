@@ -216,6 +216,80 @@ mod any {
     }
 
     #[test]
+    fn broadcast_ite_chooses_the_whole_matrix_by_a_scalar_condition_in_each_theory() {
+        let c: sort::Any = sort::Bool::new([1, 1]).into();
+        let r = sort::Real::new([4, 4]);
+        let dr = T(r);
+        let i = sort::Int::new([4, 4]);
+        let b = sort::Bool::new([4, 4]);
+        let w = sort::Word::new_unchecked(8, [4, 4]);
+        let ops: [(Any, sort::Any); 5] = [
+            (
+                real::NRA::from(
+                    real::broadcast::Ite::with_dom([c.try_into().unwrap(), r.into(), r.into()])
+                        .unwrap(),
+                )
+                .into(),
+                r.into(),
+            ),
+            (
+                real::NRA::from(real::broadcast::Ite::with_cod([dr]).unwrap()).into(),
+                dr.into(),
+            ),
+            (
+                int::NIA::from(
+                    int::broadcast::Ite::with_dom([c.try_into().unwrap(), i.into(), i.into()])
+                        .unwrap(),
+                )
+                .into(),
+                i.into(),
+            ),
+            (
+                bool::Prop::from(
+                    bool::broadcast::Ite::with_dom([sort::Bool::new([1, 1]), b, b]).unwrap(),
+                )
+                .into(),
+                b.into(),
+            ),
+            (
+                word::BV::from(
+                    word::broadcast::Ite::with_dom([c.try_into().unwrap(), w.into(), w.into()])
+                        .unwrap(),
+                )
+                .into(),
+                w.into(),
+            ),
+        ];
+        for (op, s) in ops {
+            assert_eq!(op.dom(), base::mono![c, s, s].into());
+            assert_eq!(op.cod(), base::mono![s].into());
+        }
+        assert_eq!(
+            real::broadcast::Ite::with_cod([r]).unwrap().to_string(),
+            "Ite"
+        );
+        // the broadcast choice is linear
+        let op = real::broadcast::Ite::with_cod([r]).unwrap();
+        assert!(real::LRA::<Mat>::try_from(real::NRA::<Mat>::from(op)).is_ok());
+        // a condition of the shape of the branches: the pointwise choice
+        let pointwise: real::Sort = sort::Bool::new([4, 4]).into();
+        assert!(real::broadcast::Ite::with_dom([pointwise, r.into(), r.into()]).is_err());
+        assert!(bool::broadcast::Ite::with_dom([b, b, b]).is_err());
+        // a condition of another shape
+        let column: int::Sort = sort::Bool::new([4, 1]).into();
+        assert!(int::broadcast::Ite::with_dom([column, i.into(), i.into()]).is_err());
+        // branches of different sorts
+        let other = sort::Word::new_unchecked(4, [4, 4]);
+        assert!(
+            word::broadcast::Ite::with_dom([c.try_into().unwrap(), w.into(), other.into()])
+                .is_err()
+        );
+        assert!(
+            real::broadcast::Ite::with_dom([c.try_into().unwrap(), r.into(), dr.into()]).is_err()
+        );
+    }
+
+    #[test]
     fn zero_writes_the_singleton_sort() {
         let op = Any::Zero(theory::zero::Zero);
         assert_eq!(op.dom(), Poly::unit());

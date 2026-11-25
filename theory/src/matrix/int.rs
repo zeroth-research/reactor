@@ -24,6 +24,8 @@ information to compute its [`Boundary`]:
 - [`Argmax`] — the index of a maximal entry, counted row by row, as a
   `[1, 1]` matrix.
 - [`Ite`] — the pointwise choice `if c then x else y`, by a boolean matrix `c`.
+- [`broadcast::Ite`] — the choice of the whole matrices, by a scalar boolean
+  `c` of the shape `[1, 1]`.
 - [`Lt`], [`Le`], [`Gt`], [`Ge`], [`Eq`](struct@Eq), [`Ne`] — pointwise
   comparisons, which write boolean matrices of the same shape.
 
@@ -506,6 +508,8 @@ pub enum NIA<T> {
     #[subenum(LIA)]
     Ite(Ite),
     #[subenum(LIA)]
+    BroadcastIte(broadcast::Ite),
+    #[subenum(LIA)]
     Le(Le),
     #[subenum(LIA)]
     Gt(Gt),
@@ -545,6 +549,7 @@ where
             NIA::MatMul(op) => NIA::MatMul(*op),
             NIA::Lt(op) => NIA::Lt(*op),
             NIA::Ite(op) => NIA::Ite(*op),
+            NIA::BroadcastIte(op) => NIA::BroadcastIte(*op),
             NIA::Le(op) => NIA::Le(*op),
             NIA::Gt(op) => NIA::Gt(*op),
             NIA::Ge(op) => NIA::Ge(*op),
@@ -576,6 +581,7 @@ impl<T: fmt::Display> fmt::Display for NIA<T> {
             NIA::MatMul(op) => op.fmt(f),
             NIA::Lt(op) => op.fmt(f),
             NIA::Ite(op) => op.fmt(f),
+            NIA::BroadcastIte(op) => op.fmt(f),
             NIA::Le(op) => op.fmt(f),
             NIA::Gt(op) => op.fmt(f),
             NIA::Ge(op) => op.fmt(f),
@@ -609,6 +615,7 @@ where
             LIA::Transpose(op) => LIA::Transpose(*op),
             LIA::Lt(op) => LIA::Lt(*op),
             LIA::Ite(op) => LIA::Ite(*op),
+            LIA::BroadcastIte(op) => LIA::BroadcastIte(*op),
             LIA::Le(op) => LIA::Le(*op),
             LIA::Gt(op) => LIA::Gt(*op),
             LIA::Ge(op) => LIA::Ge(*op),
@@ -636,6 +643,7 @@ impl<T: fmt::Display> fmt::Display for LIA<T> {
             LIA::Transpose(op) => op.fmt(f),
             LIA::Lt(op) => op.fmt(f),
             LIA::Ite(op) => op.fmt(f),
+            LIA::BroadcastIte(op) => op.fmt(f),
             LIA::Le(op) => op.fmt(f),
             LIA::Gt(op) => op.fmt(f),
             LIA::Ge(op) => op.fmt(f),
@@ -667,6 +675,7 @@ impl<T: Matrix> Boundary<Sort> for NIA<T> {
             NIA::MatMul(op) => op.dom().map(Sort::from),
             NIA::Lt(op) => op.dom(),
             NIA::Ite(op) => op.dom(),
+            NIA::BroadcastIte(op) => op.dom(),
             NIA::Le(op) => op.dom(),
             NIA::Gt(op) => op.dom(),
             NIA::Ge(op) => op.dom(),
@@ -696,6 +705,7 @@ impl<T: Matrix> Boundary<Sort> for NIA<T> {
             NIA::MatMul(op) => op.cod().map(Sort::from),
             NIA::Lt(op) => op.cod(),
             NIA::Ite(op) => op.cod(),
+            NIA::BroadcastIte(op) => op.cod(),
             NIA::Le(op) => op.cod(),
             NIA::Gt(op) => op.cod(),
             NIA::Ge(op) => op.cod(),
@@ -722,6 +732,7 @@ impl<T: Matrix> Boundary<Sort> for LIA<T> {
             LIA::Transpose(op) => op.dom().map(Sort::from),
             LIA::Lt(op) => op.dom(),
             LIA::Ite(op) => op.dom(),
+            LIA::BroadcastIte(op) => op.dom(),
             LIA::Le(op) => op.dom(),
             LIA::Gt(op) => op.dom(),
             LIA::Ge(op) => op.dom(),
@@ -747,6 +758,7 @@ impl<T: Matrix> Boundary<Sort> for LIA<T> {
             LIA::Transpose(op) => op.cod().map(Sort::from),
             LIA::Lt(op) => op.cod(),
             LIA::Ite(op) => op.cod(),
+            LIA::BroadcastIte(op) => op.cod(),
             LIA::Le(op) => op.cod(),
             LIA::Gt(op) => op.cod(),
             LIA::Ge(op) => op.cod(),
@@ -1220,6 +1232,9 @@ where
         }
         if let Ok(op) = ob.extract::<Ite>() {
             return Ok(NIA::Ite(op));
+        }
+        if let Ok(op) = ob.extract::<broadcast::Ite>() {
+            return Ok(NIA::BroadcastIte(op));
         }
         if let Ok(op) = ob.extract::<Le>() {
             return Ok(NIA::Le(op));
@@ -2341,5 +2356,122 @@ impl Ne {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn shape(&self) -> [usize; 2] {
         self.shape
+    }
+}
+
+/// The operations of the theory that broadcast a scalar operand, of the
+/// shape `[1, 1]`, to the shape of the others; the others are in the parent
+/// module.
+pub mod broadcast {
+    use super::*;
+
+    /// Choice `if c then x else y` between whole `[m, n]` integer matrices `x` and
+    /// `y`, by the scalar boolean `c`, of the shape `[1, 1]`, read first: the
+    /// pointwise [`super::Ite`] by `c` broadcast to `[m, n]`.
+    ///
+    /// SMT-LIB2: `(ite c x y)`, by the only entry of `c`.
+    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(
+            frozen,
+            from_py_object,
+            eq,
+            str,
+            module = "reactor.matrix.int.broadcast"
+        )
+    )]
+    pub struct Ite {
+        shape: [usize; 2],
+    }
+
+    impl Boundary<Sort> for Ite {
+        fn dom(&self) -> Poly<Sort> {
+            mono![
+                Bool::new([1, 1]).into(),
+                Int::new(self.shape).into(),
+                Int::new(self.shape).into()
+            ]
+            .into()
+        }
+
+        fn cod(&self) -> Poly<Sort> {
+            mono![Int::new(self.shape).into()].into()
+        }
+    }
+
+    impl fmt::Display for Ite {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "Ite")
+        }
+    }
+
+    impl Ite {
+        /// The choice reading the scalar boolean condition and the branches of
+        /// `dom`; fails unless the condition is of the shape `[1, 1]` and the
+        /// branches of the same sort.
+        pub fn with_dom(dom: [Sort; 3]) -> Result<Self, crate::Error> {
+            match dom {
+                [Sort::Bool(c), Sort::Int(x), Sort::Int(y)] if x == y && c.shape() == [1, 1] => {
+                    Ok(Ite { shape: x.shape() })
+                }
+                _ => Err(crate::matrix::unexpected_dom(
+                    "a condition Bool([1, 1]) and two branches Int of the same sort",
+                    &dom,
+                )),
+            }
+        }
+
+        /// The choice writing the integer matrix of `cod`.
+        pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
+            let [s] = cod;
+            Ok(Ite { shape: s.shape() })
+        }
+    }
+
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+    impl Ite {
+        /// Python builds it from the parameters that its boundary does not determine,
+        /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+        /// writes.
+        #[cfg(feature = "pyo3")]
+        #[new]
+        #[pyo3(signature = (dom, cod = None))]
+        fn py_new(dom: [Sort; 3], cod: Option<Int>) -> Result<Self, crate::Error> {
+            crate::matrix::check_cod(Self::with_dom(dom), cod)
+        }
+
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
+        #[cfg(feature = "pyo3")]
+        #[classattr]
+        fn __match_args__() -> (&'static str, &'static str) {
+            ("dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::matrix::py_sorts(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::matrix::py_sorts(py, Boundary::cod(self))
+        }
+
+        #[cfg_attr(feature = "pyo3", getter)]
+        pub fn shape(&self) -> [usize; 2] {
+            self.shape
+        }
     }
 }

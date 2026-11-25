@@ -38,6 +38,11 @@ AI = torch.tensor([[1, -1], [2, 0], [0, 3]])
 CASES = [
     # structural
     (Skip(R), [RX]),
+    # the choice of whole matrices of each theory, by a scalar condition
+    (real.broadcast.Ite([Bool([1, 1]), R, R]), [torch.tensor([[False]]), RX, RY]),
+    (int_.broadcast.Ite([Bool([1, 1]), I, I]), [torch.tensor([[True]]), IX, IY]),
+    (bool_.broadcast.Ite([Bool([1, 1]), B, B]), [torch.tensor([[True]]), BX, BY]),
+    (word.broadcast.Ite([Bool([1, 1]), W, W]), [torch.tensor([[False]]), WX, WY]),
     (real.Zero(R), []),
     # constants, linear and affine maps
     (real.Const(RX), []),

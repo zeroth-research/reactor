@@ -423,6 +423,7 @@ impl<'py> IntoPyObject<'py> for crate::matrix::real::NRA<tch::Tensor> {
             NRA::MatMul(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Lt(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Ite(op) => op.into_pyobject(py).map(Bound::into_any),
+            NRA::BroadcastIte(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Le(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Gt(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Ge(op) => op.into_pyobject(py).map(Bound::into_any),
