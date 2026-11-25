@@ -21,7 +21,7 @@
 \newcommand{\mset}[1]{\{\!\{#1\}\!\}}
 \newcommand{\cvec}{\overline{c}}
 \newcommand{\bfm}{\mathbf{m}}
-\newcommand{\bfDelta}{\boldsymbol{\Delta}}
+\newcommand{\bfNabla}{\boldsymbol{\nabla}}
 \newcommand{\tickto}[1]{\xrightarrow{\mathit{tick}(#1)}}
 \newcommand{\DCPN}[1]{\texorpdfstring{\textup{DCPN}\ensuremath{_{#1}}}{DCPN#1}}
 
@@ -75,8 +75,9 @@ that still makes sense:
 
   \item Token color functions are functions of the token colors. There is a
     global clock that advances in ticks, whose durations range over~$\Dom$.
-    In every tick, the token colors change by one Euler step of the tick
-    duration.
+    In every tick, the token colors follow the solution of the ordinary
+    differential equation given by the token color function, for the
+    duration of the tick.
 \end{itemize}
 
 %%%%%%%%%%%
@@ -278,20 +279,20 @@ are $\mathit{out}_T(\cvec) = \mset{(P(A'_1), \pi_T^1(\cvec)), \dots,
 \paragraph{Firings.}
 Within a round, we split the marking into two multisets: the multiset~$\bfm$
 of the tokens of the snapshot that have not been consumed yet, and the
-multiset~$\bfDelta$ of the tokens produced so far. Transitions consume tokens
+multiset~$\bfNabla$ of the tokens produced so far. Transitions consume tokens
 only from~$\bfm$.
 
 \begin{definition}[Firing]\label{def:firing}
-  For multisets $\bfm$, $\bfDelta$, $\bfm'$, $\bfDelta'$, a
+  For multisets $\bfm$, $\bfNabla$, $\bfm'$, $\bfNabla'$, a
   transition~$T$, and a tuple $\cvec \in \Dom^{km}$, we write
-  $\langle \bfm, \bfDelta \rangle \xrightarrow{T, \cvec}
-    \langle \bfm', \bfDelta' \rangle$ iff:
+  $\langle \bfm, \bfNabla \rangle \xrightarrow{T, \cvec}
+    \langle \bfm', \bfNabla' \rangle$ iff:
   \begin{enumerate}
     \item $\cvec$ is a binding of~$T$ in~$\bfm$ that enables~$T$;
     \item if $T \in \mathcal{T}_G$, then no immediate transition has a
       binding in~$\bfm$ (rule~R0); and
     \item $\bfm' = \bfm - \mathit{in}_T(\cvec)$ and
-      $\bfDelta' = \bfDelta + \mathit{out}_T(\cvec)$.
+      $\bfNabla' = \bfNabla + \mathit{out}_T(\cvec)$.
   \end{enumerate}
   We write $\rightarrow$ for the union of the relations
   $\xrightarrow{T, \cvec}$ over all $T$ and~$\cvec$, and $\rightarrow^*$ for
@@ -300,16 +301,16 @@ only from~$\bfm$.
 
 Firing takes no time. Hence, the tokens in~$\bfm$ have the same colours as in
 the snapshot, and guards are evaluated against the snapshot. The tokens
-produced in a round are in~$\bfDelta$, so they cannot be consumed in the same
+produced in a round are in~$\bfNabla$, so they cannot be consumed in the same
 round, and every token of the snapshot is consumed at most once.
 
 \begin{definition}[Round]\label{def:round}
   For markings $\bfm$ and~$\bfm'$, we write $\bfm \Rightarrow \bfm'$ iff
-  there are multisets $\bfm''$ and~$\bfDelta''$ such that
-  $\langle \bfm, \mset{} \rangle \rightarrow^* \langle \bfm'', \bfDelta''
+  there are multisets $\bfm''$ and~$\bfNabla''$ such that
+  $\langle \bfm, \mset{} \rangle \rightarrow^* \langle \bfm'', \bfNabla''
   \rangle$, no firing is possible from
-  $\langle \bfm'', \bfDelta'' \rangle$, and
-  $\bfm' = \bfm'' + \bfDelta''$.
+  $\langle \bfm'', \bfNabla'' \rangle$, and
+  $\bfm' = \bfm'' + \bfNabla''$.
 \end{definition}
 
 That is, a round fires transitions until none is enabled by the remaining
@@ -318,31 +319,66 @@ removes at least one token from the finite first component, so every sequence
 of firings is finite. Hence, for every
 marking~$\bfm$, there is a marking~$\bfm'$ with $\bfm \Rightarrow \bfm'$.
 
+\paragraph{Flows.}
+As in~\cite{EverdijBlom2005}, the colour of a token in a place~$P$ evolves as
+the solution of the ordinary differential equation $\dot{x} =
+\mathcal{V}_P(x)$. For a colour $c \in \Dom^k$ and a duration $\Delta_t \in \Dom$, we
+write $\Phi_P(c, \Delta_t)$ for the value at time~$\Delta_t$ of the solution that starts
+in~$c$, and call $\Phi_P$ the \emph{flow} of~$P$:
+\begin{itemize}
+  \item If $\Dom = \Real$, then the initial value problem
+    $\dot{x}(t) = \mathcal{V}_P(x(t))$, $x(0) = c$ has a unique maximal
+    solution $x : [0, \tau) \to \Real^k$ with $\tau \in \Real_{> 0} \cup
+    \{\infty\}$, since $\mathcal{V}_P$ is locally Lipschitz continuous. We
+    let $\Phi_P(c, \Delta_t) = x(\Delta_t)$ if $\Delta_t < \tau$. Otherwise, the solution blows up
+    before the time~$\Delta_t$, and $\Phi_P(c, \Delta_t)$ is undefined.
+  \item If $\Dom = \NatZero$, then a differential equation over~$\NatZero^k$
+    makes no sense, and we use the Euler step instead, that is, we read the
+    rate as constant during a tick. We let $\Phi_P(c, \Delta_t) = c + \Delta_t \cdot
+    \mathcal{V}_P(c)$ if $c + \Delta_t \cdot \mathcal{V}_P(c) \in \NatZero^k$.
+    Otherwise, the colour leaves the domain, and $\Phi_P(c, \Delta_t)$ is
+    undefined.
+\end{itemize}
+In both cases, if $\mathcal{V}_P$ is constant, then
+$\Phi_P(c, \Delta_t) = c + \Delta_t \cdot \mathcal{V}_P$.
+
 \begin{definition}[Clock tick]\label{def:tick}
-  For markings $\bfm$ and~$\bfm'$ and a duration $h \in \Dom$ with $h > 0$,
-  we write $\bfm \tickto{h} \bfm'$ iff $c + h \cdot \mathcal{V}_P(c) \in
-  \Dom^k$ for every token $(P, c) \in \bfm$, and
+  For markings $\bfm$ and~$\bfm'$ and a duration $\Delta_t \in \Dom$ with $\Delta_t > 0$,
+  we write $\bfm \tickto{\Delta_t} \bfm'$ iff $\Phi_P(c, \Delta_t)$ is defined for every
+  token $(P, c) \in \bfm$, and
   \[
-    \bfm' = \mset{(P, c + h \cdot \mathcal{V}_P(c)) \mid (P, c) \in \bfm},
+    \bfm' = \mset{(P, \Phi_P(c, \Delta_t)) \mid (P, c) \in \bfm},
   \]
   where every token is taken with its multiplicity in~$\bfm$.
 \end{definition}
 
-That is, a tick of duration~$h$ moves the colour of every token by one Euler
-step of size~$h$ along its rate of change. If $\Dom = \NatZero$, a tick is only
-possible if no colour leaves~$\NatZero$.
+That is, if $\Dom = \Real$, then during a tick of duration~$\Delta_t$, the colour of
+every token follows the solution of its differential equation for $\Delta_t$ time
+units. Since $\Phi_P(\Phi_P(c, \Delta_t), \Delta'_t) = \Phi_P(c, \Delta_t + \Delta'_t)$, a token
+that stays in~$P$ during several ticks evolves as in a single tick of their
+total duration. If $\Dom = \NatZero$, then this holds only if
+$\mathcal{V}_P$ is constant, and a tick is only possible if no colour
+leaves~$\NatZero$.
 
-\begin{remark}[Euler steps and exact flows]\label{rem:euler}
-  In~\cite{EverdijBlom2005}, the colour of a token in place~$P$ evolves as the
-  solution of the ordinary differential equation $\dot{c} = \mathcal{V}_P(c)$.
-  The proper way to advance the colour by a duration~$h$ is therefore the exact
-  flow $c \mapsto \Phi_P(c, h)$, where $\Phi_P(c, h)$ is the value at time~$h$
-  of the solution that starts in~$c$. This requires $\Dom = \Real$ and the
-  solutions to exist for all times. The Euler step $c + h \cdot
-  \mathcal{V}_P(c)$ coincides with the exact flow if $\mathcal{V}_P$ is
-  constant. Otherwise, it is an approximation with an error in $O(h^2)$ per
-  tick. We use the Euler step, since the exact flow is, in general, neither
-  available in closed form nor expressible in linear arithmetic.
+\begin{remark}[Numerical approximation]\label{rem:approx}
+  The flow~$\Phi_P$ is, in general, not available in closed form. Even for an
+  affine $\mathcal{V}_P(c) = A c + b$, it involves the matrix exponential
+  $e^{\Delta_t A}$, which is not expressible in linear arithmetic. If we cannot
+  compute the solution analytically, we approximate $\Phi_P(c, \Delta_t)$ by a
+  numerical method, and replace $\Phi_P(c, \Delta_t)$ in
+  Definition~\ref{def:tick} with the approximate value:
+  \begin{itemize}
+    \item the explicit Euler step $c + \Delta_t \cdot \mathcal{V}_P(c)$, which has a
+      local error in~$O(\Delta_t^2)$ and is used by Petrinaut~\cite{Petrinaut};
+    \item a Runge--Kutta method, for instance, the classical fourth-order
+      method, which has a local error in~$O(\Delta_t^5)$.
+  \end{itemize}
+  Both methods are exact if $\mathcal{V}_P$ is constant. Otherwise, the
+  approximate semantics differs from the exact one: the approximate colours
+  depend on how time is split into ticks, and an approximate colour may
+  satisfy a guard that the exact solution never satisfies, or vice versa.
+  If $\Dom = \NatZero$, then the Euler step is already part of the
+  definition of~$\Phi_P$.
 \end{remark}
 
 \begin{definition}[Execution]\label{def:execution}
@@ -524,7 +560,7 @@ affects the \DCPN{0} only via the initial marking.
   from~$L_T$ to~$\mathit{Skip}_T$, and an arc from~$\mathit{Skip}_T$
   to~$L_T$. The colour of the lock token is copied by $\pi_T$ and
   $\pi_{\mathit{Skip}_T}$. In every round, the lock token is consumed either
-  by~$T$ or by~$\mathit{Skip}_T$, and it returns via~$\bfDelta$. Hence,
+  by~$T$ or by~$\mathit{Skip}_T$, and it returns via~$\bfNabla$. Hence,
   $T$ fires at most once per round, and it may not fire. Then we have
   $(s, i, r, v) \Rightarrow (s - a, i + a - b, r + b, v)$ iff
   $a, b \in \{0, 1\}$, $a \le s$, and $a + b \le i$. These are exactly the
@@ -878,7 +914,7 @@ fixed, rather than reachability of a specific marking.
 
 \begin{proof}
   Since $\mathcal{V}_P(c) = \bar{0}$ for every place~$P$, a tick of every
-  duration~$h > 0$ is possible and leaves the marking unchanged. Since every
+  duration~$\Delta_t > 0$ is possible and leaves the marking unchanged. Since every
   marking has a successor round, every finite sequence of rounds extends to
   an execution. Hence, $P_{\mathit{Err}}$ is coverable from~$\mathcal{I}_n$
   iff there are rounds $\bfm_0 \Rightarrow \bfm_1 \Rightarrow \dots
@@ -1096,19 +1132,21 @@ that $(\mathbf{1}, a)$ is in the support of~$\mathcal{F}_T(\cvec)$. That is,
 every reset delay clock takes an arbitrary value in $\Real_{> 0}$ if
 $\Dom = \Real$, and in $\{1, 2, \dots\}$ if $\Dom = \NatZero$. Then, in
 Definition~\ref{def:firing}, we replace
-$\bfDelta' = \bfDelta + \mathit{out}_T(\cvec)$ with
-$\bfDelta' = \bfDelta + \bfDelta_T$ for some
-$\bfDelta_T \in \mathit{Out}_T(\cvec)$. A probabilistic semantics that keeps
+$\bfNabla' = \bfNabla + \mathit{out}_T(\cvec)$ with
+$\bfNabla' = \bfNabla + \bfNabla_T$ for some
+$\bfNabla_T \in \mathit{Out}_T(\cvec)$. A probabilistic semantics that keeps
 the distributions~$\rho_{T, j}$ is left for future work.
 
 \paragraph{Clock ticks.}
 In Definition~\ref{def:tick}, we additionally require that the delay clocks
-of the tokens in delay places remain non-negative, that is, $c_1 - h \ge 0$
+of the tokens in delay places remain non-negative, that is, $c_1 - \Delta_t \ge 0$
 for every token $(P, c) \in \bfm$ such that $P$ is a delay place. Hence, the
 duration of a tick is bounded by the smallest delay clock in a delay place,
 and a tick stops at the moment the next delay clock expires. The frozen delay
-clocks do not constrain the ticks. Since the delay clocks have a constant rate, the Euler step is exact
-for them.
+clocks do not constrain the ticks. Since the delay clocks have a constant
+rate, the flow decreases the delay clock of a token in a delay place to
+exactly $c_1 - \Delta_t$, and so do the numerical methods of
+Remark~\ref{rem:approx}.
 
 \begin{remark}[Delay transitions of DCPNs]\label{rem:delay}
   Consider a delay transition~$T$ of a DCPN with a single ordinary input arc
@@ -1276,7 +1314,7 @@ is in the values of the reset clocks and in the durations of the ticks.
 Every marking has exactly three tokens in $F$ and~$B$ together, and a tick
 stops at the latest when the next arrival or the next completion of a
 service is due. A token that $\mathit{Fin}$ returns to~$F$ at~$t_i$ is
-in~$\bfDelta$, so the next service starts at~$t_{i + 1}$, after a tick of an
+in~$\bfNabla$, so the next service starts at~$t_{i + 1}$, after a tick of an
 arbitrarily small positive duration.
 
 \paragraph{Comparison with Petrinaut.}
@@ -1456,15 +1494,15 @@ replace the conditions of Definition~\ref{def:firing} with:
   \item if $T \in \mathcal{T}_G$, then no immediate transition is enabled by
     a binding in~$\bfm$ (rule~R0); and
   \item $\bfm' = \bfm - \mathit{in}^O_T(\cvec)$ and
-    $\bfDelta' = \bfDelta + \bfDelta_T$ for some
-    $\bfDelta_T \in \mathit{Out}_T(\cvec)$.
+    $\bfNabla' = \bfNabla + \bfNabla_T$ for some
+    $\bfNabla_T \in \mathit{Out}_T(\cvec)$.
 \end{enumerate}
 
 A token on an enabling arc stays in~$\bfm$. Hence, other firings of the same
 round may read it again or consume it. A token that was consumed earlier in
 the round cannot be read. Inhibitor arcs are evaluated on~$\bfm$: a token
 consumed earlier in the round no longer inhibits, and a token produced in the
-round, which is in~$\bfDelta$, does not inhibit yet. This is how Petrinaut
+round, which is in~$\bfNabla$, does not inhibit yet. This is how Petrinaut
 evaluates inhibitor arcs within a simulation step. Since inhibitor arcs are
 not monotone, a firing may enable a transition that was inhibited at the
 beginning of the round. Rounds are still finite, since every firing consumes
@@ -1472,12 +1510,15 @@ a token along an ordinary arc.
 
 \paragraph{Clock ticks.}
 In Definition~\ref{def:tick}, we additionally require that the active delay
-clocks remain non-negative, that is, $c_l - h \cdot \delta_{P, l}(c) \ge 0$
-for every token $(P, c) \in \bfm$ and every $l \in \Lambda_P$. Hence, a tick
-stops at the latest when an active delay clock expires. If $\delta_{P, l}$ is
-constant, then the Euler step is exact for the $l$-th clock. Otherwise, the
-Euler step approximates the clock as any other component, see
-Remark~\ref{rem:euler}.
+clocks remain non-negative, that is, the $l$-th component of
+$\Phi_P(c, \Delta_t)$ is non-negative for every token $(P, c) \in \bfm$ and every
+$l \in \Lambda_P$. Since $\delta_{P, l} \ge 0$, an active delay clock does
+not increase along the solution, so it remains non-negative during the whole
+tick. Hence, a tick stops at the latest when an active delay clock expires.
+If $\delta_{P, l}$ is constant, then the $l$-th component of $\Phi_P(c, \Delta_t)$ is
+$c_l - \Delta_t \cdot \delta_{P, l}$. Otherwise, a numerical approximation of the
+flow approximates the clock as any other component, see
+Remark~\ref{rem:approx}.
 
 \begin{remark}[Timelocks in \DCPN{2}]\label{rem:timelock2}
   Remark~\ref{rem:timelock} applies to every active delay clock. A
@@ -1517,7 +1558,7 @@ projections of the executions of~$N'$ coincide with the executions of~$N$,
 where we read all random choices of~\cite{EverdijBlom2005}
 nondeterministically, and we compare both up to stuttering, that is, after
 merging consecutive equal markings. We say that a gadget is \emph{exact in
-the probabilistic reading} if, for $\Dom = \Real$ and exact flows, the
+the probabilistic reading} if, for $\Dom = \Real$, the
 projection of the marking process of~$N'$ has the same distribution as the
 marking process of~$N$. Since we have neither defined a small-step semantics
 of full DCPNs nor a probabilistic semantics of \DCPN{2}, the exactness claims
@@ -1570,9 +1611,10 @@ small model theorem relies. All gadgets below are local.
   gadget keeps the probabilities of the winners, even for rates that depend
   on colours. Since $T_i$ is pre-enabled exactly while the token resides
   in~$P$, resetting the clocks whenever a token enters~$P$ implements the
-  restart rule. The gadget is exact in both readings, up to the Euler
-  approximation of non-constant rates. If $\Dom = \NatZero$, we only support
-  constant rates, as in Remark~\ref{rem:delay}.
+  restart rule. The gadget is exact in both readings. If the flow is
+  approximated as in Remark~\ref{rem:approx}, then the clocks with
+  non-constant rates carry the approximation error. If $\Dom = \NatZero$, we
+  only support constant rates, as in Remark~\ref{rem:delay}.
 \end{gadget}
 
 \begin{gadget}[Generators]\label{gad:gen}
@@ -1728,8 +1770,9 @@ small model theorem relies. All gadgets below are local.
   $\bigvee_i c_{l_i} \le 0$.
 
   \emph{Exactness.} The clock~$l_i$ is the distance $b_i - a_i \cdot c$ of the
-  current colour~$c$ to the $i$-th facet, since both decrease at the rate
-  $a_i \cdot v$, and the Euler step is exact for constant rates. Since no
+  current colour~$c$ to the $i$-th facet, since both decrease at the
+  constant rate $a_i \cdot v$. This also holds for the numerical methods of
+  Remark~\ref{rem:approx}, which are exact for constant rates. Since no
   tick passes the expiry of a clock, time stops exactly when the colour
   reaches the first facet, and $T$ fires in this round. Hence, the gadget is
   exact in both readings. In particular, it resolves the problem of the
@@ -1756,7 +1799,7 @@ small model theorem relies. All gadgets below are local.
   from~$P$ can be replaced by $K - w + 1$ arcs that consume tokens
   from~$\overline{P}$ and $K - w + 1$ arcs that put them back. Both gadgets
   are exact only up to the round
-  structure: a token that is put back is in~$\bfDelta$, so other transitions
+  structure: a token that is put back is in~$\bfNabla$, so other transitions
   can neither read nor consume it in the same round.
 \end{remark}
 
@@ -1803,7 +1846,8 @@ constant rates, and whose firing measures have definable supports.
   \caption{Gadgets that express features of DCPNs in \DCPN{2}. The
     gadgets~\ref{gad:hazard} and~\ref{gad:hitting} also need one delay clock
     per competing delay transition and per reachable facet, respectively.
-    $^{*}$Up to the Euler approximation of rates that are not constant.}
+    $^{*}$Up to the approximation error for rates that are not constant,
+    if the flow is approximated as in Remark~\ref{rem:approx}.}
   \label{tab:gadgets}
 \end{table}
 
