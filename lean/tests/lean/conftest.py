@@ -200,7 +200,8 @@ def _make_argmax(m: int, n: int) -> Module:
 
     The scalar encoding unrolls a one-row Argmax over its entries and leaves
     any other to the matrix form; a 2×2 one used to be unrolled too, and its
-    `update_scalar_eq` did not close.
+    `update_scalar_eq` did not close. A row of 12 is where the unrolled form
+    used to run out of heartbeats.
     """
     s, i = Var(Int([m, n])), Var(Int([1, 1]))
     init = [
@@ -225,6 +226,7 @@ _SCALAR_ENC_SPECS = [
     ("RealHalf", _make_real_half),
     ("DotProduct", _make_dot_product),
     ("Argmax2x2", lambda: _make_argmax(2, 2)),
+    ("Argmax1x12", lambda: _make_argmax(1, 12)),
 ]
 
 
@@ -241,13 +243,17 @@ _REL_ENC_SPECS = _SCALAR_ENC_SPECS + [
 # (elem_ty, n) pairs for the generated scalar Argmax variants. n = 1 is the
 # degenerate single-element case; the rest exercise the fold.
 # Int and Real at the same width sit together on purpose: the variant
-# names used to be built from `n` alone, so these two collided.
+# names used to be built from `n` alone, so these two collided. From 12 on,
+# the `let` chain the variants used to be ran out of heartbeats.
 _ARGMAX_SCALAR_SPECS = [
     ("Int", 1),
     ("Int", 2),
     ("Int", 4),
     ("Real", 3),
     ("Real", 4),
+    ("Int", 12),
+    ("Real", 12),
+    ("Int", 32),
 ]
 
 

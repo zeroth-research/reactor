@@ -38,10 +38,11 @@ def test_generated_argmax_scalar_mirrors_matrix_form(generate_lean_files):
     definition that disagrees with `torch.argmax`.
     """
     src = (LAKE_PROJECT / "Certs" / "ArgmaxScalar.lean").read_text()
-    assert "let b0 : Nat × Int := (0, s0)" in src, "scalar Argmax is not seeded with element 0"
+    assert "(0, s0) [(1, s1)" in src, "scalar Argmax is not seeded with element 0"
     assert "(0, (0 : Int))" not in src, "scalar Argmax still seeds a neutral value"
-    assert ".2 < s1" in src, "scalar Argmax does not use a strict comparison"
-    assert ".2 ≤ s" not in src, "scalar Argmax still uses a non-strict comparison"
+    assert "if best.2 < p.2 then p else best" in src, (
+        "scalar Argmax does not use a strict comparison")
+    assert "≤" not in src, "scalar Argmax still uses a non-strict comparison"
 
 
 # ──────────────────────────────────────────────────────────────
@@ -145,7 +146,7 @@ def test_generated_executable_builds_and_runs(
 @pytest.mark.slow
 @pytest.mark.parametrize(
     "name", ["Scalar", "Vec6", "Counter", "Vec32", "RealHalf", "DotProduct",
-             "Argmax2x2"]
+             "Argmax2x2", "Argmax1x12"]
 )
 def test_scalar_encoding_builds(generate_lean_files, name):
     """The scalar encoding elaborates alongside the functional one.
@@ -168,7 +169,7 @@ def test_scalar_encoding_builds(generate_lean_files, name):
 @pytest.mark.slow
 @pytest.mark.parametrize(
     "name", ["Scalar", "Vec6", "Counter", "Vec32", "RealHalf", "DotProduct",
-             "Argmax2x2", "TwoVars", "Mixed"]
+             "Argmax2x2", "Argmax1x12", "TwoVars", "Mixed"]
 )
 def test_relational_encoding_builds(generate_lean_files, name):
     """ScalarRel elaborates on top of the scalar encoding.

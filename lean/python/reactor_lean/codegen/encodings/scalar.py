@@ -127,26 +127,28 @@ def _recon_lemma_lines(w) -> "list[str]":
 def _argmax_scalar_def_lines(elem_ty: str, n: int) -> "list[str]":
     """Emit a scalar def and simp theorem for argmax over n elements.
 
-    Mirrors ``Relational.Mat.argmax_1d`` step for step -- seeded with
-    element 0 and updating on a strict ``<`` so the first maximal index
-    wins -- because ``{name}_eq`` below proves the two equal by unfolding
-    both. A neutral seed or a non-strict comparison here would either break
-    that proof or, worse, keep it provable against an equally wrong matrix
-    definition.
+    The fold of ``Relational.Mat.argmax_1d`` over the n elements written
+    out as a list -- seeded with element 0 and updating on a strict ``<``
+    so the first maximal index wins -- because ``{name}_eq`` below proves
+    the two equal by unfolding both. A neutral seed or a non-strict
+    comparison here would either break that proof or, worse, keep it
+    provable against an equally wrong matrix definition.
+
+    It is a `List.foldl`, as `argmax_1d` is, and not a chain of `let`s:
+    each `let` read the one before it twice, so unfolding the chain
+    doubled it with every element, and the `_eq` proof over 12 of them
+    ran out of heartbeats.
     """
     name = argmax_scalar_name(elem_ty, n)
     noncomp = "noncomputable " if elem_ty == "Real" else ""
     params = " ".join(f"(s{i} : {elem_ty})" for i in range(n))
-    body = [f"  let b0 : Nat × {elem_ty} := (0, s0)"]
-    for i in range(1, n):
-        body.append(
-            f"  let b{i} : Nat × {elem_ty} := if b{i-1}.2 < s{i} then ({i}, s{i}) else b{i-1}"
-        )
-    body.append(f"  (b{n-1}.1 : Int)")
+    rest = ", ".join(f"({i}, s{i})" for i in range(1, n))
     eq_params = " ".join(f"(v 0 {i})" for i in range(n))
     return [
         f"{noncomp}def {name} {params} : Int :=",
-        *body,
+        f"  ((List.foldl (fun (best : Nat × {elem_ty}) p => "
+        "if best.2 < p.2 then p else best)",
+        f"    (0, s0) [{rest}]).1 : Int)",
         "",
         f"@[simp] theorem {name}_eq (v : Matrix (Fin 1) (Fin {n}) {elem_ty}) :",
         f"    {name} {eq_params} = (↑(argmax_1d v 0 0) : Int) := by",
