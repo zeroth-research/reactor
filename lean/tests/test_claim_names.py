@@ -73,9 +73,7 @@ def test_a_named_python_module_carries_its_names():
     assert load(FIXTURES / "twobit_lia.py").names == Names((None, None), (None,))
 
 
-def test_a_claim_in_names_is_the_claim_by_position(tmp_path):
-    """The names are spelling only: the project is byte for byte the one
-    the positional claim generates."""
+def _named_and_positional(tmp_path):
     named = reactor(str(FIXTURES / "twobit_named.py"),
                    "--buchi", "(and (not (X lo)) (not (X hi)))",
                    "--pre", "(or (X enable) enable)",
@@ -88,10 +86,36 @@ def test_a_claim_in_names_is_the_claim_by_position(tmp_path):
                         "--cert-file", str(tmp_path / "positional.lean"))
     assert named.returncode == 0, named.stderr
     assert positional.returncode == 0, positional.stderr
-    assert (tmp_path / "named.lean").read_bytes() == \
-        (tmp_path / "positional.lean").read_bytes()
+    return named, (tmp_path / "named.lean").read_text(), (tmp_path / "positional.lean").read_text()
+
+
+def test_a_claim_in_names_is_the_claim_by_position(tmp_path):
+    """The names are spelling only: the claim is the positional one, and the
+    certificate is the positional one once its abbreviations are expanded."""
+    named, text, positional = _named_and_positional(tmp_path)
     assert ".. --buchi, in internal names: (and (not s0) (not s1))" in named.stdout
     assert ".. --pre, in internal names: (or e0 el0)" in named.stdout
+    assert "namespace Var" not in positional
+    # the Lean says the input's names: one abbreviation each, the predicates through them
+    for line in ("@[simp] abbrev lo (s : ", ":= s.1 0 0", "@[simp] abbrev hi (s : ", ":= s.2 0 0",
+                 "@[simp] abbrev enable (e : ", ":= e.2 0 0", "@[simp] abbrev enable.latched (e : ",
+                 ":= e.1 0 0", "fun s => (¬ ((lo s)) ∧ ¬ ((hi s)))", "fun e => ((enable e) ∨ (enable.latched e))"):
+        assert line in text, line
+    expanded = text[:text.index("namespace Var")] + text[text.index("end Var") + len("end Var\n\n"):]
+    expanded = expanded.replace("open Var in\n", "")
+    for name, positional_term in (("enable.latched e", "e.1 0 0"), ("enable e", "e.2 0 0"),
+                                  ("lo s", "s.1 0 0"), ("hi s", "s.2 0 0")):
+        expanded = expanded.replace(f"({name})", f"({positional_term})")
+    assert expanded == positional
+
+
+@pytest.mark.slow
+def test_a_certificate_in_names_builds(tmp_path):
+    from lake import lean_outputs
+
+    _, text, _ = _named_and_positional(tmp_path)
+    out = lean_outputs([tmp_path / "named.lean"])[0]
+    assert "error" not in out, out
 
 
 def test_a_bad_claim_or_name_is_an_error_line(tmp_path):

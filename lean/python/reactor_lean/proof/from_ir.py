@@ -44,29 +44,32 @@ _MIN_MAX = {("Ge", True): "max", ("Gt", True): "max",
 
 
 def ir_to_lean(formula, state_wires: list[Wire], *, param_name: str = "s",
-               extra: "Bindings | None" = None, share: bool = True) -> str:
+               extra: "Bindings | None" = None, share: bool = True,
+               rename: "dict[str, str] | None" = None) -> str:
     """`formula` as `fun {param_name} => ...`, as `from_smt.smt_to_lean`
     prints a cvc5 term. `extra` binds more variables -- `e0..`, `el0..` --
-    to accessors on the parameter."""
-    p = _Printer(formula, [("s", param_name, state_wires)] + (extra or []))
+    to accessors on the parameter; `rename` reads named ones through their
+    abbreviations."""
+    p = _Printer(formula, [("s", param_name, state_wires)] + (extra or []), rename)
     body, lets = p.parts(share)
     return f"fun {param_name} => {with_lets(body, lets)}"
 
 
 def ir_to_lean_nat(formula, state_wires: list[Wire], *, param_name: str = "s",
-                   extra: "Bindings | None" = None, share: bool = True) -> str:
+                   extra: "Bindings | None" = None, share: bool = True,
+                   rename: "dict[str, str] | None" = None) -> str:
     """An Int-sorted `formula` as a Lean `Nat`, clamped by `Int.toNat`."""
-    p = _Printer(formula, [("s", param_name, state_wires)] + (extra or []))
+    p = _Printer(formula, [("s", param_name, state_wires)] + (extra or []), rename)
     body, lets = p.parts(share)
     return f"fun {param_name} => {with_lets(f'(({body} : Int)).toNat', lets)}"
 
 
 class _Printer:
-    def __init__(self, formula, bindings):
+    def __init__(self, formula, bindings, rename=None):
         self.formula = formula
         self.by_wire = {t.write[0].id: t for t in formula.terms}
         # wire id -> (accessor, wire, name)
-        accessor, wire = build_var_map(bindings)
+        accessor, wire = build_var_map(bindings, rename)
         self.vars: dict[int, tuple[str, Wire, str]] = {
             wire[name].id: (accessor[name], wire[name], name) for name in accessor}
         self.bound: dict[int, str] = {}

@@ -443,7 +443,15 @@ placeholder.
 files:
 
 1. `Data.lean`: `init_pre`, `update_pre`, `inv`, `P`, `DecidablePred P`,
-   `ranking`.
+   `ranking`. When the input names its variables (`inputs.Named`), the
+   file opens with one `@[simp] abbrev` per named variable, in the
+   namespace `Var` (`proof.var_names`): `px s` for state variable `px`,
+   `w e` and `w.latched e` for input `w` read in the round and in the
+   round before. The predicates are printed through them (`open Var in`)
+   instead of `s.2.2.1 0 0`, and `verith`'s `simp` sets unfold them with
+   the definitions. A name that is not a Lean identifier is quoted
+   (`«a-b»`); one that a keyword or a root name already uses is printed
+   qualified (`Var.init s`).
 2. `Module.lean`: `def RM`, wiring `init`/`update` and the preconditions into
    a `ReactiveModule`, and `def lts`, its transition system.
 3. `Proofs.lean`: `init_inv_proof`, `step_inv_proof` and `hrank_proof` (or

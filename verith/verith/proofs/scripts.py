@@ -151,6 +151,11 @@ def _all_defs(ctx: "LeanContext", lean_cert: LeanCertificate) -> str:
     if not lean_cert.is_safety:
         names.append("ranking")
     names += ctx.constants.names()
+    # The variables' source names the predicates are printed in (`Data.lean`'s
+    # `Var` abbreviations): unfolded with the definitions, so the proofs see
+    # the positional terms `update` produces.
+    if lean_cert.names is not None:
+        names += lean_cert.names.simp_names()
     return ", ".join(names)
 
 

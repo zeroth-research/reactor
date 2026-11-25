@@ -23,6 +23,7 @@ from reactor_lean.project.names import (
     CERTIFICATE, DATA, MODULE, PROOFS, cert_file,
 )
 from reactor_lean.project.templates import render
+from .var_names import NAMESPACE, VarNames
 
 if TYPE_CHECKING:
     from reactor import Module
@@ -53,6 +54,9 @@ class LeanCertificate:
     ranking: str | None = None
     init_pre: str | None = None
     update_pre: str | None = None
+    # The variables' source names the predicates are printed in, which
+    # `Data.lean` defines (`var_names`); `None`: by position only.
+    names: "VarNames | None" = None
 
     @property
     def is_safety(self) -> bool:
@@ -68,7 +72,7 @@ class LeanCertificate:
 
 def render_certificate(
     q: "ModuleQueries | NativePredicates", *, share: bool = True,
-    verbatim: LeanAnswer | None = None,
+    verbatim: LeanAnswer | None = None, names=None,
 ) -> LeanCertificate:
     """The one place certificate predicates are printed as Lean.
 
@@ -79,6 +83,9 @@ def render_certificate(
     reads the same once `simp` has zeta-reduced the `let`s; it is for
     reading a definition, not for proving with it. `verbatim` is an answer
     that is Lean already; its `inv` and `ranking` are taken as they are.
+    `names` (`inputs.Names`) are the input's names for the variables: the
+    predicates read named ones through `Data.lean`'s abbreviations
+    (`var_names`) rather than by position.
     """
     from ..parse.native import NativePredicates
 
@@ -91,14 +98,16 @@ def render_certificate(
         from .from_smt import smt_to_lean_nat as nat
 
     wires = q.wires
+    var_names = VarNames.of(names)
+    rename = var_names.rename() if var_names else None
 
     def translate(term, mode: str) -> str | None:
         if term is None:
             return None
         if mode in ("property", "invariant"):
-            return prop(term, wires.ctrl_next, param_name="s", share=share)
+            return prop(term, wires.ctrl_next, param_name="s", share=share, rename=rename)
         if mode == "ranking":
-            return nat(term, wires.ctrl_next, param_name="s", share=share)
+            return nat(term, wires.ctrl_next, param_name="s", share=share, rename=rename)
         # preconditions
         return prop(
             term,
@@ -109,6 +118,7 @@ def render_certificate(
                 ("el", "e.1", wires.extl_latched),
             ],
             share=share,
+            rename=rename,
         )
 
     def named(term, role: str) -> str | None:
@@ -134,7 +144,7 @@ def render_certificate(
         ranking = named(q.ranking, "ranking")
     return LeanCertificate(
         kind=q.kind, prp=prp, inv=inv, ranking=ranking,
-        init_pre=init_pre, update_pre=update_pre,
+        init_pre=init_pre, update_pre=update_pre, names=var_names,
     )
 
 
@@ -144,9 +154,13 @@ def _cert_def_context(ctx: LeanContext, lean_cert: LeanCertificate) -> dict:
     Each predicate is an ``_expr`` (a Lean `fun` from `render_certificate`)
     or `None`, in which case the template uses the placeholder value.
     """
+    extl_type, ctrl_type = extl_native_type(ctx), product_type(ctx.ctrl_next)
+    names = lean_cert.names
     return dict(
-        extl_type=extl_native_type(ctx),
-        ctrl_type=product_type(ctx.ctrl_next),
+        extl_type=extl_type,
+        ctrl_type=ctrl_type,
+        var_defs=names.definitions(ctx.ctrl_next, ctx.extl_next, ctrl_type, extl_type) if names else "",
+        open_vars=f"open {NAMESPACE} in\n" if names else "",
         noncomp="noncomputable " if ctx.uses_real else "",
         is_safety=lean_cert.is_safety,
         init_pre_expr=lean_cert.init_pre,

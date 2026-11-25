@@ -37,7 +37,7 @@ Properties, invariants, ranking functions and preconditions are all written as
 * `(X @intf.0)`, `(X @intf.1)`, … — the controlled (state) wires after the round, in the order the module declares them
 * `(X @extl.0)`, … — the external inputs read in the round; `@extl.0`, … — the ones read in the round before
 * components of a vector wire take a tuple selector: `((_ tuple.select 1) (X @extl.0))`
-* a module file that names its variables (`reactor_lean.inputs.Named`) can be written in those names: `(X x)` is `x` after the round, a bare `x` is an input of the round before
+* a module file that names its variables (`reactor_lean.inputs.Named`) can be written in those names: `(X x)` is `x` after the round, a bare `x` is an input of the round before; the certificate's Lean (`Data.lean`) then says the same names, through one abbreviation each (`x s`, `u e`, `u.latched e`, in the namespace `Var`)
 
 Inside certificates, SMT queries, Lean and the artifacts the same wires are
 called `s0, s1, …`, `e0, …` and `el0, …`; the outputs below show that

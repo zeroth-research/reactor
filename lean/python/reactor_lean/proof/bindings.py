@@ -17,13 +17,16 @@ from ..lowering.sorts import wire_shape
 Bindings = "list[tuple[str, str, list[Wire]]]"
 
 
-def build_var_map(bindings: Bindings) -> tuple[dict[str, str], dict[str, Wire]]:
+def build_var_map(bindings: Bindings, rename: "dict[str, str] | None" = None,
+                  ) -> tuple[dict[str, str], dict[str, Wire]]:
     """Build Lean-accessor + wire maps for a list of (prefix, base, wires).
 
     For each binding, each wire at position `i` gets a variable name
     `<prefix><i>` mapped to a Lean accessor `<base><acc> [0 0]`. Scalar
     1×1 wires get the `0 0` scalar extraction; vector/matrix wires keep
-    the raw function form.
+    the raw function form. A variable `rename` names (`var_names.VarNames`)
+    is read through its abbreviation instead, applied to the parameter
+    `base` is on: `(px s)`, `(w e)`.
     """
     var_accessor: dict[str, str] = {}
     var_wire: dict[str, Wire] = {}
@@ -32,7 +35,9 @@ def build_var_map(bindings: Bindings) -> tuple[dict[str, str], dict[str, Wire]]:
         for i, w in enumerate(wires):
             acc = product_accessor(i, n)
             name = f"{prefix}{i}"
-            if wire_shape(w).is_scalar:
+            if rename and name in rename:
+                var_accessor[name] = f"({rename[name]} {base.split('.')[0]})"
+            elif wire_shape(w).is_scalar:
                 var_accessor[name] = f"({base}{acc} 0 0)"
             else:
                 var_accessor[name] = f"({base}{acc})"

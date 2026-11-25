@@ -12,7 +12,7 @@ layer and the code generators can all depend on it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 
@@ -28,12 +28,16 @@ class Claim:
                   `prp`, and no ranking. `--safety`.
 
     `init_pre` / `update_pre` constrain the inputs `init` and `update` see.
+    `names` are the input's names for the variables (`inputs.Names`), which
+    the Lean certificate prints the predicates in; they are no part of what
+    is claimed, so two claims that differ only in them are equal.
     """
 
     prp: str | None = None
     kind: Literal["safety", "buchi"] = "buchi"
     init_pre: str | None = None
     update_pre: str | None = None
+    names: object = field(default=None, compare=False, repr=False)
 
     @property
     def is_safety(self) -> bool:

@@ -101,7 +101,7 @@ def render(smt, claim: "Claim | None", cert: Certificate = Certificate(), *,
         q = predicate_terms(smt, claim, cert)
     else:
         raise ValueError(f"no parser {parser!r}: one of {', '.join(PARSERS)}")
-    return render_certificate(q, verbatim=verbatim)
+    return render_certificate(q, verbatim=verbatim, names=claim.names)
 
 
 def _module_of(smt):

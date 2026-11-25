@@ -57,7 +57,7 @@ def claim_from_flags(
 
     prp = internal(settings.prp, prp_flag)
     pre = internal(settings.pre, "--pre")
-    claim = Claim(prp=prp, kind=settings.kind, init_pre=pre, update_pre=pre)
+    claim = Claim(prp=prp, kind=settings.kind, init_pre=pre, update_pre=pre, names=names)
     return claim, Certificate(internal(settings.invariant, "--invariant"),
                               internal(settings.ranking, "--ranking"))
 

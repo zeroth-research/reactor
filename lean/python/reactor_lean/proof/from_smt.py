@@ -51,14 +51,16 @@ def smt_to_lean(
     param_name: str = "s",
     extra: "Bindings | None" = None,
     share: bool = True,
+    rename: "dict[str, str] | None" = None,
 ) -> str:
     """Translate `term` into a Lean 4 expression in a single parameter.
 
     `extra` lets the caller bind additional SMT variable names (e.g.
-    `e0..eM-1` → `e.2.acc_i 0 0` for extl_next) against the Lean param.
+    `e0..eM-1` → `e.2.acc_i 0 0` for extl_next) against the Lean param;
+    `rename` reads named ones through their abbreviations (`build_var_map`).
     """
     bindings = [("s", param_name, state_wires)] + (extra or [])
-    var_accessor, var_wire = build_var_map(bindings)
+    var_accessor, var_wire = build_var_map(bindings, rename)
     body, lets = _render(term, var_accessor, var_wire, share)
     return f"fun {param_name} => {with_lets(body, lets)}"
 
@@ -86,10 +88,11 @@ def smt_to_lean_nat(
     param_name: str = "s",
     extra: "Bindings | None" = None,
     share: bool = True,
+    rename: "dict[str, str] | None" = None,
 ) -> str:
     """Int-sorted term → Lean `Nat` expression, clamped via `Int.toNat`."""
     bindings = [("s", param_name, state_wires)] + (extra or [])
-    var_accessor, var_wire = build_var_map(bindings)
+    var_accessor, var_wire = build_var_map(bindings, rename)
     body, lets = _render(term, var_accessor, var_wire, share)
     return f"fun {param_name} => {with_lets(f'(({body} : Int)).toNat', lets)}"
 
