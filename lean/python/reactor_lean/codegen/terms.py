@@ -14,6 +14,7 @@ from reactor_lean.lowering.sorts import (
     dtype_to_lean_type,
     lean_elem_type,
     mat_mk,
+    theory_of,
     wire_shape,
 )
 from reactor_lean.lowering.elements import flat_indices, flat_layout
@@ -33,28 +34,30 @@ def lean_gaps(ctx) -> list[str]:
     """Every operator in this module that no Lean column can write.
 
     One sentence per operator, in the order the module first reaches for it:
-    which block, which wire, and the reason the op table records.
+    which block, which wire, and the reason the op table records. Ops of
+    two theories that share a name (`word.unsigned.Div`, `word.signed.Div`)
+    are two operators.
 
     Asked before anything is generated, which is the whole point. The same
     module met during codegen raises about a missing table cell, half way
     through the project. Every term is asked about, read or not, because
     the functional and scalar encodings translate a block's terms as they
-    are. A module that generates has nothing to report here, because an
-    operator with no matrix form has no emitter in the other two Lean
-    columns either (:func:`lowering.ops.lean_gap`), so this cannot refuse
-    anything that works.
+    are. A module that generates has nothing to report here: the gap is an
+    operator with no matrix form (:func:`lowering.ops.gap_of`), and the
+    functional encoding every project has is made of matrix forms alone.
     """
     out, seen = [], set()
     for block in ("init", "update"):
         for term in getattr(ctx.atom, block):
-            name = itype_name(term.itype)
-            why = None if name in seen else lean_gap(term.itype)
+            theory, name = theory_of(term.itype), itype_name(term.itype)
+            why = None if (theory, name) in seen else lean_gap(term.itype)
             if why is None:
                 continue
-            seen.add(name)
+            seen.add((theory, name))
+            op = f"{theory}.{name}" if theory else name
             out.append(
                 f"the `{block}` block writes wire #{term.write[0].id} with "
-                f"`{name}`, and {why}"
+                f"`{op}`, and {why}"
             )
     return out
 

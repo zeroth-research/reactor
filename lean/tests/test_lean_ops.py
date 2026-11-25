@@ -295,25 +295,40 @@ def _cells(mat, scalar, box) -> ops.Op:
     return ops.Op("Fake", (), mat=mat, scalar=scalar, box=box)
 
 
-def test_a_gap_is_asked_of_every_lean_column_not_only_the_matrix_one():
-    """Every row with no matrix form has no other Lean form either, so
-    reading `mat` alone gets the right answer for all of them. That is a
-    fact about the table's contents, and this check refuses a *module* on
-    the strength of it -- so the day a row has a `Box` and no matrix form,
-    reading `mat` alone would refuse a module the circuit encoding builds.
-    """
+def test_a_gap_is_a_row_with_no_matrix_form():
+    """The functional encoding is generated for every module, from the
+    matrix column alone, so a row with no matrix form is a gap whatever
+    its other columns hold: a `Box` or a scalar emitter there only let the
+    module through to fail half way through its project."""
     unsupported = ops.Unsupported("no matrix form")
     see_mat = ops.Unsupported("see the matrix column")
 
     assert ops.gap_of(_cells(unsupported, see_mat, see_mat)) == "no matrix form"
-    assert ops.gap_of(_cells(unsupported, see_mat, "Box.fake")) is None
-    assert ops.gap_of(_cells(unsupported, lambda a: a[0], see_mat)) is None
-    # `ViaMat` is served by the matrix form, which is the gap -- so it is
-    # not an escape from one, unlike `Inline`, whose branch is reached
-    # before the table is asked at all.
-    assert ops.gap_of(_cells(unsupported, ops.ViaMat("folds to 1x1"), see_mat)) \
-        == "no matrix form"
-    assert ops.gap_of(_cells(unsupported, ops.Inline("codegen.terms._special"), see_mat)) is None
+    assert ops.gap_of(_cells(unsupported, see_mat, "Box.fake")) == "no matrix form"
+    assert ops.gap_of(_cells(unsupported, lambda a: a[0], see_mat)) == "no matrix form"
+    assert ops.gap_of(_cells(lambda a: a[0], see_mat, see_mat)) is None
+    # `Inline`: the encoding's own branch writes it before the table is asked.
+    assert ops.gap_of(_cells(ops.Inline("codegen.terms._special"), see_mat, see_mat)) is None
+
+
+def test_ops_of_two_theories_that_share_a_name_are_two_gaps():
+    """Keyed by name alone, `word.signed.Div` was not reported beside
+    `word.unsigned.Div`, and was refused on the next run instead."""
+    s, d = Var(Word(8, S)), Var(Word(8, S))
+    init = [
+        Term(tensor.word.Const(torch.tensor([[7]]), 8), [X(s)]),
+        Term(tensor.word.Const(torch.tensor([[3]]), 8), [X(d)]),
+    ]
+    q = Wire(Word(8, S))
+    update = [
+        Term(tensor.word.unsigned.Div(8, S), [q], [s, d]),
+        Term(tensor.word.signed.Div(8, S), [X(s)], [q, d]),
+        Term(Skip(Word(8, S)), [X(d)], [d]),
+    ]
+    gaps = lean_gaps(LeanContext(Module.sequential([s, d], init, update)))
+    assert len(gaps) == 2
+    assert "`word.unsigned.Div`" in gaps[0] and "BitVec.udiv" in gaps[0]
+    assert "`word.signed.Div`" in gaps[1] and "BitVec.sdiv" in gaps[1]
 
 
 # ══════════════════════════════════════════════════════════════════════

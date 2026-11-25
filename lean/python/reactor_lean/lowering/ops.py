@@ -621,26 +621,17 @@ def _reason(row: Op, cell) -> str:
 
 
 def gap_of(row: Op) -> "str | None":
-    """Why no Lean column can write this row's operator, or None if one can.
+    """Why no Lean encoding can write this row's operator, or None if one
+    can: the matrix cell's reason, when it has no matrix form.
 
-    Asked of all three Lean columns, not of `mat` alone. No row in the table
-    has an unsupported matrix form and an emitter in another Lean column --
-    but that is a fact about today's rows, and a check that refuses a
-    *module* on the strength of it would start refusing modules that build
-    the day someone adds the first such row. It is one `isinstance` to not
-    depend on it.
-
-    Per column: `Unsupported` cannot write, and neither can `ViaMat`, which
-    says the matrix form serves it -- and the matrix form is the gap.
-    `Inline` can: it is the table saying the emitter lives beside it, in a
-    branch that is reached before the table is asked.
+    The matrix form decides alone. The functional encoding is generated
+    for every module, from the matrix column only, so a row with no matrix
+    form refuses the module whatever its other columns hold; checked any
+    later, it does so half way through the project.
     """
-    if not isinstance(row.mat, Unsupported):
-        return None
-    if any(not isinstance(cell, (Unsupported, ViaMat))
-           for cell in (row.scalar, row.box)):
-        return None
-    return _reason(row, row.mat)
+    if isinstance(row.mat, Unsupported):
+        return _reason(row, row.mat)
+    return None
 
 
 def lean_gap(itype) -> "str | None":
