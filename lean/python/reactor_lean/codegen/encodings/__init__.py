@@ -1,19 +1,13 @@
 """The module's Lean encodings: ``ModuleToLean4``, one submodule per encoding.
 
-`functional`, `circuit`, `scalar` and `relational` (the matrix and the
-scalar relational ones) are the encodings, and `common` is what the scalar
-ones share.
+`functional`, `scalar` and `relational` (the matrix and the scalar
+relational ones) are the encodings, and `common` is what the scalar ones
+share.
 """
-
-from functools import cached_property
 
 from reactor_lean.codegen.context import LeanContext
 
 from reactor_lean.codegen.encodings.functional import atom_to_lean_functional, constants_block
-from reactor_lean.codegen.encodings.circuit import (
-    atom_to_lean_circuit as _atom_to_lean_circuit,
-    to_lean_equiv_theorems as _to_lean_equiv_theorems,
-)
 from reactor_lean.codegen.encodings.scalar import (
     atom_to_lean_scalar as _atom_to_lean_scalar,
     to_lean_scalar_equiv as _to_lean_scalar_equiv,
@@ -25,22 +19,12 @@ from reactor_lean.codegen.encodings.relational import (
 
 
 class ModuleToLean4:
-    """Convert a Python Module into Lean4 wiring diagram code.
-
-    Read-only consumer of a pre-populated LeanContext — does not mutate it.
-
-    Every method stands alone: what the circuit's equivalence theorems
-    need of its encoding (its layer names) is computed once, by whichever
-    method asks first.
+    """A module's Lean encodings, one method each, every one of them
+    printed from the `LeanContext` alone, which none of them changes.
     """
 
     def __init__(self, ctx: LeanContext):
         self.ctx = ctx
-
-    @cached_property
-    def _circuit(self) -> "tuple[str, list[str], list[str]]":
-        """The circuit encoding, and its init and update layer names."""
-        return _atom_to_lean_circuit(self.ctx)
 
     # ------------------------------------------------------------------
     # Functional encoding
@@ -50,22 +34,6 @@ class ModuleToLean4:
         """Generate the functional init/update definitions (plus constants)."""
         return "{}\n\n{}".format(
             constants_block(self.ctx), atom_to_lean_functional(self.ctx)
-        )
-
-    # ------------------------------------------------------------------
-    # Circuit encoding
-    # ------------------------------------------------------------------
-
-    def to_lean_equiv_theorems(self) -> str:
-        """Generate theorems proving circuit ≡ functional."""
-        _, init_names, update_names = self._circuit
-        return _to_lean_equiv_theorems(self.ctx, init_names, update_names)
-
-    def to_lean_circ(self) -> str:
-        """The module as a combinational circuit, and circuit ≡ functional."""
-        return "{}\n\n{}".format(
-            self._circuit[0],
-            self.to_lean_equiv_theorems(),
         )
 
     # ------------------------------------------------------------------

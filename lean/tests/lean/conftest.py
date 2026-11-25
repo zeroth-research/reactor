@@ -263,10 +263,10 @@ _ARGMAX_SCALAR_SPECS = [
 
 
 @pytest.fixture(scope="session")
-def relational_circ() -> None:
-    """`Relational.Circ` built, once a session: what the files the tests
+def relational_mat() -> None:
+    """`Relational.Mat` built, once a session: what the files the tests
     compile with `lake.lean_outputs` import."""
-    built = lake_build("Relational.Circ", timeout=1800)
+    built = lake_build("Relational.Mat", timeout=1800)
     assert built.returncode == 0, built.stdout[-2000:] + built.stderr[-2000:]
 
 
@@ -290,7 +290,7 @@ def generate_lean_files() -> None:
     for name, make_module in _SCALAR_ENC_SPECS:
         t = ModuleToLean4(LeanContext(make_module()))
         (_CERTS_DIR / f"ScalarEnc{name}.lean").write_text(
-            f"import Relational.Mat\nimport Relational.Circ\n\n{LINTERS_OFF}\n\n"
+            f"import Relational.Basic\n\n{LINTERS_OFF}\n\n"
             + t.to_lean_functional()
             + "\n\n"
             + t.to_lean_scalar()

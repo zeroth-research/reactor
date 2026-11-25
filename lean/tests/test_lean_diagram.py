@@ -136,12 +136,11 @@ def test_matrix_module_uses_matvecaffine():
     m = _make_matrix_module()
     lean = all_encodings(m)
 
-    # Linear is emitted in the reflected form over list literals: matVecAffine
-    # in the functional encoding, Box.linear in the circuit one — neither uses the
-    # (unreduced) affineLinear/MatMul the prover would have to expand.
+    # Linear is emitted in the reflected form over list literals,
+    # matVecAffine, not as the (unreduced) affineLinear/MatMul the prover
+    # would have to expand.
     assert "affineLinear" not in lean
     assert "matVecAffine" in lean
-    assert "Box.linear" in lean
     assert "[[(0 : Int), (0 : Int)], [(1 : Int), (0 : Int)], [(0 : Int), (1 : Int)]]" in lean  # A of init, as a list literal
 
 
@@ -551,20 +550,15 @@ def _argmax_row() -> Module:
 
 @pytest.mark.parametrize("mod", ["m_countdown", "argmax_row"])
 def test_an_equivalence_theorem_alone_is_the_one_its_encoding_prints(mod):
-    """`to_lean_equiv_theorems` and `to_lean_scalar_equiv` read what their
-    encoding computed (layer names, argmax variants). Called first, on a
-    fresh `ModuleToLean4`, they print what the full producer prints rather
-    than silently dropping the theorems or the argmax lemmas."""
+    """`to_lean_scalar_equiv` reads what its encoding defines (the argmax
+    variants). Called first, on a fresh `ModuleToLean4`, it prints what the
+    full producer prints rather than silently dropping the argmax lemmas."""
     from reactor_lean.codegen.encodings import ModuleToLean4
     from reactor_lean.parse import load_module
     from testdata import MODS
 
     module = (_argmax_row() if mod == "argmax_row"
               else load_module(MODS / f"{mod}.py"))
-
-    circ_alone = ModuleToLean4(LeanContext(module)).to_lean_equiv_theorems()
-    assert "init_circ_eq" in circ_alone
-    assert ModuleToLean4(LeanContext(module)).to_lean_circ().endswith(circ_alone)
 
     scalar_alone = ModuleToLean4(LeanContext(module)).to_lean_scalar_equiv()
     assert ModuleToLean4(LeanContext(module)).to_lean_scalar().endswith(scalar_alone)

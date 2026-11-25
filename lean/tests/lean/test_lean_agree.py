@@ -46,7 +46,7 @@ def _disagreements(names: list[str], tmp_path: Path) -> "tuple[list[str], int]":
         chunk = scripts[k:k + _PER_FILE]
         body = "\n".join(t for _, t, _ in chunk)
         path = tmp_path / f"agree{k // _PER_FILE}.lean"
-        path.write_text("import Relational.Circ\n" + body)
+        path.write_text("import Relational.Mat\n" + body)
         files.append((path, chunk))
 
     outputs = lean_outputs([path for path, _chunk in files])
@@ -68,14 +68,14 @@ def _disagreements(names: list[str], tmp_path: Path) -> "tuple[list[str], int]":
 
 
 @pytest.mark.slow
-def test_the_lean_encoding_takes_the_rounds_the_module_takes(tmp_path, relational_circ):
+def test_the_lean_encoding_takes_the_rounds_the_module_takes(tmp_path, relational_mat):
     bad, checked = _disagreements(sorted(CORPUS), tmp_path)
     assert checked, "nothing to check"
     assert not bad, f"{len(bad)} disagreement(s):\n" + "\n".join(bad)
 
 
 @pytest.mark.slow
-def test_a_wrong_lean_emitter_is_caught(tmp_path, monkeypatch, relational_circ):
+def test_a_wrong_lean_emitter_is_caught(tmp_path, monkeypatch, relational_mat):
     """The check can fail: with `Sub`'s matrix emitter swapping its
     operands, the countdown's every `update` round prints something else."""
     from reactor_lean.lowering import ops

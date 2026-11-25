@@ -75,7 +75,7 @@ def test_torch_reference_conventions():
 # Emission: one flat index out, in every encoding
 # ──────────────────────────────────────────────────────────────
 
-_ENCODINGS = ["to_lean_functional", "to_lean_circ", "to_lean_scalar"]
+_ENCODINGS = ["to_lean_functional", "to_lean_scalar"]
 
 
 def _argmax_module(in_shape, out_shape):

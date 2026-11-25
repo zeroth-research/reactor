@@ -86,8 +86,6 @@ def generate_main_lean(module: Module) -> str:
     lines.append("")
     lines.append(LINTERS_OFF)
     lines.append("")
-    lines.append("open Box")
-    lines.append("")
 
     # Static helpers
     lines.append(

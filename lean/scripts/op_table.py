@@ -8,7 +8,7 @@ reason the table records. Run from `lean/`:
 from reactor_lean.lowering.ops import OPS, Inline, Unsupported, ViaMat, _SEE_MAT
 from reactor_lean.lowering.sorts import THEORIES
 
-COLUMNS = ("mat", "scalar", "box")
+COLUMNS = ("mat", "scalar")
 
 
 def mark(cell) -> str:

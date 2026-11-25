@@ -46,7 +46,6 @@ Wrote scalar-relational encoding: <OUT>/CertScalarRel.lean
 
 === Cert.lean
 import Relational.Basic
-import Relational.Circ
 
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false

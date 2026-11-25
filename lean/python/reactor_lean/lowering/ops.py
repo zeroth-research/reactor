@@ -2,14 +2,12 @@
 
 An op is one class of one theory: the namespace of `reactor.tensor` it is in
 (`theory_of`: `"int"` for `tensor.int.Ne([1, 1])`) and the name of its class
-(`itype_name`: `"Ne"`). Three backends turn that pair into something they can
-emit:
+(`itype_name`: `"Ne"`). Two backends turn that pair into a Lean expression:
 
-| column   | backend                          | a cell holds                 |
-|----------|----------------------------------|------------------------------|
-| `mat`    | `codegen.terms.translate_terms_lean`        | args -> Lean expr (on `Matrix`) |
-| `scalar` | `codegen.terms.translate_terms_scalar` | args -> Lean expr (bare)     |
-| `box`    | `codegen.boxes.translate_terms_circ`     | a `Box` combinator name      |
+| column   | backend                                | a cell holds                    |
+|----------|----------------------------------------|---------------------------------|
+| `mat`    | `codegen.terms.translate_terms_lean`   | args -> Lean expr (on `Matrix`) |
+| `scalar` | `codegen.terms.translate_terms_scalar` | args -> Lean expr (bare)        |
 
 A row is one op of one or more theories, and it must say something about
 every column. A cell is either an emitter or one of
@@ -22,13 +20,9 @@ every column. A cell is either an emitter or one of
 * `Unsupported(...)` — no emitter, and the reason it is missing rather than
   forgotten. That reason is what the caller is told.
 
-A row's three Lean columns are all emitters or all refusals, so that a
-module no encoding can write is refused before any is generated
-(`codegen.terms.lean_gaps`), not half way through a project. Only the Box
-may be missing where the other two are not: of `All`, and of an
-`entrywise` op larger than 1×1. The circuit encoding, which no certificate
-reads, is optional, and a module with no circuit form gets a file saying
-why.
+A row's two columns are both emitters or both refusals, so that a module
+no encoding can write is refused before any is generated
+(`codegen.terms.lean_gaps`), not half way through a project.
 
 `scripts/op_table.py` prints the matrix, gaps and all.
 `tests/test_lean_ops.py` checks it against `reactor.tensor` in both
@@ -87,7 +81,6 @@ class ViaMat:
 
 MatCell = Union[Callable[[list[str]], str], Inline, Unsupported]
 ScalarCell = Union[Callable[[list[str]], str], ViaMat, Inline, Unsupported]
-BoxCell = Union[str, Inline, Unsupported]
 
 
 
@@ -107,16 +100,15 @@ STRUCTURAL = ("",)
 class Op:
     """One op, as every backend sees it.
 
-    `entrywise`: the Lean cells are forms of 1×1 operands, read at `0 0`, and
-    so is the Box. The op of a larger shape is its scalar form applied entry
-    by entry (`codegen.terms`), and has no Box (`entrywise_shape`).
+    `entrywise`: the cells are forms of 1×1 operands, read at `0 0`. The op
+    of a larger shape is its scalar form applied entry by entry
+    (`codegen.terms`, `entrywise_shape`).
     """
 
     name: str
     theories: tuple[str, ...]
     mat: MatCell
     scalar: ScalarCell
-    box: BoxCell
     entrywise: bool = False
 
 
@@ -124,8 +116,8 @@ class Op:
 #  Reasons shared by several rows
 # ══════════════════════════════════════════════════════════════════════
 
-# The three Lean columns share one reason whenever an op is missing from all
-# of them; only the matrix cell spells the reason out.
+# The two columns share one reason whenever an op is missing from both;
+# only the matrix cell spells the reason out.
 _SEE_MAT = Unsupported("see the matrix column")
 
 _NONDET = Unsupported(
@@ -138,16 +130,6 @@ _ZERO = Unsupported(
     "the zero rate of change, of a `delay` block. No encoding here has "
     "continuous time."
 )
-
-
-def _no_box(lean_form: str) -> Unsupported:
-    """An op with no `Box` in `Relational.Circ`. Its other Lean forms would be
-    easy, but the Lean columns are all emitters or all refusals, so that a
-    module using it is refused before any of its encodings is generated."""
-    return Unsupported(
-        f"no `Box` in `Relational.Circ`. {lean_form} With a new `Box` all "
-        "three Lean columns could have it."
-    )
 
 
 def _word_with_no_lean_form(lean_form: str) -> Unsupported:
@@ -165,9 +147,9 @@ def _word_with_no_lean_form(lean_form: str) -> Unsupported:
 
 OPS: tuple[Op, ...] = (
     # ── structural ────────────────────────────────────────────────────
-    Op("Skip", STRUCTURAL, mat=lambda a: a[0], scalar=lambda a: a[0], box="Box.id"),
-    Op("Havoc", STRUCTURAL, mat=_NONDET, scalar=_SEE_MAT, box=_SEE_MAT),
-    Op("Zero", STRUCTURAL, mat=_ZERO, scalar=_SEE_MAT, box=_SEE_MAT),
+    Op("Skip", STRUCTURAL, mat=lambda a: a[0], scalar=lambda a: a[0]),
+    Op("Havoc", STRUCTURAL, mat=_NONDET, scalar=_SEE_MAT),
+    Op("Zero", STRUCTURAL, mat=_ZERO, scalar=_SEE_MAT),
     # ── constants ─────────────────────────────────────────────────────
     # The element type is the written wire's; scalar-vs-matrix is decided by
     # the wire's shape.
@@ -176,17 +158,15 @@ OPS: tuple[Op, ...] = (
         ("bool", "int", "real", "word"),
         mat=Inline("codegen.literals.constant_expr"),
         scalar=Inline("codegen.terms._constant_expr_scalar"),
-        box=Inline("circ: @Box.const"),
     ),
     # ── propositional logic ───────────────────────────────────────────
-    # The matrix forms and Boxes are of 1×1 operands, read at `0 0`; a larger
-    # op is the scalar form entry by entry (`entrywise`).
+    # The matrix forms are of 1×1 operands, read at `0 0`; a larger op is
+    # the scalar form entry by entry (`entrywise`).
     Op(
         "Not",
         ("bool",),
         mat=lambda a: mat_mk(f"!({a[0]} 0 0)"),
         scalar=lambda a: f"(!{a[0]})",
-        box="Box.not",
         entrywise=True,
     ),
     Op(
@@ -194,7 +174,6 @@ OPS: tuple[Op, ...] = (
         ("bool",),
         mat=lambda a: mat_mk(f"({a[0]} 0 0 && {a[1]} 0 0)"),
         scalar=lambda a: f"({a[0]} && {a[1]})",
-        box="Box.and",
         entrywise=True,
     ),
     Op(
@@ -202,7 +181,6 @@ OPS: tuple[Op, ...] = (
         ("bool",),
         mat=lambda a: mat_mk(f"({a[0]} 0 0 || {a[1]} 0 0)"),
         scalar=lambda a: f"({a[0]} || {a[1]})",
-        box="Box.or",
         entrywise=True,
     ),
     Op(
@@ -210,14 +188,12 @@ OPS: tuple[Op, ...] = (
         ("bool",),
         mat=Unsupported("no Lean form; nothing has asked for one."),
         scalar=_SEE_MAT,
-        box=_SEE_MAT,
     ),
     Op(
         "Implies",
         ("bool",),
         mat=lambda a: mat_mk(f"(!({a[0]} 0 0) || {a[1]} 0 0)"),
         scalar=lambda a: f"(!{a[0]} || {a[1]})",
-        box="Box.implies",
         entrywise=True,
     ),
     # `All` reduces a matrix to the 1×1 condition of an `Ite`, which picks
@@ -231,58 +207,47 @@ OPS: tuple[Op, ...] = (
         mat=lambda a: (f"({mat_mk(f'decide (∀ p : _ × _, {a[0]} p.1 p.2 = true)')}"
                        " : Matrix (Fin 1) (Fin 1) Bool)"),
         scalar=ViaMat("a reduction of a matrix; there is no bare-scalar form"),
-        box=Unsupported(
-            "no `Box` in `Relational.Circ` reduces a matrix of booleans; a "
-            "new `Box.all` would give the circuit encoding `All`."
-        ),
     ),
     Op(
         "Ite",
         ("bool", "int", "real", "word"),
         mat=lambda a: f"(if {a[0]} 0 0 then {a[1]} else {a[2]})",
         scalar=lambda a: f"(if {a[0]} then {a[1]} else {a[2]})",
-        box="Box.ite",
     ),
     # ── bitwise ───────────────────────────────────────────────────────
-    # `Box.bvNot`/`bvAnd`/... map BitVec's own operators over the matrix.
+    # BitVec's own operators, mapped over the matrix.
     Op(
         "Not",
         WORD,
         mat=lambda a: mat_mk(f"~~~({a[0]} i j)", "i", "j"),
         scalar=lambda a: f"(~~~{a[0]})",
-        box="Box.bvNot",
     ),
     Op(
         "And",
         WORD,
         mat=lambda a: mat_mk(f"({a[0]} i j) &&& ({a[1]} i j)", "i", "j"),
         scalar=lambda a: f"({a[0]} &&& {a[1]})",
-        box="Box.bvAnd",
     ),
     Op(
         "Or",
         WORD,
         mat=lambda a: mat_mk(f"({a[0]} i j) ||| ({a[1]} i j)", "i", "j"),
         scalar=lambda a: f"({a[0]} ||| {a[1]})",
-        box="Box.bvOr",
     ),
     Op(
         "Xor",
         WORD,
         mat=lambda a: mat_mk(f"({a[0]} i j) ^^^ ({a[1]} i j)", "i", "j"),
         scalar=lambda a: f"({a[0]} ^^^ {a[1]})",
-        box="Box.bvXor",
     ),
     *(
         Op(
             name,
             WORD,
             mat=_word_with_no_lean_form(
-                f"The matrix form would be `~~~(a {sym} b)`, the Box a new "
-                f"`Box.bv{name}` in `Relational.Circ`."
+                f"The matrix form would be `~~~(a {sym} b)`."
             ),
             scalar=_SEE_MAT,
-            box=_SEE_MAT,
         )
         for name, sym in (
             ("Nand", "&&&"),
@@ -296,24 +261,20 @@ OPS: tuple[Op, ...] = (
         ("int", "real", "word"),
         mat=lambda a: f"({a[0]} + {a[1]})",
         scalar=lambda a: f"({a[0]} + {a[1]})",
-        box="Box.add",
     ),
     Op(
         "Sub",
         ("int", "real", "word"),
         mat=lambda a: f"({a[0]} - {a[1]})",
         scalar=lambda a: f"({a[0]} - {a[1]})",
-        box="Box.sub",
     ),
     # `*` on two `Matrix`es is their matrix product (Mathlib's), so the
-    # pointwise product is spelled out entry by entry, and its Box is
-    # `Box.hadamard` rather than `Box.mul`.
+    # pointwise product is spelled out entry by entry.
     Op(
         "Mul",
         ("int", "real", "word"),
         mat=lambda a: mat_mk(f"{a[0]} i j * {a[1]} i j", "i", "j"),
         scalar=lambda a: f"({a[0]} * {a[1]})",
-        box="Box.hadamard",
     ),
     # Lean's `/` and `%` on `Int` are Euclidean, as SMT-LIB's `div` and
     # `mod` are, and by zero give what the theory gives (0, the dividend).
@@ -323,9 +284,8 @@ OPS: tuple[Op, ...] = (
             ("int",),
             mat=lambda a, sym=sym: mat_mk(f"{a[0]} i j {sym} {a[1]} i j", "i", "j"),
             scalar=lambda a, sym=sym: f"({a[0]} {sym} {a[1]})",
-            box=box,
         )
-        for name, sym, box in (("Div", "/", "Box.div"), ("Mod", "%", "Box.mod"))
+        for name, sym in (("Div", "/"), ("Mod", "%"))
     ),
     # Lean's `x / 0` on `Real` is 0.
     Op(
@@ -333,75 +293,63 @@ OPS: tuple[Op, ...] = (
         ("real",),
         mat=lambda a: mat_mk(f"{a[0]} i j / {a[1]} i j", "i", "j"),
         scalar=lambda a: f"({a[0]} / {a[1]})",
-        box="Box.div",
     ),
     Op(
         "Neg",
         ("int", "real", "word"),
         mat=lambda a: f"(-{a[0]})",
         scalar=lambda a: f"(-{a[0]})",
-        box="Box.neg",
     ),
     Op(
         "Abs",
         NUM,
-        mat=_no_box("The matrix form would be `|a i j|`."),
+        mat=Unsupported("no Lean form; nothing has asked for one. The "
+                        "matrix form would be `|a i j|`."),
         scalar=_SEE_MAT,
-        box=_SEE_MAT,
     ),
     Op(
         "Abs",
         SIGNED,
         mat=_word_with_no_lean_form(
-            "The matrix form would negate the entries below zero, the Box a "
-            "new `Box.bvAbs` in `Relational.Circ`."
+            "The matrix form would negate the entries below zero."
         ),
         scalar=_SEE_MAT,
-        box=_SEE_MAT,
     ),
     Op(
         "Div",
         UNSIGNED,
         mat=_word_with_no_lean_form(
-            "The matrix form would be `BitVec.udiv`, the Box a new "
-            "`Box.bvUDiv` in `Relational.Circ`."
+            "The matrix form would be `BitVec.udiv`."
         ),
         scalar=_SEE_MAT,
-        box=_SEE_MAT,
     ),
     Op(
         "Div",
         SIGNED,
         mat=_word_with_no_lean_form(
-            "The matrix form would be `BitVec.sdiv`, the Box a new "
-            "`Box.bvSDiv` in `Relational.Circ`."
+            "The matrix form would be `BitVec.sdiv`."
         ),
         scalar=_SEE_MAT,
-        box=_SEE_MAT,
     ),
     Op(
         "Rem",
         UNSIGNED,
         mat=lambda a: mat_mk(f"BitVec.umod ({a[0]} i j) ({a[1]} i j)", "i", "j"),
         scalar=lambda a: f"(BitVec.umod {a[0]} {a[1]})",
-        box="Box.bvUMod",
     ),
     Op(
         "Rem",
         SIGNED,
         mat=_word_with_no_lean_form(
-            "The matrix form would be `BitVec.srem`, the Box a new "
-            "`Box.bvSRem` in `Relational.Circ`."
+            "The matrix form would be `BitVec.srem`."
         ),
         scalar=_SEE_MAT,
-        box=_SEE_MAT,
     ),
     Op(
         "Mod",
         SIGNED,
         mat=lambda a: mat_mk(f"BitVec.smod ({a[0]} i j) ({a[1]} i j)", "i", "j"),
         scalar=lambda a: f"(BitVec.smod {a[0]} {a[1]})",
-        box="Box.bvSMod",
     ),
     # ── comparisons: write Bool ───────────────────────────────────────
     *(
@@ -410,14 +358,13 @@ OPS: tuple[Op, ...] = (
             NUM,
             mat=lambda a, f=f: mat_mk(f"decide ({f(f'{a[0]} 0 0', f'{a[1]} 0 0')})"),
             scalar=lambda a, f=f: f"(decide ({f(a[0], a[1])}))",
-            box=box,
             entrywise=True,
         )
-        for name, f, box in (
-            ("Lt", lambda x, y: f"{x} < {y}", "Box.lt"),
-            ("Le", lambda x, y: f"{x} ≤ {y}", "Box.le"),
-            ("Gt", lambda x, y: f"{y} < {x}", "Box.gt"),
-            ("Ge", lambda x, y: f"{y} ≤ {x}", "Box.ge"),
+        for name, f in (
+            ("Lt", lambda x, y: f"{x} < {y}"),
+            ("Le", lambda x, y: f"{x} ≤ {y}"),
+            ("Gt", lambda x, y: f"{y} < {x}"),
+            ("Ge", lambda x, y: f"{y} ≤ {x}"),
         )
     ),
     *(
@@ -426,12 +373,11 @@ OPS: tuple[Op, ...] = (
             ("bool", "int", "real", "word"),
             mat=lambda a, f=f: mat_mk(f"decide ({f(f'{a[0]} 0 0', f'{a[1]} 0 0')})"),
             scalar=lambda a, f=f: f"(decide ({f(a[0], a[1])}))",
-            box=box,
             entrywise=True,
         )
-        for name, f, box in (
-            ("Eq", lambda x, y: f"{x} = {y}", "Box.eq"),
-            ("Ne", lambda x, y: f"{x} ≠ {y}", "Box.neq"),
+        for name, f in (
+            ("Eq", lambda x, y: f"{x} = {y}"),
+            ("Ne", lambda x, y: f"{x} ≠ {y}"),
         )
     ),
     # Words compare unsigned and signed apart.
@@ -441,11 +387,9 @@ OPS: tuple[Op, ...] = (
             theories,
             mat=_word_with_no_lean_form(
                 "The matrix form would compare with `BitVec`'s own "
-                f"{order} ordering, the Box a new `Box.bv*` in "
-                "`Relational.Circ`."
+                f"{order} ordering."
             ),
             scalar=_SEE_MAT,
-            box=_SEE_MAT,
         )
         for theories, order in ((UNSIGNED, "unsigned"), (SIGNED, "signed"))
         for name in ("Lt", "Le", "Gt", "Ge")
@@ -459,7 +403,6 @@ OPS: tuple[Op, ...] = (
             NUM,
             mat=lambda a, name=name: f"(mat{name} {a[0]})",
             scalar=ViaMat(f"`mat{name}` folds a matrix; there is no bare-scalar fold"),
-            box=f"Box.{name.lower()}",
         )
         for name in ("Min", "Max")
     ),
@@ -470,7 +413,6 @@ OPS: tuple[Op, ...] = (
         # A 1×1 product need not have 1×1 operands: a row times a column.
         scalar=ViaMat("`*` is the matrix product, of operands that need "
                       "not be 1×1 when the product is"),
-        box="Box.mul",
     ),
     # `Get`'s entry is baked into the op, as `Linear`'s matrices are.
     Op(
@@ -478,14 +420,12 @@ OPS: tuple[Op, ...] = (
         ("bool", "int", "real", "word"),
         mat=Inline("codegen.terms._get_expr"),
         scalar=Inline("codegen.terms._get_expr, or the entry's flat slot"),
-        box=Inline("codegen.boxes._get_box"),
     ),
     Op(
         "Transpose",
         NUM,
         mat=lambda a: f"(Matrix.transpose {a[0]})",
         scalar=ViaMat("`Matrix.transpose` is a matrix rearrangement"),
-        box="Box.transpose",
     ),
     Op(
         "ReLU",
@@ -496,7 +436,6 @@ OPS: tuple[Op, ...] = (
         # instead leaves `ReLu (Matrix.mk fun _ _ => x) 0 0` with unconstrained
         # dimensions, so this is not a `ViaMat` cell.
         scalar=lambda a: f"(Max.max 0 {a[0]})",
-        box="Box.relu",
     ),
     # `Linear`'s A and B are baked into the op rather than read from wires,
     # `Scale`'s factor too (it is written as the affine map `diag(c)·X`),
@@ -507,14 +446,12 @@ OPS: tuple[Op, ...] = (
         NUM,
         mat=Inline("codegen.terms._linear_expr"),
         scalar=Inline("codegen.terms._linear_expr, lifted and projected"),
-        box=Inline("codegen.boxes._linear_box"),
     ),
     Op(
         "Scale",
         NUM,
         mat=Inline("codegen.terms._linear_expr, as `diag(c)·X`"),
         scalar=Inline("codegen.terms._linear_expr, lifted and projected"),
-        box=Inline("codegen.boxes._linear_box, as `diag(c)·X`"),
     ),
     Op(
         "Argmax",
@@ -522,7 +459,6 @@ OPS: tuple[Op, ...] = (
         mat=Inline("codegen.terms._argmax_expr"),
         scalar=Inline("codegen.terms: over one row, `argmax1d_scalar_*`; "
                       "else _argmax_expr"),
-        box=Inline("codegen.terms.argmax_variant"),
     ),
     # ── shifts, rotations and resizing of words ───────────────────────
     *(
@@ -531,7 +467,6 @@ OPS: tuple[Op, ...] = (
             theories,
             mat=_word_with_no_lean_form(f"The matrix form would be `{lean}`."),
             scalar=_SEE_MAT,
-            box=_SEE_MAT,
         )
         for name, theories, lean in (
             ("Shl", WORD, "a <<< b"),
@@ -553,13 +488,11 @@ OPS: tuple[Op, ...] = (
             ("cast",),
             mat=lambda a, one=one: mat_mk(one(f"({a[0]} i j)"), "i", "j"),
             scalar=lambda a, one=one: one(a[0]),
-            box=box,
         )
-        for name, one, box in (
-            ("ToReal", lambda x: f"(({x} : Int) : Real)", "Box.intToReal"),
-            ("ToInt", lambda x: f"⌊{x}⌋", "Box.realToInt"),
-            ("UbvToInt", lambda x: f"((BitVec.toNat {x} : Nat) : Int)",
-             "Box.bvToInt"),
+        for name, one in (
+            ("ToReal", lambda x: f"(({x} : Int) : Real)"),
+            ("ToInt", lambda x: f"⌊{x}⌋"),
+            ("UbvToInt", lambda x: f"((BitVec.toNat {x} : Nat) : Int)"),
         )
     ),
 )
@@ -597,8 +530,7 @@ def op_for(itype) -> Op:
 
 def entrywise_shape(itype) -> "list[int] | None":
     """The shape of an `entrywise` op when it is larger than 1×1, where its
-    scalar form applies entry by entry and no Box does; None for every other
-    op."""
+    scalar form applies entry by entry; None for every other op."""
     if not op_for(itype).entrywise:
         return None
     shape = list(itype.shape)
@@ -609,7 +541,7 @@ def _reason(row: Op, cell) -> str:
     """What a non-emitter cell has to say for itself.
 
     `_SEE_MAT` carries no reason of its own: the matrix cell holds the one
-    that covers all three Lean columns.
+    that covers both columns.
     """
     if cell is _SEE_MAT:
         cell = row.mat
@@ -671,10 +603,3 @@ def scalar_emitter(itype) -> "Callable[[list[str]], str] | None":
     if isinstance(cell, (Unsupported, Inline, ViaMat)):
         return None
     return cell
-
-
-def box_for(itype) -> str:
-    """The `Box` combinator, or a `ValueError` carrying the reason."""
-    row = op_for(itype)
-    return _lean_emitter(itype, row, row.box, "Box")
-
