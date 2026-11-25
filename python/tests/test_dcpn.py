@@ -1,4 +1,13 @@
-"""LIA declarations and token lowering, without a transition coordinator."""
+"""Tests for LIA-colored Petri nets (``reactor.dcpn``).
+
+Covers:
+
+- place and color declarations, and ``obj`` instantiation;
+- token modules: initial state, resident updates, and same-round jumps
+  depending on the ``transition_round`` and ``in_transition`` flags;
+- the n-ary Boolean helpers ``_all`` and ``_any``;
+- validation of net specifications.
+"""
 
 from dataclasses import FrozenInstanceError, fields
 from itertools import product
@@ -13,20 +22,26 @@ from reactor.dcpn import DCPN, GuardedTransition, ImmediateTransition, Place, To
 from reactor.dcpn.lowering import _all, _any
 from reactor.eval import execute_init, execute_update
 from reactor.expr import collecting, expr
+from reactor.reactor import Wire
 from reactor.sugar import Module as SugarModule
 
 
 INT = Int([1, 1])
 BOOL = Bool([1, 1])
 
+# Evaluation state for `reactor.eval.execute_init` / `execute_update`: latched
+# values are keyed by their `Var`, updated values and intermediate results by
+# their `Wire`.
+type State = dict[Var | Wire, torch.Tensor]
 
-def _init(module: Module) -> dict:
-    state = {}
+
+def _init(module: Module) -> State:
+    state: State = {}
     execute_init(state, module.atoms)
     return state
 
 
-def _latch_updated_ctrl(module: Module, state: dict):
+def _latch_updated_ctrl(module: Module, state: State) -> State:
     """Use updated controlled values as latched values for the next round.
 
     ``state`` is the completed round's evaluation environment, mapping wires
@@ -37,17 +52,26 @@ def _latch_updated_ctrl(module: Module, state: dict):
     return {var: state[X(var)] for var in module.ctrl}
 
 
-def _inject_transition_state(token: TokenModule, state: dict, *, latched_event_value=False, fire=False, new_place=0, new_colors=None) -> dict:
+def _inject_transition_state(
+    token: TokenModule, state: State, *,
+    participating_in_transition=False, transition_round=None, new_place=0, new_colors=None,
+) -> State:
     """Populate transition values in ``state`` and return the same dictionary.
 
-    Set ``transition_event`` to ``latched_event_value`` and its updated value
-    to the opposite Boolean iff ``fire`` is True. Write ``new_place`` and the
-    supplied color values to their updated payload wires; omitted color values
-    default to zero or False. Preserve all unrelated entries in ``state``.
+    Set the updated ``in_transition`` to ``participating_in_transition``, and
+    the updated ``transition_round`` to ``transition_round``; if omitted, it
+    defaults to ``participating_in_transition`` (a participating token implies a
+    transition round). Set the updated ``new_place`` and the ``new_colors``;
+    omitted color values default to zero or False. Preserve all unrelated
+    entries in ``state``.
     """
+    if transition_round is None:
+        transition_round = participating_in_transition
+    # a participating token implies a transition round
+    assert transition_round or not participating_in_transition
     state.update({
-        token.transition_event: torch.tensor([[latched_event_value]]),
-        X(token.transition_event): torch.tensor([[not latched_event_value if fire else latched_event_value]]),
+        X(token.transition_round): torch.tensor([[transition_round]]),
+        X(token.in_transition): torch.tensor([[participating_in_transition]]),
         X(token.new_place): torch.tensor([[new_place]]),
     })
     new_colors = {} if new_colors is None else new_colors
@@ -62,7 +86,10 @@ def _inject_transition_state(token: TokenModule, state: dict, *, latched_event_v
     return state
 
 
-def _step(token: TokenModule, previous_round_state: dict, *, external=None, **transition_event):
+def _step(
+    token: TokenModule, previous_round_state: State, *,
+    external: State | None = None, **transition_state,
+) -> State:
     """Evaluate one round starting from the previous round's updated values.
 
     Latch the previous round's updated controlled values, populate transition state
@@ -72,8 +99,7 @@ def _step(token: TokenModule, previous_round_state: dict, *, external=None, **tr
     Return a new evaluation environment containing latched and updated values.
     """
     state = _latch_updated_ctrl(token, previous_round_state)
-    event = previous_round_state.get(X(token.transition_event), torch.tensor([[False]])).item()
-    state = _inject_transition_state(token, state, latched_event_value=event, **transition_event)
+    state = _inject_transition_state(token, state, **transition_state)
     state.update({} if external is None else external)
     execute_update(state, token.atoms)
     return state
@@ -113,7 +139,7 @@ def test_place_color_declarations():
     # Construct one token and do init -> transition -> update
     child = ChildPlace()
     token, = _net(child).to_token_modules(token_capacity=1)
-    state = _step(token, _init(token), fire=True, new_place=1)
+    state = _step(token, _init(token), participating_in_transition=True, new_place=1)
     state = _step(token, state)
     # `x` was incremented once by 2, and `ready` was flipped
     assert state[X(token.colors[child].x)].item() == 2
@@ -206,7 +232,7 @@ def test_net_contains_correct_places_and_transitions():
     assert all(isinstance(t, TokenModule) and t.open() for t in tokens)
 
 
-def test_fresh_vars():
+def test_token_modules_use_fresh_vars():
     @obj
     class Work(Place):
         x = Var(INT)
@@ -219,7 +245,10 @@ def test_fresh_vars():
     # `to_token_modules` produces fresh `Var`s
     assert len({a.place, b.place, c.place}) == 3
     assert len({Work.x, a.colors[Work].x, b.colors[Work].x, c.colors[Work].x}) == 4
-    assert len({a.transition_event, b.transition_event, c.transition_event}) == 3
+    assert len({a.in_transition, b.in_transition, c.in_transition}) == 3
+    # tokens of one `to_token_modules` call share `transition_round`
+    assert a.transition_round is b.transition_round
+    assert a.transition_round is not c.transition_round
 
     for token in (a, b, c):
         # all produced modules are open due to the event externals
@@ -227,13 +256,30 @@ def test_fresh_vars():
         # check `ctrl` and `extl`
         assert set(token.ctrl) == {token.place, token.colors[Work].x, token.colors[Work].ready}
         assert set(token.extl) == {
-            token.transition_event, token.new_place,
+            token.transition_round, token.in_transition, token.new_place,
             token.new_colors[Work].x, token.new_colors[Work].ready,
         }
 
     # their composition is still open
     assert Module(a, b, c).open()
 
+
+def test_transition_inputs_are_awaited():
+    @obj
+    class Work(Place):
+        x = Var(INT)
+        ready = Var(BOOL)
+
+    token, = _net(Work).to_token_modules(token_capacity=1)
+    awaited = set(token.atoms[0].wait)
+    latched = set(token.atoms[0].read)
+
+    # The token uses only the next values of the transition flags and payloads,
+    # set in the same round; it never reads their stale latched values.
+    event_payload = (token.new_place, token.new_colors[Work].x, token.new_colors[Work].ready)
+    for var in (token.transition_round, token.in_transition, *event_payload):
+        assert var in awaited
+        assert var not in latched
 
 
 # Token state and same-round transition events -----------------------------------------
@@ -292,7 +338,7 @@ def test_production_update_removal():
     assert state[X(ready)].item() == False
 
     # token becomes present in `Work` with color `(x=5, ready=True)`
-    state = _step(token, state, fire=True, new_place=1,
+    state = _step(token, state, participating_in_transition=True, new_place=1,
                   new_colors={(Work, "x"): 5, (Work, "ready"): True})
     assert state[X(token.place)].item() == 1
     assert state[X(x)].item() == 5
@@ -307,7 +353,7 @@ def test_production_update_removal():
     assert state[X(y)].item() == 0
 
     # jump token to `Other` with color `(y=20)`
-    state = _step(token, state, fire=True, new_place=2, new_colors={(Other, "y"): 20})
+    state = _step(token, state, participating_in_transition=True, new_place=2, new_colors={(Other, "y"): 20})
     assert state[X(token.place)].item() == 2
     assert state[X(x)].item() == 6
     assert state[X(ready)].item() is False
@@ -321,7 +367,7 @@ def test_production_update_removal():
     assert state[X(y)].item() == 30
 
     # remove token
-    state = _step(token, state, fire=True, new_place=0)
+    state = _step(token, state, participating_in_transition=True, new_place=0)
     assert state[X(token.place)].item() == 0
     assert state[X(x)].item() == 6
     assert state[X(ready)].item() is False
@@ -335,14 +381,14 @@ def test_production_update_removal():
     assert state[X(y)].item() == 30
 
     # produce token in `Work`
-    state = _step(token, state, fire=True, new_place=1, new_colors={(Work, "x"): 90})
+    state = _step(token, state, participating_in_transition=True, new_place=1, new_colors={(Work, "x"): 90})
     assert state[X(token.place)].item() == 1
     assert state[X(x)].item() == 90  # production replaces stale colours
     assert state[X(ready)].item() is False
     assert state[X(y)].item() == 30
 
     # same-place transition also suppresses `update`
-    state = _step(token, state, fire=True, new_place=1, new_colors={(Work, "x"): 7})
+    state = _step(token, state, participating_in_transition=True, new_place=1, new_colors={(Work, "x"): 7})
     assert state[X(token.place)].item() == 1
     assert state[X(x)].item() == 7  # same-place transition events also suppress updates
     assert state[X(ready)].item() is False
@@ -359,14 +405,14 @@ def test_missing_update_stutters():
         pass
 
     token, = _net(Hold, Empty).to_token_modules(token_capacity=1)
-    state = _step(token, _init(token), fire=True, new_place=1, new_colors={(Hold, "x"): 42})
+    state = _step(token, _init(token), participating_in_transition=True, new_place=1, new_colors={(Hold, "x"): 42})
 
     state = _step(token, state)
     assert state[X(token.place)].item() == 1
     assert state[X(token.colors[Hold].x)].item() == 42
     assert fields(token.colors[Empty]) == ()
 
-    state = _step(token, state, fire=True, new_place=2)
+    state = _step(token, state, participating_in_transition=True, new_place=2)
     assert state[X(token.place)].item() == 2
     assert state[X(token.colors[Hold].x)].item() == 42
     assert fields(token.colors[Empty]) == ()
@@ -386,7 +432,7 @@ def test_matrix_colors():
     assert amount in token.extl
     assert amount in token.atoms[0].read
 
-    state = _step(token, _init(token), fire=True, new_place=1,
+    state = _step(token, _init(token), participating_in_transition=True, new_place=1,
                   new_colors={(Moving, "position"): [[1, 2]]},
                   external={amount: torch.tensor([[3, 4]])})
     assert state[X(token.colors[Moving].position)].tolist() == [[1, 2]]
@@ -395,8 +441,7 @@ def test_matrix_colors():
     assert state[X(token.colors[Moving].position)].tolist() == [[4, 6]]
 
 
-@pytest.mark.parametrize("initial_event_value", [False, True])
-def test_event_toggle(initial_event_value):
+def test_in_transition_flag():
     @obj
     class Work(Place):
         x = Var(INT)
@@ -407,30 +452,25 @@ def test_event_toggle(initial_event_value):
     token, = _net(Work).to_token_modules(token_capacity=1)
     state = _init(token)
 
-    # Initialize the external event flag to test either starting Boolean value.
-    state[X(token.transition_event)] = torch.tensor([[initial_event_value]])
-
-    # Fire transition from the initial edge.
-    state = _step(token, state, fire=True, new_place=1, new_colors={(Work, "x"): 10})
-    assert state[X(token.transition_event)].item() is not initial_event_value
+    # The token jumps to the payload when `in_transition` holds.
+    state = _step(token, state, participating_in_transition=True, new_place=1, new_colors={(Work, "x"): 10})
     assert state[X(token.place)].item() == 1
     assert state[X(token.colors[Work].x)].item() == 10
 
-    # When `fire=False`, no transition happens even if payloads are set,
-    # the token does a normal update round.
-    state = _step(token, state, new_place=0, new_colors={(Work, "x"): 99})
-    assert state[X(token.transition_event)].item() is not initial_event_value
-    assert state[X(token.place)].item() == 1
-    assert state[X(token.colors[Work].x)].item() == 11
-
-    # Fire on the opposite edge.
-    state = _step(token, state, fire=True, new_place=1, new_colors={(Work, "x"): 20})
-    assert state[X(token.transition_event)].item() is initial_event_value
+    # The token can participate in consecutive transition rounds; each round
+    # jumps it to that round's payload.
+    state = _step(token, state, participating_in_transition=True, new_place=1, new_colors={(Work, "x"): 20})
     assert state[X(token.place)].item() == 1
     assert state[X(token.colors[Work].x)].item() == 20
 
-    # Normal token evaluation.
-    state = _step(token, state)
+    # When `in_transition` does not hold, payloads are ignored and the token
+    # does a normal update round.
+    state = _step(token, state, new_place=0, new_colors={(Work, "x"): 99})
+    assert state[X(token.place)].item() == 1
+    assert state[X(token.colors[Work].x)].item() == 21
+
+    # A transition round in which the token does not participate: it stutters.
+    state = _step(token, state, transition_round=True, new_place=0, new_colors={(Work, "x"): 99})
     assert state[X(token.place)].item() == 1
     assert state[X(token.colors[Work].x)].item() == 21
 
@@ -444,21 +484,22 @@ def test_transition_event_controller_composes():
             return (x + 1,)
 
     token, = _net(Work).to_token_modules(token_capacity=1)
-    transition_event = token.transition_event
 
     # The token by itself is an open system.
     assert token.open()
 
     class TransitionController(SugarModule):
         def init(self):
-            return False, 0, 0
+            return False, False, 0, 0
 
-        def update(self, event, new_place, payload):
-            return ~event, 1, 42
+        def update(self, transition_round, in_transition, new_place, payload):
+            # Step the payload by 10, unlike the resident update's +1, so that
+            # each round's color shows that the token jumped.
+            return True, True, 1, payload + 10
 
     controller = TransitionController(
         theory=LIA,
-        ctrl=(transition_event, token.new_place, token.new_colors[Work].x),
+        ctrl=(token.transition_round, token.in_transition, token.new_place, token.new_colors[Work].x),
     )
     # Compose in reverse dependency order: the token awaits the controllers's outputs.
     system = Module(token, controller)
@@ -466,19 +507,18 @@ def test_transition_event_controller_composes():
     # Plugging the transition controller results in a closed system.
     assert system.closed()
     assert set(token.atoms[0].wait) == set(controller.ctrl)
-    assert transition_event in token.atoms[0].read
 
     # Init the composed system.
     state = _init(system)
     assert state[X(token.place)].item() == 0
     assert state[X(token.colors[Work].x)].item() == 0
 
-    for level in (True, False, True):
+    for step in range(1, 4):
         state = _latch_updated_ctrl(system, state)
         execute_update(state, system.atoms)
-        assert state[X(transition_event)].item() is level
+        assert state[X(token.in_transition)].item() is True
         assert state[X(token.place)].item() == 1
-        assert state[X(token.colors[Work].x)].item() == 42
+        assert state[X(token.colors[Work].x)].item() == 10 * step
 
 
 def test_empty_net_and_capacity():
@@ -495,7 +535,7 @@ def test_empty_net_and_capacity():
 
 def _evaluate(terms, result, assignment):
     """Evaluate collected ``terms`` under ``assignment`` and return ``result``'s value."""
-    state = {var: torch.tensor([[value]]) for var, value in assignment.items()}
+    state: State = {var: torch.tensor([[value]]) for var, value in assignment.items()}
     execute_update(state, [SimpleNamespace(update=terms)])
     return state[result.wire].item()
 

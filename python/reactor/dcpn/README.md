@@ -194,7 +194,7 @@ modules** plus **modules for transition coordination**.
 
 ### Tokens and colours
 
-Each token module owns its place as a discrete mode and a separate colour block
+Each token module owns its place as a discrete mode and a separate colour vector
 for every place:
 
 ```text
@@ -206,7 +206,7 @@ where `⊥` is a special place indicating that the token is absent.
 For now, we support only the empty initial marking: no tokens are present and
 transitions populate the net. Thus,
 
-- Initialize all slots at `⊥`, with zeroed or arbitrary colour blocks (will be overwritten by transition outputs).
+- Initialize all slots at `⊥`, with zeroed or arbitrary colour vectors (will be overwritten by transition outputs).
 - `update`/`flow` dispatch by the token's resident place; inactive places have stuttering / zero flow behavior.
 - Transition events remove or produce tokens. Since the token modules have to await these events, transitions
   take precedence over a resident place update in that round.

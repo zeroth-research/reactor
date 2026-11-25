@@ -238,4 +238,5 @@ class DCPN:
         # TODO(thpani): implement lowering of transitions
         if type(token_capacity) is not int or token_capacity <= 0:
             raise ValueError("token_capacity must be a positive integer")
-        return tuple(TokenModule(self) for _ in range(token_capacity))
+        transition_round = Var(Bool([1, 1]))
+        return tuple(TokenModule(self, transition_round) for _ in range(token_capacity))
