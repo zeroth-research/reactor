@@ -215,6 +215,22 @@ def _make_argmax(m: int, n: int) -> Module:
     return Module.sequential([s, i], init, update)
 
 
+def _make_three_wires() -> Module:
+    """x, v, y = -x, -v, -y over a 1×1, a 2×1 and a 1×1 Int.
+
+    `ScalarRel`'s `pack` round trip split the state with one `Prod.ext`,
+    which leaves the wires after the first as one pair; a state of three or
+    more wires with a multi-element one among them did not build. `Mixed`
+    and `TwoVars` have two wires, where one split is all there is.
+    """
+    shapes = ([1, 1], [2, 1], [1, 1])
+    vs = [Var(Int(sh)) for sh in shapes]
+    init = [Term(tensor.int.Const(torch.full(sh, k, dtype=torch.int64)), [X(v)])
+            for k, (v, sh) in enumerate(zip(vs, shapes), 1)]
+    update = [Term(tensor.int.Neg(sh), [X(v)], [v]) for v, sh in zip(vs, shapes)]
+    return Module.sequential(vs, init, update)
+
+
 # Widths that exercise the scalar encoding's flattening: all-1x1, then
 # multi-element state, up to the 32 that stresses the index enumeration;
 # then the ops whose 1×1 result is made of more than 1×1 operands.
@@ -231,12 +247,14 @@ _SCALAR_ENC_SPECS = [
 
 
 # The relational encodings sit on top of the scalar one, so they need every
-# width the scalar specs cover, plus the two multi-wire states: `TwoVars`,
+# width the scalar specs cover, plus the multi-wire states: `TwoVars`,
 # where each wire is one element so wire index and slot index coincide (what
-# the per-wire projection assumed), and `Mixed`, where they do not.
+# the per-wire projection assumed), `Mixed`, where they do not, and
+# `ThreeWires`, where the state is more than one pair.
 _REL_ENC_SPECS = _SCALAR_ENC_SPECS + [
     ("TwoVars", _make_twovars),
     ("Mixed", _make_mixed),
+    ("ThreeWires", _make_three_wires),
 ]
 
 

@@ -169,7 +169,7 @@ def test_scalar_encoding_builds(generate_lean_files, name):
 @pytest.mark.slow
 @pytest.mark.parametrize(
     "name", ["Scalar", "Vec6", "Counter", "Vec32", "RealHalf", "DotProduct",
-             "Argmax2x2", "Argmax1x12", "TwoVars", "Mixed"]
+             "Argmax2x2", "Argmax1x12", "TwoVars", "Mixed", "ThreeWires"]
 )
 def test_relational_encoding_builds(generate_lean_files, name):
     """ScalarRel elaborates on top of the scalar encoding.

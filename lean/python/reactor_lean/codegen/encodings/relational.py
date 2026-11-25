@@ -268,18 +268,22 @@ def _pack_roundtrip(var: str) -> "list[str]":
     """Tactics for ``var = Scalar.pack (Scalar.unpack_ctrl var)``.
 
     The functional and scalar states differ by exactly this round trip.
-    Widest tactic first, as in `scalar.py`: a multi-element wire leaves a
-    `match i, j with` on a symbolic `i` that only `fin_cases` clears, and
-    once `i`/`j` are introduced a later `funext` can no longer fire.
+    The state is split into one goal per wire, however many there are: a
+    single `Prod.ext` leaves the wires after the first as one pair, which
+    `funext` cannot take, so a state of three wires with a multi-element one
+    among them did not build. A 1×1 wire is its own repacking (`rfl`); a
+    multi-element one leaves a `match i, j with` on a symbolic `i` that only
+    `fin_cases` clears, and once `i`/`j` are introduced a later `funext` can
+    no longer fire, so the widest tactic comes first.
     """
     return [
         f"    have hpack : {var} = Scalar.pack (Scalar.unpack_ctrl {var}) := by",
         "      simp only [Scalar.pack, Scalar.unpack_ctrl, ← Matrix_1_1_eq, Prod.eta]",
         "      try rfl",
-        "      try (apply Prod.ext <;> funext i j <;> fin_cases i <;> fin_cases j <;> simp)",
-        "      try (funext i j <;> fin_cases i <;> fin_cases j <;> simp)",
-        "      try (apply Prod.ext <;> funext i j <;> simp [Fin.fin_one_eq_zero])",
-        "      try (funext i j; simp [Fin.fin_one_eq_zero])",
+        "      repeat' apply Prod.ext",
+        "      all_goals try rfl",
+        "      all_goals try (funext i j <;> fin_cases i <;> fin_cases j <;> simp)",
+        "      all_goals try (funext i j; simp [Fin.fin_one_eq_zero])",
     ]
 
 
