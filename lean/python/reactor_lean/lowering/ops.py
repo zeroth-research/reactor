@@ -519,7 +519,7 @@ OPS: tuple[Op, ...] = (
         NUM,
         mat=Inline("codegen.terms._argmax_expr"),
         scalar=Inline("native: the `argmax1d_scalar_*` axiom, else _argmax_expr"),
-        box=Inline("codegen.boxes._argmax_box"),
+        box=Inline("codegen.terms.argmax_variant"),
     ),
     # ── shifts, rotations and resizing of words ───────────────────────
     *(

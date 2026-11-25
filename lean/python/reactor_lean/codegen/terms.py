@@ -11,13 +11,13 @@ from __future__ import annotations
 from reactor_lean.errors import Refused
 from reactor_lean.lowering.sorts import (
     dtype_shape,
-    is_scalar_shape,
     itype_name,
     is_constant_name,
     dtype_to_lean_type,
     is_scalar_wire,
     flat_element_type,
     mat_mk,
+    wire_shape,
 )
 from reactor_lean.lowering.elements import flat_indices, flat_layout
 from reactor_lean.codegen.literals import (
@@ -88,42 +88,19 @@ def build_tuple(exprs: list[str]) -> str:
     return "(" + ", ".join(exprs) + ")"
 
 
-def _argmax_expr(
-    arg_expr: str, input_shape: list[int], output_shape: "list[int] | None" = None
-) -> str:
-    """Emit `argmax_1d` for 1-d input and `argmax` for generic 2-d input.
-
-    Both yield a single index in a 1×1 `Matrix` -- the column index for one
-    row, the row-major flat index otherwise -- so the two agree wherever
-    they overlap. Wrap output as an `Int` matrix to match the Python IR's Int
-    output type."""
-    check_argmax_output(output_shape)
-    if len(input_shape) == 1 or (len(input_shape) == 2 and input_shape[0] == 1):
-        return mat_mk(f"((argmax_1d {arg_expr}) i j : Int)", "i", "j")
-    if len(input_shape) == 2:
-        return mat_mk(f"((argmax {arg_expr}) i j : Int)", "i", "j")
-    raise Refused(
-        f"argmax: unsupported input shape {input_shape}; expected 1-d or 2-d"
-    )
+def argmax_variant(term) -> str:
+    """ReactLib's argmax for an `Argmax` term: `argmax_1d` over one row,
+    `argmax` over a matrix. Both give one row-major flat index, as
+    `torch.argmax` does, as a 1×1 matrix, which is what the theory's
+    `Argmax` writes whatever it reads: it refuses a wider output wire."""
+    return "argmax_1d" if wire_shape(term.read[0]).m == 1 else "argmax"
 
 
-def check_argmax_output(output_shape: "list[int] | None") -> None:
-    """Reject an Argmax output wider than the single index we can emit.
-
-    Argmax follows `torch.argmax`, which returns one row-major flat index,
-    so both Lean variants produce a 1×1 `Matrix`, as the theory's `Argmax`
-    writes one; a wider wire would get that 1x1 body ascribed to it, which
-    does not elaborate. Fail here with the reason instead of emitting Lean
-    that cannot compile.
-    """
-    if output_shape is None:
-        return
-    if not is_scalar_shape(output_shape):
-        raise Refused(
-            f"argmax: output shape {output_shape} holds more than one element, "
-            "but argmax yields a single flat index (torch.argmax semantics); "
-            "declare a [1, 1] output wire"
-        )
+def _argmax_expr(term, wire_expr: dict[int, str]) -> str:
+    """`Argmax` as a matrix (`argmax_variant`), its index an `Int`, as the
+    theory's `Argmax` writes it."""
+    arg = wire_expr[term.read[0].id]
+    return mat_mk(f"(({argmax_variant(term)} {arg}) i j : Int)", "i", "j")
 
 
 def _lift_scalar_reads(term, wire_expr: dict[int, str]) -> dict[int, str]:
@@ -215,12 +192,7 @@ def translate_terms_lean(
         if is_constant_name(name):
             expr = constant_expr(term, term.write[0], constants)
         elif name == "Argmax":
-            arg_expr = wire_expr[term.read[0].id]
-            expr = _argmax_expr(
-                arg_expr,
-                dtype_shape(term.read[0].dtype),
-                dtype_shape(term.write[0].dtype),
-            )
+            expr = _argmax_expr(term, wire_expr)
         elif name in ("Linear", "Scale"):
             expr = _linear_expr(term, wire_expr)
         elif name == "Get":
@@ -334,7 +306,6 @@ def translate_terms_scalar(
             expr = _constant_expr_scalar(term, write_wire, constants)
         elif name == "Argmax":
             in_wire = term.read[0]
-            check_argmax_output(dtype_shape(write_wire.dtype))
             slots = flat_slots.get(in_wire.id)
             if slots is not None:
                 axiom_name = argmax_scalar_name(
@@ -342,12 +313,7 @@ def translate_terms_scalar(
                 )
                 expr = f"({axiom_name} {' '.join(slots)})"
             else:
-                mat_expr = _argmax_expr(
-                    wire_expr[in_wire.id],
-                    dtype_shape(in_wire.dtype),
-                    dtype_shape(write_wire.dtype),
-                )
-                expr = f"({mat_expr} 0 0)" if is_scalar_wire(write_wire) else mat_expr
+                expr = f"({_argmax_expr(term, wire_expr)} 0 0)"
         elif name in ("Linear", "Scale"):
             # `matVecAffine` consumes an `n × batch` matrix and yields
             # an `out × batch` one, but a 1x1 wire is bound to a bare scalar

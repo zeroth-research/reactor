@@ -124,21 +124,6 @@ def test_theory_rejects_wider_argmax_output(out_shape):
         Term(tensor.int.Argmax([3, 4]), [X(out)], [s])
 
 
-def test_codegen_guard_still_states_the_one_index_contract():
-    """Defence in depth behind the theory check, which now catches this first.
-
-    Kept so the contract is stated where the Lean is emitted: both variants
-    produce a 1×1 `Matrix`, so a wider wire cannot be served.
-    """
-    from reactor_lean.codegen.terms import check_argmax_output
-
-    check_argmax_output([1, 1])  # the only shape argmax can fill
-    check_argmax_output(None)  # opt out
-    for bad in ([1, 4], [4, 1], [3, 4]):
-        with pytest.raises(ValueError, match="single flat index"):
-            check_argmax_output(bad)
-
-
 def test_scalar_argmax_variants_are_named_per_element_type():
     """Variants are collected per (elem_ty, n), so the name needs both.
 

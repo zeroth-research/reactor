@@ -6,7 +6,6 @@ names (`lowering.ops.box_for`) and the layers compose as
 from __future__ import annotations
 from reactor_lean.errors import Refused
 from reactor_lean.lowering.sorts import (
-    dtype_shape,
     dtype_to_lean_type,
     itype_name,
     is_constant_name,
@@ -18,7 +17,7 @@ from reactor_lean.codegen.literals import (
     linear_list_literals,
 )
 
-from reactor_lean.codegen.terms import check_argmax_output
+from reactor_lean.codegen.terms import argmax_variant
 from reactor_lean.lowering.ops import box_for, entrywise_shape
 
 from dataclasses import dataclass
@@ -111,24 +110,6 @@ def _get_box(term: Term) -> str:
     """Box for `Get`: element `[row][col]` of the read matrix, as a 1x1 one.
     The element is baked into the op, as `Linear`'s matrices are."""
     return f"(Box.get {term.itype.row} {term.itype.col})"
-
-
-def _argmax_box(
-    input_shape: list[int], output_shape: "list[int] | None" = None
-) -> str:
-    """Pick the Box variant of argmax based on input shape.
-
-    Both variants have codomain `[Matrix (Fin 1) (Fin 1) Int]` -- one flat index, per
-    `torch.argmax` -- so a wider output wire is rejected here rather than
-    producing a Box whose codomain does not match the wire it feeds."""
-    check_argmax_output(output_shape)
-    if len(input_shape) == 1 or (len(input_shape) == 2 and input_shape[0] == 1):
-        return "Box.argmax_1d"
-    if len(input_shape) == 2:
-        return "Box.argmax"
-    raise Refused(
-        f"argmax: unsupported input shape {input_shape}; expected 1-d or 2-d"
-    )
 
 
 def _circ_translate_body(
@@ -354,12 +335,7 @@ def translate_terms_circ(
                     out_ty.append(dtype_to_lean_type(w))
                 else:
                     if name == "Argmax":
-                        boxes.append(
-                            _argmax_box(
-                                dtype_shape(term.read[0].dtype),
-                                dtype_shape(term.write[0].dtype),
-                            )
-                        )
+                        boxes.append(f"Box.{argmax_variant(term)}")
                     elif name in ("Linear", "Scale"):
                         boxes.append(_linear_box(term))
                     elif name == "Get":
