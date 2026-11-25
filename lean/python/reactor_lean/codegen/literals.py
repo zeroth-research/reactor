@@ -139,7 +139,7 @@ def tensor_to_lean_def(name: str, tensor, wire: Wire) -> str:
             row_entries.append(f"| {i}, {j} => {val}")
         lines.append("  " + " ".join(row_entries))
     # Catch-all: enumerated arms already cover all indices, but Lean can't
-    # verify `0..k-1` exhausts `Fin k` for large k (see tensor_to_mat_expr).
+    # verify `0..k-1` exhausts `Fin k` for large k.
     lines.append(f"  | _, _ => {lean_literal(wire.dtype, 0)}")
 
     return "\n".join(lines) + "\n"

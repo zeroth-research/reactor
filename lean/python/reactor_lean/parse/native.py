@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from reactor import Word, X
+from reactor import Word
 
 from ..errors import PredicateRefused, Unreadable
 from ..lowering.sorts import decimal_fraction, wire_shape
@@ -135,14 +135,6 @@ class _Term:
 
     __hash__ = None
 
-    def __getitem__(self, k):
-        """`e0[k]`: element `k` of a matrix variable, row-major."""
-        if not isinstance(k, int):
-            raise TypeError("index must be int")
-        if not isinstance(self._v, Matrix):
-            raise TypeError(f"{self._v} is not a matrix; cannot index")
-        return _Term(self._x, self._x.select(self._v, k))
-
 
 class _Var(_Term):
     """A state or input variable, which knows its shape: `v[i][j]` (or
@@ -216,9 +208,6 @@ def namespace(x: Elaborator, wires: ModuleWires) -> dict:
             shape = wire_shape(w)
             ns[f"{prefix}{i}"] = _Var(x, x.scope.lookup(f"{prefix}{i}"),
                                       shape.m, shape.n)
-        # A lone component can be written without its index: `s[i][j]`.
-        if len(ws) == 1:
-            ns[prefix] = ns[f"{prefix}0"]
     return ns
 
 

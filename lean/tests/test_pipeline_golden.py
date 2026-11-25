@@ -115,13 +115,13 @@ CODEGEN = [
      Certificate("(and (>= s0 0) (<= s0 s1) (= s1 10))",
                  "(ite (= s0 s1) 0 (- s1 s0))")),
     ("vector_counter_pre", _vector_counter,
-     Claim(prp="s[0][0] == 0",
-           init_pre="And(e[0][0] >= 0, e[1][0] >= 0)",
-           update_pre="e[0][0] >= 0"),
+     Claim(prp="s0[0][0] == 0",
+           init_pre="And(e0[0][0] >= 0, e0[1][0] >= 0)",
+           update_pre="e0[0][0] >= 0"),
      Certificate(
-         "And(s[0][0] >= 0, Or(s[0][0] <= s[1][0], s[0][0] <= s[2][0]))",
-         "Ite(s[0][0] == 0, 0, (Ite(s[1][0] >= s[2][0], s[1][0], "
-         "s[2][0]) - s[0][0]) + 1)")),
+         "And(s0[0][0] >= 0, Or(s0[0][0] <= s0[1][0], s0[0][0] <= s0[2][0]))",
+         "Ite(s0[0][0] == 0, 0, (Ite(s0[1][0] >= s0[2][0], s0[1][0], "
+         "s0[2][0]) - s0[0][0]) + 1)")),
     ("shared_let", lambda: fixture("svcomp_countdown"), Claim(prp="(= s0 0)"),
      Certificate(COUNTDOWN_INV, dense(3, cmp=">"))),
     ("real", _real_countdown, Claim(prp="(<= s0 0.0)"),

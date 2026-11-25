@@ -38,7 +38,6 @@ _POSITIONAL = re.compile(r"@(intf|extl)\.(\d+)")
 _KINDS = {"intf": "ctrl", "extl": "extl"}
 _RESERVED = frozenset({"X", "true", "false", "True", "False"})
 _FORBIDDEN = re.compile(r"[\s()|\";]")
-_SIMPLE_SYMBOL = re.compile(r"[A-Za-z~!$%^&*_+=<>.?/-][A-Za-z0-9~!@$%^&*_+=<>.?/-]*")
 
 
 class ClaimError(Refused):

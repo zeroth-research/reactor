@@ -47,9 +47,9 @@ def _shape(formula, wires: ModuleWires):
 @pytest.mark.parametrize(
     "mod, python, smtlib",
     [
-        ("m_countdown", "s[0][0] == 0", "(= s0 0)"),
-        ("m_countdown", " s[0][0] == 0", "(= s0 0)"),
-        ("m_countdown", "Ite(s[0][0] == 0, 0, s[0][0])", "(ite (= s0 0) 0 s0)"),
+        ("m_countdown", "s0[0][0] == 0", "(= s0 0)"),
+        ("m_countdown", " s0[0][0] == 0", "(= s0 0)"),
+        ("m_countdown", "Ite(s0[0][0] == 0, 0, s0[0][0])", "(ite (= s0 0) 0 s0)"),
         (
             "m_boolint",
             "And(s1[0][0] >= 0, s1[0][0] <= 5, Implies(s0[0][0], s1[0][0] <= 5))",
@@ -57,17 +57,17 @@ def _shape(formula, wires: ModuleWires):
         ),
         (
             "m_relu_vec",
-            "s[1, 0] + 1 > s[2][0]",
+            "s0[1, 0] + 1 > s0[2][0]",
             "(> (+ ((_ tuple.select 1) s0) 1) ((_ tuple.select 2) s0))",
         ),
-        ("m_countdown", "0 <= s[0][0] <= 5", "(and (>= s0 0) (<= s0 5))"),
+        ("m_countdown", "0 <= s0[0][0] <= 5", "(and (>= s0 0) (<= s0 5))"),
         ("m_boolint", "not s0[0][0] and s1[0][0] == 0", "(and (not s0) (= s1 0))"),
         ("m_boolint", "s1[0][0] if s0[0][0] else 0", "(ite s0 s1 0)"),
         ("m_boolint", "s0[0][0] == True", "(= s0 true)"),
         ("m_countdown", "True", "true"),
         ("m_countdown", "False", "false"),
-        ("m_countdown", "s[0][0] > 0 or True", "(or (> s0 0) true)"),
-        ("m_countdown", "-s[0][0] * 2 < 1", "(< (* (- s0) 2) 1)"),
+        ("m_countdown", "s0[0][0] > 0 or True", "(or (> s0 0) true)"),
+        ("m_countdown", "-s0[0][0] * 2 < 1", "(< (* (- s0) 2) 1)"),
     ],
 )
 def test_the_python_syntax_builds_the_smtlib_it_means(mod, python, smtlib):
@@ -87,7 +87,7 @@ def test_the_python_syntax_builds_the_smtlib_it_means(mod, python, smtlib):
         "Ite(s0 == 0, 0, e=1)",
         "And(*(s0,))",
         "s0(0)",
-        "s[s0][0]",
+        "s0[s0][0]",
     ],
 )
 def test_python_outside_the_syntax_is_not_read(src):
@@ -125,7 +125,7 @@ def test_a_fault_in_the_syntax_itself_is_not_a_parse_error(monkeypatch):
     monkeypatch.setattr(native.dsl, "evaluate", broken)
     with pytest.raises(AttributeError, match="a bug"):
         NativeParser(load_module(MODS / "m_countdown.py")).parse(
-            "s[0][0] == 0", "property")
+            "s0[0][0] == 0", "property")
 
 
 # ══════════════════════════════════════════════════════════════════════

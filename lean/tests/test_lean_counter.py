@@ -83,8 +83,8 @@ def test_inf_counter_generates_lean():
 def test_counter_generates_lean():
     m = _make_counter()
 
-    # Certificate predicates over the 3×1 vector state s (x=s[0][0], y=s[1][0],
-    # z=s[2][0]) and the 2×1 external input e (y0=e[0][0], z0=e[1][0]), written
+    # Certificate predicates over the 3×1 vector state s0 (x=s0[0][0], y=s0[1][0],
+    # z=s0[2][0]) and the 2×1 external input e0 (y0=e0[0][0], z0=e0[1][0]), written
     # in the Python-expression DSL with the `v[i][j]` matrix-indexing sugar.
     _ = create_project(
         output_dir=TESTS / "LeanTests",
@@ -94,12 +94,12 @@ def test_counter_generates_lean():
         certificate=certificate_files(LeanContext(m), lean_certificate(
             m,
             Claim(
-                prp="s[0][0] == 0",
-                init_pre="And(e[0][0] >= 0, e[1][0] >= 0)",
+                prp="s0[0][0] == 0",
+                init_pre="And(e0[0][0] >= 0, e0[1][0] >= 0)",
             ),
             Certificate(
-                inv="And(s[0][0] >= 0, Or(s[0][0] <= s[1][0], s[0][0] <= s[2][0]))",
-                ranking="Ite(s[0][0] == 0, 0, (Ite(s[1][0] >= s[2][0], s[1][0], s[2][0]) - s[0][0]) + 1)",
+                inv="And(s0[0][0] >= 0, Or(s0[0][0] <= s0[1][0], s0[0][0] <= s0[2][0]))",
+                ranking="Ite(s0[0][0] == 0, 0, (Ite(s0[1][0] >= s0[2][0], s0[1][0], s0[2][0]) - s0[0][0]) + 1)",
             ),
         )),
     )
