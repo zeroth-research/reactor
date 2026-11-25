@@ -132,7 +132,7 @@ set_option linter.unnecessarySeqFocus false
   let x0 : (Matrix (Fin 1) (Fin 1) Int) := (Matrix.mk fun _ _ => (1 : Int))
   let x1 : (Matrix (Fin 1) (Fin 1) Int) := (ctrl + x0)
   let x2 : (Matrix (Fin 1) (Fin 1) Int) := (Matrix.mk fun _ _ => (10 : Int))
-  let x3 : (Matrix (Fin 1) (Fin 1) Bool) := (Matrix.mk fun _ _ => decide (x1 0 0 = x2 0 0))
+  let x3 : (Matrix (Fin 1) (Fin 1) Bool) := (Matrix.mk fun i j => (decide ((x1 i j) = (x2 i j))))
   let x4 : (Matrix (Fin 1) (Fin 1) Int) := (Matrix.mk fun _ _ => (0 : Int))
   let x5 : (Matrix (Fin 1) (Fin 1) Int) := (if x3 0 0 then x4 else x1)
   let x6 : (Matrix (Fin 1) (Fin 1) Int) := x5

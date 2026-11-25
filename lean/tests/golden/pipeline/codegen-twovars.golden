@@ -131,7 +131,7 @@ set_option linter.unnecessarySeqFocus false
   (x2, x3)
 
 @[simp] def update (ctrl: (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int)) (extl_l: Unit) (extl_n: Unit) : (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int) :=
-  let x0 : (Matrix (Fin 1) (Fin 1) Bool) := (Matrix.mk fun _ _ => decide (ctrl.1 0 0 < ctrl.2 0 0))
+  let x0 : (Matrix (Fin 1) (Fin 1) Bool) := (Matrix.mk fun i j => (decide ((ctrl.1 i j) < (ctrl.2 i j))))
   let x1 : (Matrix (Fin 1) (Fin 1) Int) := (Matrix.mk fun _ _ => (1 : Int))
   let x2 : (Matrix (Fin 1) (Fin 1) Int) := (ctrl.1 + x1)
   let x3 : (Matrix (Fin 1) (Fin 1) Int) := (Matrix.mk fun _ _ => (0 : Int))

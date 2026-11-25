@@ -25,7 +25,7 @@ from reactor_lean.codegen.literals import (
     linear_list_literals,
     tensor_to_lean_scalar,
 )
-from reactor_lean.lowering.ops import entrywise_shape, mat_emitter, scalar_emitter
+from reactor_lean.lowering.ops import mat_emitter, scalar_emitter
 
 from reactor import Wire
 
@@ -81,13 +81,6 @@ def _lift_scalar_reads(term, wire_expr: dict[int, str]) -> dict[int, str]:
             ty = f"Matrix (Fin 1) (Fin 1) {lean_elem_type(w.dtype)}"
             lifted[w.id] = f"({mat_mk(wire_expr[w.id])} : {ty})"
     return lifted
-
-
-def _entrywise_expr(term, wire_expr: dict[int, str]) -> str:
-    """An `entrywise` op larger than 1×1 (`lowering.ops.entrywise_shape`):
-    its scalar form, applied to the operands entry by entry."""
-    args = [f"({wire_expr[w.id]} i j)" for w in term.read]
-    return mat_mk(scalar_emitter(term.itype)(args), "i", "j")
 
 
 def _get_expr(term, wire_expr: dict[int, str]) -> str:
@@ -158,8 +151,6 @@ def translate_terms_lean(
             expr = _linear_expr(term, wire_expr)
         elif name == "Get":
             expr = _get_expr(term, wire_expr)
-        elif entrywise_shape(term.itype):
-            expr = _entrywise_expr(term, wire_expr)
         else:
             input_exprs = [wire_expr[w.id] for w in term.read]
             expr = mat_emitter(term.itype)(input_exprs)
@@ -298,10 +289,6 @@ def translate_terms_scalar(
         elif wire_shape(write_wire).is_scalar and scalar_emitter(term.itype) is not None:
             input_exprs = [wire_expr[w.id] for w in term.read]
             expr = scalar_emitter(term.itype)(input_exprs)
-        elif entrywise_shape(term.itype):
-            # a matrix written entry by entry: its reads are matrices too,
-            # of its shape
-            expr = _entrywise_expr(term, wire_expr)
         else:
             # The `mat` column holds the matrix forms, which apply operands
             # to `0 0`. Scalar-bound reads must be lifted first: a matrix

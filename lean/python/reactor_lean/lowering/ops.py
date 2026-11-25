@@ -98,18 +98,24 @@ STRUCTURAL = ("",)
 
 @dataclass(frozen=True)
 class Op:
-    """One op, as every backend sees it.
-
-    `entrywise`: the cells are forms of 1×1 operands, read at `0 0`. The op
-    of a larger shape is its scalar form applied entry by entry
-    (`codegen.terms`, `entrywise_shape`).
-    """
+    """One op, as every backend sees it."""
 
     name: str
     theories: tuple[str, ...]
     mat: MatCell
     scalar: ScalarCell
-    entrywise: bool = False
+
+
+def _entrywise(scalar: Callable[[list[str]], str]) -> Callable[[list[str]], str]:
+    """The matrix form of an op that is its scalar form applied entry by
+    entry, at any shape: `Matrix.mk fun i j => scalar (a i j) (b i j)`."""
+    return lambda a: mat_mk(scalar([f"({x} i j)" for x in a]), "i", "j")
+
+
+def _pointwise(name: str, theories: tuple[str, ...],
+               scalar: Callable[[list[str]], str]) -> Op:
+    """The row of an op that is `scalar` entry by entry (`_entrywise`)."""
+    return Op(name, theories, mat=_entrywise(scalar), scalar=scalar)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -160,42 +166,16 @@ OPS: tuple[Op, ...] = (
         scalar=Inline("codegen.terms._constant_expr_scalar"),
     ),
     # ── propositional logic ───────────────────────────────────────────
-    # The matrix forms are of 1×1 operands, read at `0 0`; a larger op is
-    # the scalar form entry by entry (`entrywise`).
-    Op(
-        "Not",
-        ("bool",),
-        mat=lambda a: mat_mk(f"!({a[0]} 0 0)"),
-        scalar=lambda a: f"(!{a[0]})",
-        entrywise=True,
-    ),
-    Op(
-        "And",
-        ("bool",),
-        mat=lambda a: mat_mk(f"({a[0]} 0 0 && {a[1]} 0 0)"),
-        scalar=lambda a: f"({a[0]} && {a[1]})",
-        entrywise=True,
-    ),
-    Op(
-        "Or",
-        ("bool",),
-        mat=lambda a: mat_mk(f"({a[0]} 0 0 || {a[1]} 0 0)"),
-        scalar=lambda a: f"({a[0]} || {a[1]})",
-        entrywise=True,
-    ),
+    _pointwise("Not", ("bool",), lambda a: f"(!{a[0]})"),
+    _pointwise("And", ("bool",), lambda a: f"({a[0]} && {a[1]})"),
+    _pointwise("Or", ("bool",), lambda a: f"({a[0]} || {a[1]})"),
     Op(
         "Xor",
         ("bool",),
         mat=Unsupported("no Lean form; nothing has asked for one."),
         scalar=_SEE_MAT,
     ),
-    Op(
-        "Implies",
-        ("bool",),
-        mat=lambda a: mat_mk(f"(!({a[0]} 0 0) || {a[1]} 0 0)"),
-        scalar=lambda a: f"(!{a[0]} || {a[1]})",
-        entrywise=True,
-    ),
+    _pointwise("Implies", ("bool",), lambda a: f"(!{a[0]} || {a[1]})"),
     # `All` reduces a matrix to the 1×1 condition of an `Ite`, which picks
     # one of two whole matrices by it, in every theory. It quantifies over
     # the pairs of indices: `∀ i j, ...` has no `Decidable` instance, which
@@ -354,13 +334,7 @@ OPS: tuple[Op, ...] = (
     ),
     # ── comparisons: write Bool ───────────────────────────────────────
     *(
-        Op(
-            name,
-            NUM,
-            mat=lambda a, f=f: mat_mk(f"decide ({f(f'{a[0]} 0 0', f'{a[1]} 0 0')})"),
-            scalar=lambda a, f=f: f"(decide ({f(a[0], a[1])}))",
-            entrywise=True,
-        )
+        _pointwise(name, NUM, lambda a, f=f: f"(decide ({f(a[0], a[1])}))")
         for name, f in (
             ("Lt", lambda x, y: f"{x} < {y}"),
             ("Le", lambda x, y: f"{x} ≤ {y}"),
@@ -369,13 +343,8 @@ OPS: tuple[Op, ...] = (
         )
     ),
     *(
-        Op(
-            name,
-            ("bool", "int", "real", "word"),
-            mat=lambda a, f=f: mat_mk(f"decide ({f(f'{a[0]} 0 0', f'{a[1]} 0 0')})"),
-            scalar=lambda a, f=f: f"(decide ({f(a[0], a[1])}))",
-            entrywise=True,
-        )
+        _pointwise(name, ("bool", "int", "real", "word"),
+                   lambda a, f=f: f"(decide ({f(a[0], a[1])}))")
         for name, f in (
             ("Eq", lambda x, y: f"{x} = {y}"),
             ("Ne", lambda x, y: f"{x} ≠ {y}"),
@@ -527,15 +496,6 @@ def op_for(itype) -> Op:
             "add one in reactor_lean/lowering/ops.py"
         )
     return row
-
-
-def entrywise_shape(itype) -> "list[int] | None":
-    """The shape of an `entrywise` op when it is larger than 1×1, where its
-    scalar form applies entry by entry; None for every other op."""
-    if not op_for(itype).entrywise:
-        return None
-    shape = list(itype.shape)
-    return None if shape == [1, 1] else shape
 
 
 def _reason(row: Op, cell) -> str:
