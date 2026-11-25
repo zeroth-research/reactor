@@ -56,8 +56,8 @@ def scalar_bindings_with_recon(
     """Build wire bindings and flat scalar slot tracking for scalar encoding.
 
     For each wire:
-    - Scalar (flat_size == 1): binding is the bare accessor (e.g. ``"ctrl.1"``).
-    - Non-scalar (flat_size > 1): binding is a fresh let-var reconstructing the
+    - Scalar (one element): binding is the bare accessor (e.g. ``"ctrl.1"``).
+    - Non-scalar (more than one): binding is a fresh let-var reconstructing the
       ``Matrix (Fin m) (Fin n) T`` (for operations that need the full matrix); flat_slots also
       records the individual scalar accessor strings for argmax and similar.
 

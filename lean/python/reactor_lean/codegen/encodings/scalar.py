@@ -10,11 +10,11 @@ from reactor_lean.codegen.terms import (
 )
 from reactor_lean.lowering.sorts import (
     dtype_to_lean_type,
-    flat_element_type,
     itype_name,
+    lean_elem_type,
     wire_shape,
 )
-from reactor_lean.lowering.elements import flat_size, mat_from_scalars, flat_layout
+from reactor_lean.lowering.elements import mat_from_scalars, flat_layout
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.codegen.encodings.common import (
     prepend_recon,
@@ -63,8 +63,8 @@ def _collect_argmax_variants(terms) -> "list[tuple[str, int]]":
         if itype_name(term.itype) != "Argmax":
             continue
         in_wire = term.read[0]
-        n = flat_size(in_wire)
-        ety = flat_element_type(in_wire)
+        n = wire_shape(in_wire).total
+        ety = lean_elem_type(in_wire.dtype)
         key = (ety, n)
         if key not in seen:
             seen.add(key)
@@ -83,7 +83,7 @@ def _recon_lemma_lines(w) -> "list[str]":
     itself, so the shapes match syntactically.
     """
     shape = wire_shape(w)
-    elem = flat_element_type(w)
+    elem = lean_elem_type(w.dtype)
     m, n = shape.m, shape.n
     slots = [f"c {i} {j}" for i in range(m) for j in range(n)]
     lhs = mat_from_scalars(slots, shape)
@@ -147,9 +147,9 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
     seen_recon: set[tuple] = set()
     for _, wires in ctx.update_groups:
         for w in wires:
-            if flat_size(w) == 1:
+            if wire_shape(w).is_scalar:
                 continue
-            key = (wire_shape(w), flat_element_type(w))
+            key = (wire_shape(w), lean_elem_type(w.dtype))
             if key in seen_recon:
                 continue
             seen_recon.add(key)

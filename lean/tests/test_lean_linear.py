@@ -107,20 +107,6 @@ def test_linear_expr_uses_read_wire_accessor():
 # ──────────────────────────────────────────────────────────────
 
 
-def test_is_scalar_tensor_respects_shape_for_bool():
-    """Bool skipped the shape check that Int/Word get, so a Bool matrix
-    was treated as a scalar and inlined via `tensor.item()`."""
-    from reactor import Wire, Bool, Int, Word
-    from reactor_lean.lowering.sorts import is_scalar_tensor
-
-    assert is_scalar_tensor(Wire(Bool([1, 1]))) is True
-    assert is_scalar_tensor(Wire(Bool([2, 3]))) is False
-    # unchanged for the sorts that already checked
-    assert is_scalar_tensor(Wire(Int([1, 1]))) is True
-    assert is_scalar_tensor(Wire(Int([2, 3]))) is False
-    assert is_scalar_tensor(Wire(Word(8, [2, 3]))) is False
-
-
 def test_bool_matrix_constant_is_interned_not_inlined():
     """A Bool matrix constant must become a top-level def, not `.item()`."""
     import torch

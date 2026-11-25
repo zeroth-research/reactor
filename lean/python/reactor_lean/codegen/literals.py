@@ -8,7 +8,7 @@ import torch
 
 from reactor import Bool, Int, Real, Term, Wire, Word
 from ..errors import Refused
-from ..lowering.sorts import Sort, decimal_fraction, is_scalar_tensor, dtype_to_lean_type, is_constant_name, itype_name, lean_elem_type, mat_mk, wire_shape
+from ..lowering.sorts import Sort, decimal_fraction, dtype_to_lean_type, itype_name, lean_elem_type, mat_mk, wire_shape
 
 
 # ======================================================================
@@ -17,7 +17,8 @@ from ..lowering.sorts import Sort, decimal_fraction, is_scalar_tensor, dtype_to_
 class ConstantRegistry:
     """Registry of matrix constants (wire_id -> Lean name + top-level def).
 
-    Scalar Bool/Int tensors are inlined at their use site and not registered.
+    A 1×1 Bool, Int or word constant is inlined where it is read and not
+    registered; a 1×1 Real one is, as a matrix is.
     """
 
     def __init__(self):
@@ -30,10 +31,12 @@ class ConstantRegistry:
 
         Idempotent: calling again for the same output wire is a no-op.
         """
-        if not is_constant_name(itype_name(term.itype)):
+        if itype_name(term.itype) != "Const":
             return
         out_wire = term.write[0]
-        if is_scalar_tensor(out_wire) or out_wire.id in self._by_id:
+        inlined = (wire_shape(out_wire).is_scalar
+                   and not isinstance(out_wire.dtype, Real))
+        if inlined or out_wire.id in self._by_id:
             return
         name = f"c{self._counter}"
         self._counter += 1

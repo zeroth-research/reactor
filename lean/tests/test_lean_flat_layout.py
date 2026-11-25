@@ -28,11 +28,10 @@ import pytest
 import torch
 
 from reactor import Bool, Int, Module, Real, Term, Var, Wire, X, tensor
-from reactor_lean.lowering.sorts import dtype_shape, dtype_to_lean_type, wire_shape
+from reactor_lean.lowering.sorts import dtype_to_lean_type, wire_shape
 from reactor_lean.lowering.elements import (
     product_accessor,
     flat_indices,
-    flat_size,
     mat_from_scalars,
     flat_layout,
 )
@@ -71,10 +70,7 @@ def _expected_slots(wires):
     """(wire index, row, col) per element, spelled out independently here."""
     out = []
     for i, w in enumerate(wires):
-        shape = dtype_shape(w.dtype)
-        m, n = (1, 1) if all(d == 1 for d in shape) else (
-            (1, shape[0]) if len(shape) == 1 else tuple(shape)
-        )
+        m, n = w.dtype.shape
         out += [(i, r, c) for r in range(m) for c in range(n)]
     return out
 
@@ -93,11 +89,11 @@ def test_spans_tile_the_flat_tuple(wires):
     covered = []
     for w in wires:
         offset, size = layout.span(w)
-        assert size == flat_size(w)
+        assert size == wire_shape(w).total
         covered += list(range(offset, offset + size))
         assert layout.slots_of(w) == layout.slots[offset : offset + size]
     assert covered == list(range(layout.total))
-    assert layout.total == sum(flat_size(w) for w in wires)
+    assert layout.total == sum(wire_shape(w).total for w in wires)
 
 
 def test_span_needs_the_wire_not_a_position(wires):
@@ -171,7 +167,7 @@ def test_pack_places_each_slot_at_its_own_row_and_column(wires):
     layout = flat_layout(wires)
     for w in wires:
         offset, _ = layout.span(w)
-        slots = [f"s{k}" for k in range(flat_size(w))]
+        slots = [f"s{k}" for k in range(wire_shape(w).total)]
         mat = mat_from_scalars(slots, wire_shape(w))
         arms = re.findall(r"\| (\d+), (\d+) => s(\d+)", mat)
         placed = {(int(r), int(c)): int(k) for r, c, k in arms}
@@ -179,7 +175,7 @@ def test_pack_places_each_slot_at_its_own_row_and_column(wires):
             for k, (r, c) in enumerate(flat_indices(w)):
                 assert placed[(r, c)] == k, f"wire at offset {offset}"
         else:
-            assert flat_size(w) == 1
+            assert wire_shape(w).total == 1
 
 
 def test_scalar_bindings_hand_each_wire_its_own_slots(wires):
@@ -227,7 +223,7 @@ def test_scalar_unpack_of_a_2d_wire_reads_row_major():
 
 
 def test_every_sort_is_two_dimensional_so_one_reading_suffices():
-    """`lowering.sorts.sort_shape` reads a shape as `(m, n)` and nothing
+    """`lowering.sorts.wire_shape` reads a shape as `(m, n)` and nothing
     else: the Sort constructor refuses a 0-D, 1-D or 3-D shape, so there is
     no other case for an encoding to read differently. A 1xn wire's Lean
     type, element order, rebuilt matrix and recon lemma all agree on it."""

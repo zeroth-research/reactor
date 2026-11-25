@@ -8,7 +8,6 @@ from reactor_lean.errors import Refused
 from reactor_lean.lowering.sorts import (
     dtype_to_lean_type,
     itype_name,
-    is_constant_name,
 )
 from reactor_lean.lowering.elements import product_accessor
 from reactor_lean.codegen.literals import (
@@ -143,7 +142,7 @@ def _circ_translate_body(
             term = wire_to_term[w]
             name = itype_name(term.itype)
             # constant terms have no inputs, the do not propagate into the upper layers
-            if is_constant_name(name):
+            if name == "Const":
                 continue
 
             new_layer.extend(term.read)
@@ -328,7 +327,7 @@ def translate_terms_circ(
                 term = wire_to_term[w]
                 name = itype_name(term.itype)
 
-                if is_constant_name(name):
+                if name == "Const":
                     expr = constant_expr(term, w, constants)
 
                     boxes.append(f"@Box.const {dtype_to_lean_type(w)} {expr}")

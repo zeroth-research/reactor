@@ -10,12 +10,9 @@ IType operation to its Lean equivalent.
 from __future__ import annotations
 from reactor_lean.errors import Refused
 from reactor_lean.lowering.sorts import (
-    dtype_shape,
     itype_name,
-    is_constant_name,
     dtype_to_lean_type,
-    is_scalar_wire,
-    flat_element_type,
+    lean_elem_type,
     mat_mk,
     wire_shape,
 )
@@ -112,12 +109,12 @@ def _lift_scalar_reads(term, wire_expr: dict[int, str]) -> dict[int, str]:
     """
     lifted = dict(wire_expr)
     for w in term.read:
-        if is_scalar_wire(w):
+        if wire_shape(w).is_scalar:
             # The ascription is load-bearing: `matVecAffine`'s batch
             # dimension is not determined by `Matrix.mk fun _ _ => x`, so an
             # un-ascribed lift leaves `n` unsolved ("don't know how to
             # synthesize implicit argument `n`").
-            ty = f"Matrix (Fin 1) (Fin 1) {flat_element_type(w)}"
+            ty = f"Matrix (Fin 1) (Fin 1) {lean_elem_type(w.dtype)}"
             lifted[w.id] = f"({mat_mk(wire_expr[w.id])} : {ty})"
     return lifted
 
@@ -189,7 +186,7 @@ def translate_terms_lean(
     for var_counter, term in enumerate(terms):
         name = itype_name(term.itype)
 
-        if is_constant_name(name):
+        if name == "Const":
             expr = constant_expr(term, term.write[0], constants)
         elif name == "Argmax":
             expr = _argmax_expr(term, wire_expr)
@@ -249,7 +246,7 @@ def product_type_scalar(wires: list[Wire]) -> str:
 
 def _constant_expr_scalar(term, w: "Wire", constants: ConstantRegistry) -> str:
     """Like constant_expr but returns bare scalar values (no matrix around them)."""
-    if is_scalar_wire(w):
+    if wire_shape(w).is_scalar:
         # Element type (Bool/Int/Real) is taken from the wire's dtype.
         return tensor_to_lean_scalar(term.itype.tensor, w)
     # Non-scalar tensor: fall back to matrix constant from registry
@@ -302,14 +299,14 @@ def translate_terms_scalar(
         write_wire = term.write[0]
         var = f"x{var_counter}"
 
-        if is_constant_name(name):
+        if name == "Const":
             expr = _constant_expr_scalar(term, write_wire, constants)
         elif name == "Argmax":
             in_wire = term.read[0]
             slots = flat_slots.get(in_wire.id)
             if slots is not None:
                 axiom_name = argmax_scalar_name(
-                    flat_element_type(in_wire), len(slots)
+                    lean_elem_type(in_wire.dtype), len(slots)
                 )
                 expr = f"({axiom_name} {' '.join(slots)})"
             else:
@@ -320,7 +317,7 @@ def translate_terms_scalar(
             # here and ascribed one. Lift the operand and take `0 0` off
             # the result, as the Argmax branch above does.
             expr = _linear_expr(term, _lift_scalar_reads(term, wire_expr))
-            if is_scalar_wire(write_wire):
+            if wire_shape(write_wire).is_scalar:
                 expr = f"({expr} 0 0)"
         elif name == "Get":
             # A 1x1 element of whatever is read: its flat slot where the
@@ -328,10 +325,10 @@ def translate_terms_scalar(
             in_wire, op = term.read[0], term.itype
             slots = flat_slots.get(in_wire.id)
             if slots is not None:
-                expr = slots[op.row * dtype_shape(in_wire.dtype)[1] + op.col]
+                expr = slots[op.row * wire_shape(in_wire).n + op.col]
             else:
                 expr = f"({wire_expr[in_wire.id]} {op.row} {op.col})"
-        elif is_scalar_wire(write_wire) and scalar_emitter(term.itype) is not None:
+        elif wire_shape(write_wire).is_scalar and scalar_emitter(term.itype) is not None:
             input_exprs = [wire_expr[w.id] for w in term.read]
             expr = scalar_emitter(term.itype)(input_exprs)
         elif entrywise_shape(term.itype):
@@ -350,13 +347,13 @@ def translate_terms_scalar(
             # the bare element type, so project it — the same step the
             # `Argmax` and `Linear` branches above already take. Without it
             # a 1x1 `Min`/`Max` emitted `let x : Int := matMax …`.
-            if is_scalar_wire(write_wire):
+            if wire_shape(write_wire).is_scalar:
                 expr = f"({expr} 0 0)"
 
         wire_expr[write_wire.id] = var
         # Track flat scalar slots for the written wire so downstream Argmax
         # terms can reference individual elements without matrix reconstruction.
-        if is_scalar_wire(write_wire):
+        if wire_shape(write_wire).is_scalar:
             flat_slots[write_wire.id] = [var]
         else:
             # Parenthesised: these are spliced into an application

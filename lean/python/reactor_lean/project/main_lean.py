@@ -8,7 +8,7 @@ from __future__ import annotations
 from reactor import Module, Wire
 
 from ..errors import Refused
-from ..lowering.sorts import flat_element_type, mat_mk, wire_shape
+from ..lowering.sorts import lean_elem_type, mat_mk, wire_shape
 from ..lowering.elements import ModuleWires
 from ..codegen.terms import build_tuple, product_type
 from .names import (
@@ -112,7 +112,7 @@ def generate_main_lean(module: Module) -> str:
     offset = 0
     parse_vars: list[str] = []
     for i, w in enumerate(extl_next):
-        elem = flat_element_type(w)
+        elem = lean_elem_type(w.dtype)
         var = f"e{i}"
         m, n = wire_shape(w).m, wire_shape(w).n
         # Every wire is a matrix here, so parse m*n tokens into an array of
@@ -147,7 +147,7 @@ def generate_main_lean(module: Module) -> str:
     # `Matrix ...` here whatever the sort.
     show_parts: list[str] = []
     for i, w in enumerate(ctrl_next):
-        elem = flat_element_type(w)
+        elem = lean_elem_type(w.dtype)
         var = f"v{i}"
         m, n = wire_shape(w).m, wire_shape(w).n
         show_parts.append(f"showMatrix {m} {n} {_elem_shower(elem, w)} {var}")

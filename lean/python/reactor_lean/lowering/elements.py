@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 from reactor import Wire, X
-from .sorts import flat_element_type, mat_mk, MatShape, wire_shape
+from .sorts import lean_elem_type, mat_mk, MatShape, wire_shape
 
 
 def product_accessor(pos: int, total: int) -> str:
@@ -32,11 +32,6 @@ def flat_indices(wire: Wire) -> list[tuple[int, int]]:
     m x n wire, `(i, j)` for `i` in `range(m)`, `j` in `range(n)`."""
     shape = wire_shape(wire)
     return [(i, j) for i in range(shape.m) for j in range(shape.n)]
-
-
-def flat_size(wire: Wire) -> int:
-    """Total number of scalar elements in the wire."""
-    return len(flat_indices(wire))
 
 
 class Slot(NamedTuple):
@@ -89,7 +84,7 @@ class FlatLayout:
     def span(self, wire: Wire) -> "tuple[int, int]":
         """`(offset, size)`: where `wire`'s elements sit in the flat tuple."""
         i = self._position(wire)
-        return self._offsets[i], flat_size(wire)
+        return self._offsets[i], wire_shape(wire).total
 
     def slots_of(self, wire: Wire) -> "tuple[Slot, ...]":
         """`wire`'s own slots, in flat order."""
@@ -112,7 +107,7 @@ class FlatLayout:
 
     def element_types(self) -> "list[str]":
         """The Lean element type of each slot, in flat order."""
-        return [flat_element_type(self.wires[s.wire]) for s in self.slots]
+        return [lean_elem_type(self.wires[s.wire].dtype) for s in self.slots]
 
 
 def flat_layout(wires: "list[Wire]") -> FlatLayout:

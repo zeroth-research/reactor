@@ -16,16 +16,12 @@ from ..errors import Refused
 Sort = Any
 
 
-def dtype_shape(dt) -> list:
-    """The `[rows, cols]` shape of a sort, of any element type: a scalar is
-    `[1, 1]`."""
-    return list(dt.shape)
-
-
 @dataclass(frozen=True)
 class MatShape:
     """A wire's shape as the `(m, n)` of the matrix it is: the one reading
-    every encoding uses."""
+    every encoding uses. A Sort's shape is always two-dimensional -- the
+    constructor refuses any other -- so there is no 0-D or 1-D one to read
+    differently."""
 
     m: int
     n: int
@@ -39,23 +35,10 @@ class MatShape:
         return self.total == 1
 
 
-def sort_shape(sort) -> MatShape:
-    """`sort`'s shape as the `(m, n)` of the matrix it is. A Sort's shape is
-    always two-dimensional -- the constructor refuses any other -- so this
-    is the shape itself, and every encoding reads it here rather than
-    guessing at a 0-D or 1-D one that cannot occur."""
-    m, n = dtype_shape(sort)
-    return MatShape(m, n)
-
-
 def wire_shape(wire: Wire) -> MatShape:
-    """`sort_shape` of `wire`'s sort."""
-    return sort_shape(wire.dtype)
-
-
-def is_scalar_shape(shape: list) -> bool:
-    """True if the shape denotes a single element ([], [1], [1, 1], ...)."""
-    return all(d == 1 for d in shape)
+    """`wire`'s shape as the `(m, n)` of the matrix it is."""
+    m, n = wire.dtype.shape
+    return MatShape(m, n)
 
 
 def lean_elem_type(sort: Sort) -> str:
@@ -73,22 +56,14 @@ def lean_elem_type(sort: Sort) -> str:
     raise Refused(f"no Lean type for the sort {sort}")
 
 
-def lean_matrix_type(elem: str, m: int | str, n: int | str) -> str:
-    """The Lean type of an `m × n` matrix of `elem`s: Mathlib's `Matrix`,
-    indexed by `Fin`, parenthesized."""
-    return f"(Matrix (Fin {m}) (Fin {n}) {elem})"
-
-
 def dtype_to_lean_type(wire: Wire, simple_types=False) -> str:
     """Map a Wire's Sort to its Lean type, `(Matrix (Fin m) (Fin n) t)`;
     with `simple_types`, a 1×1 wire is its bare element type `t`."""
-
-    dt = wire.dtype
-    ty = lean_elem_type(dt)
-    shape = sort_shape(dt)
+    ty = lean_elem_type(wire.dtype)
+    shape = wire_shape(wire)
     if shape.is_scalar and simple_types:
         return ty
-    return lean_matrix_type(ty, shape.m, shape.n)
+    return f"(Matrix (Fin {shape.m}) (Fin {shape.n}) {ty})"
 
 
 def mat_mk(entry: str, i: str = "_", j: str = "_") -> str:
@@ -151,35 +126,6 @@ def theory_of(itype) -> str:
 def itype_name(itype) -> str:
     """The name of an op's class, e.g. `tensor.int.Add([1, 1])` -> 'Add'."""
     return type(itype).__name__
-
-
-def is_constant_name(name: str) -> bool:
-    """True if the name is that of a constant, `Const`, in any theory: its
-    element type is the written wire's, and scalar-vs-matrix its shape."""
-    return name == "Const"
-
-
-def is_scalar_tensor(wire: Wire) -> bool:
-    """True if the wire carries a scalar Bool, Int or word (not a matrix)."""
-    dt = wire.dtype
-    if isinstance(dt, (Bool, Int, Word)):
-        return is_scalar_shape(dtype_shape(dt))
-    return False
-
-
-def is_scalar_wire(wire: Wire) -> bool:
-    """True if the wire is a scalar (single element, any scalar dtype)."""
-    return is_scalar_shape(dtype_shape(wire.dtype))
-
-
-# ---------------------------------------------------------------------------
-# Flat-scalar helpers — support multi-element (1 × n matrix) wires in the
-# scalar / relational encoding by expanding each wire into n scalars.
-# ---------------------------------------------------------------------------
-
-def flat_element_type(wire: Wire) -> str:
-    """Base Lean scalar type for one element of the wire (no matrix around it)."""
-    return lean_elem_type(wire.dtype)
 
 
 def decimal_fraction(value) -> Fraction:
