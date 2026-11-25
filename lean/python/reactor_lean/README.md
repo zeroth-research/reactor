@@ -620,7 +620,7 @@ and a cell for each of `mat`, `scalar` and `box`.  A cell is an
 emitter, or `ViaMat`/`Inline`/`Unsupported` saying why it is not one —
 `Unsupported`'s reason is what the caller is told when it hits the gap.
 
-`python -m reactor_lean.lowering.ops` prints the whole matrix and every gap in it.
+`scripts/op_table.py` (run from `lean/`) prints the whole matrix and every gap in it.
 `tests/test_lean_ops.py` checks the table against `LIA`/`LRA`/`BV` in both
 directions: a variant a theory gained but the table has not fails there, and
 so does a row no theory backs.

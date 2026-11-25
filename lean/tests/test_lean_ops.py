@@ -28,20 +28,19 @@ from reactor_lean.codegen.terms import lean_gaps
 from reactor_lean.lowering import ops
 from testdata import all_encodings
 from reactor_lean.lowering.ops import (
-    COLUMNS,
     OPS,
     Inline,
     Op,
     Unsupported,
     ViaMat,
     box_for,
-    cell_of,
     mat_emitter,
     op_for,
     scalar_emitter,
 )
 
 S = [1, 1]
+COLUMNS = ("mat", "scalar", "box")
 
 
 def _namespace(theory: str):
@@ -124,7 +123,7 @@ def test_an_op_of_a_backend_is_of_its_theory():
 @pytest.mark.parametrize("column", COLUMNS)
 def test_every_cell_is_an_emitter_or_says_why(column):
     for op in OPS:
-        cell = cell_of(op, column)
+        cell = getattr(op, column)
         if isinstance(cell, Unsupported):
             assert cell.reason.strip(), f"{op.name}.{column}: empty reason"
         elif isinstance(cell, Inline):
@@ -145,7 +144,7 @@ def test_the_lean_columns_are_all_emitters_or_all_refusals():
     where it has the other forms: the circuit encoding is optional, and of a
     module with an `All` it is a file saying why."""
     for op in OPS:
-        lean = [cell_of(op, c) for c in ("mat", "scalar", "box")]
+        lean = [getattr(op, c) for c in COLUMNS]
         refusals = [isinstance(c, Unsupported) for c in lean]
         if op.name == "All":
             assert refusals == [False, False, True]
@@ -168,8 +167,6 @@ def test_the_scalar_column_falls_back_only_where_there_is_something_to_fall_back
 #  The gaps, pinned
 # ══════════════════════════════════════════════════════════════════════
 
-_LEAN = ("mat", "scalar", "box")
-
 # Every (theory, op, column) with no emitter. Closing one of these is a line
 # removed here; opening a new one is a line added, which is the point —
 # `lowering/ops.py` records *why* each is open, and this says how many there
@@ -179,47 +176,39 @@ _KNOWN_GAPS = {
     # here is a function of the read wires, in discrete time.
     *(("", name, column) for name in ("Havoc", "Zero") for column in COLUMNS),
     # `Xor` has no Lean emitter.
-    *(("bool", "Xor", c) for c in _LEAN),
+    *(("bool", "Xor", c) for c in COLUMNS),
     # No `Box` in `Relational.Circ`: the pointwise `Abs`, and the reduction
     # `All`, which has the other two Lean forms.
-    *((t, "Abs", c) for t in ("int", "real") for c in _LEAN),
+    *((t, "Abs", c) for t in ("int", "real") for c in COLUMNS),
     ("bool", "All", "box"),
     # Words with no Lean form.
     *(("word", name, c)
       for name in ("Concat", "Extract", "Nand", "Nor", "Repeat", "RotateLeft",
                    "RotateRight", "Shl", "Xnor")
-      for c in _LEAN),
+      for c in COLUMNS),
     *(("word.signed", name, c)
       for name in ("Abs", "Div", "Extend", "Ge", "Gt", "Le", "Lt", "Rem", "Shr")
-      for c in _LEAN),
+      for c in COLUMNS),
     *(("word.unsigned", name, c)
       for name in ("Div", "Extend", "Ge", "Gt", "Le", "Lt", "Shr")
-      for c in _LEAN),
+      for c in COLUMNS),
 }
 
 
 def test_the_coverage_gaps_are_the_known_ones():
     gaps = {
         (theory, op.name, column)
-        for theory, op in ops.rows()
+        for op in OPS
+        for theory in op.theories
         for column in COLUMNS
-        if isinstance(cell_of(op, column), Unsupported)
+        if isinstance(getattr(op, column), Unsupported)
     }
     assert gaps == _KNOWN_GAPS, (
         "the coverage matrix moved: "
         f"new gaps {sorted(gaps - _KNOWN_GAPS)}, "
         f"closed gaps {sorted(_KNOWN_GAPS - gaps)}. "
-        "Run `python -m reactor_lean.lowering.ops` to see the whole matrix."
+        "Run `scripts/op_table.py` to see the whole matrix."
     )
-
-
-def test_the_matrix_prints():
-    """`python -m reactor_lean.lowering.ops` is how the table is meant to be
-    read."""
-    text = ops.format_matrix()
-    assert "gaps:" in text
-    for theory in THEORIES:
-        assert theory in text
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -390,8 +379,8 @@ def test_word_bitwise_ops_get_their_own_row(name):
     """A row shared with `bool` would emit `!`/`&&`/`||` against a `BitVec`."""
     row = _row("word", name)
     assert row is not _row("bool", name)
-    for column in _LEAN:
-        assert not isinstance(cell_of(row, column), Unsupported)
+    for column in COLUMNS:
+        assert not isinstance(getattr(row, column), Unsupported)
     assert box_for(getattr(tensor.word, name)(8, S)).startswith("Box.bv")
 
 

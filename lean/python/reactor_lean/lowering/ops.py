@@ -30,7 +30,7 @@ may be missing where the other two are not: of `All`, and of an
 reads, is optional, and a module with no circuit form gets a file saying
 why.
 
-`python -m reactor_lean.lowering.ops` prints the matrix, gaps and all.
+`scripts/op_table.py` prints the matrix, gaps and all.
 `tests/test_lean_ops.py` checks it against `reactor.tensor` in both
 directions, so an op added to a theory fails the suite until it has a row,
 and a row no theory backs fails it too.
@@ -42,7 +42,7 @@ from dataclasses import dataclass
 from typing import Callable, Union
 
 from ..errors import Refused
-from .sorts import THEORIES, itype_name, mat_mk, theory_of
+from .sorts import itype_name, mat_mk, theory_of
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -684,63 +684,3 @@ def box_for(itype) -> str:
     row = op_for(itype)
     return _lean_emitter(itype, row, row.box, "Box")
 
-
-# ══════════════════════════════════════════════════════════════════════
-#  The matrix, printed
-# ══════════════════════════════════════════════════════════════════════
-
-COLUMNS = ("mat", "scalar", "box")
-
-
-def cell_of(op: Op, column: str):
-    return getattr(op, column)
-
-
-def cell_mark(cell) -> str:
-    """One-word rendering of a cell, for the printed matrix."""
-    if isinstance(cell, Unsupported):
-        return "-"
-    if isinstance(cell, Inline):
-        return "inline"
-    if isinstance(cell, ViaMat):
-        return "via mat"
-    return "yes"
-
-
-def rows() -> list[tuple[str, Op]]:
-    """(theory, row) for every op, theory-major then alphabetical."""
-    order = {t: i for i, t in enumerate(THEORIES)}
-    order[""] = len(order)
-    return sorted(
-        ((theory, op) for (theory, _), op in _BY_KEY.items()),
-        key=lambda pair: (order[pair[0]], pair[1].name),
-    )
-
-
-def format_matrix() -> str:
-    """The whole table as text: one line per op, then every gap.
-
-    Gaps are grouped by reason — the same one covers several ops, and
-    reading it once per group is the point of having it written down.
-    """
-    head = f"{'theory':13} {'op':14} " + " ".join(f"{c:8}" for c in COLUMNS)
-    lines = [head, "-" * len(head)]
-    gaps: dict[str, list[str]] = {}
-    for theory, op in rows():
-        marks = " ".join(f"{cell_mark(cell_of(op, c)):8}" for c in COLUMNS)
-        lines.append(f"{theory or '(struct)':13} {op.name:14} {marks}")
-        for column in COLUMNS:
-            cell = cell_of(op, column)
-            if isinstance(cell, Unsupported) and cell is not _SEE_MAT:
-                gaps.setdefault(cell.reason, []).append(
-                    f"{theory or '(struct)'}.{op.name} [{column}]"
-                )
-    lines.append("\ngaps:")
-    for reason, sites in gaps.items():
-        lines.append(f"  * {', '.join(sites)}")
-        lines.append(f"      {reason}")
-    return "\n".join(lines)
-
-
-if __name__ == "__main__":  # pragma: no cover
-    print(format_matrix())
