@@ -7,7 +7,7 @@
 \usepackage{a4wide}
 \usepackage{amsmath,amssymb,amsthm}
 \usepackage{tikz}
-\usetikzlibrary{petri,arrows.meta}
+\usetikzlibrary{petri,arrows.meta,shadows}
 \usepackage{hyperref}
 
 \theoremstyle{definition}
@@ -614,77 +614,105 @@ special cases of ours.
 
 \paragraph{The construction.}
 Fix a template~$\mathsf{P}$ and a set $\mathit{Bad} \subseteq Q$. We assume
-without loss of generality that $Q \subseteq \NatZero$, that is, local states
-are encoded as numbers. We construct a \DCPN{0}~$\mathcal{N}_{\mathsf{P}}$
-with $k = 3$ and $\Dom = \NatZero$, see Figure~\ref{fig:ring}. Its tokens are
-of three kinds:
+without loss of generality that $Q$ is a finite subset of~$\NatZero$,
+that is, local states are encoded as numbers.
+We construct a \DCPN{0}~$\mathcal{N}_{\mathsf{P}}$
+with $k = 3$ and $\Dom = \NatZero$, see Figure~\ref{fig:ring}. We unpack every
+colour $c \in \NatZero^3$ into a record with three fields: if $c = (v, N, q)$,
+then $c.v = v$, $c.N = N$, and $c.q = q$. The tokens are of three kinds:
 \begin{itemize}
   \item A \emph{process token} has a colour $(i, N, q)$. It represents
     process~$i$ in the ring of size~$N$ in the local state~$q$.
   \item A \emph{counter token} has a colour $(v, 0, 0)$, which we abbreviate
-    as~$v$.
+    as~$v$. We use counter tokens to count the number of processes in a ring
+    and to assign unique identifiers to the processes.
   \item All other tokens have the colour $\bar{0} = (0, 0, 0)$.
 \end{itemize}
-For a colour~$c$, we write $c_1$, $c_2$, and~$c_3$ for its components. The
-places are as follows:
+Hence, $c.v$ is the identifier of a process token and the value of a counter
+token. The places are as follows:
 \begin{itemize}
-  \item $P_1$ holds the initial tokens, whose number is the parameter;
-  \item $P_2$ holds the tokens that have been counted;
-  \item $P_3$ holds a counter token, which counts the tokens in~$P_2$ and
-    eventually holds the ring size;
-  \item $P_4$ holds a counter token with the next identifier;
-  \item $P_5$ holds the process tokens;
-  \item $B$ and~$A$ hold a phase token, which is in~$B$ while counting and
-    in~$A$ while assigning identifiers;
-  \item $\mathit{Err}$ receives the process tokens in bad states.
+  \item $P_{\mathit{init}}$ holds the initial tokens, whose number is the
+    parameter;
+  \item $P_{\mathit{counted}}$ holds the tokens that have been counted;
+  \item $P_N$ holds a counter token, which counts the tokens in~$P_{\mathit{counted}}$ and
+    eventually holds the ring size~$N$;
+  \item $P_{\mathit{id}}$ holds a counter token with the next identifier;
+  \item $P_{\mathit{active}}$ holds the process tokens that model the ring;
+  \item $P_{\mathit{accum}}$ and~$P_{\mathit{tag}}$ hold a phase token, which
+    is in~$P_{\mathit{accum}}$ while counting and in~$P_{\mathit{tag}}$ while
+    assigning identifiers;
+  \item $P_{\mathit{Err}}$ receives the process tokens in bad states.
 \end{itemize}
 All transitions are guard transitions, and $\mathcal{V}_P(c) = \bar{0}$ for
 every place~$P$, that is, colours do not change in ticks. We list the
 transitions with their input arcs, output arcs, guards, and firing functions:
 
 \begin{itemize}
-  \item $T_1$ consumes $x$ from~$P_1$, $c$ from~$P_3$, and $b$ from~$B$. Its
-    guard is~$\mathit{True}$, and
-    $\pi_{T_1}(x, c, b) = (x, (c_1 + 1, 0, 0), b)$, where the produced
-    tokens go to $P_2$, $P_3$, and~$B$, respectively.
+  \item Transition~$T_{\mathit{IncN}}$ moves one token from~$P_{\mathit{init}}$
+    to~$P_{\mathit{accum}}$ and increases~$N$. More precisely,
+    $T_{\mathit{IncN}}$ consumes $x$ from~$P_{\mathit{init}}$, $c$ from~$P_N$,
+    and $b$ from~$P_{\mathit{accum}}$. Its guard is~$\mathit{True}$, and
+    $\pi_{T_{\mathit{IncN}}}(x, c, b) = (x, (c.v + 1, 0, 0), b)$, where the
+    produced tokens go to $P_{\mathit{counted}}$, $P_N$,
+    and~$P_{\mathit{accum}}$, respectively.
 
-  \item $D$ consumes $b$ from~$B$ and produces~$b$ in~$A$. Its guard
+  \item Transition~$T_{\mathit{EndCount}}$ consumes $b$
+    from~$P_{\mathit{accum}}$ and produces~$b$ in~$P_{\mathit{tag}}$. Its guard
     is~$\mathit{True}$.
 
-  \item $T_2^0$ and~$T_2^+$ consume $x$ from~$P_2$, $c$ from~$P_3$, $d$
-    from~$P_4$, and $a$ from~$A$. They produce tokens in $P_5$, $P_3$, $P_4$,
-    and~$A$ with
+  \item Transition~$T_{\mathit{own}}$ assigns the id of zero to the first token
+    that moves to~$P_{\mathit{active}}$. This token also carries~$\iota_T$,
+    that is, it corresponds to a state of the token ring process~0 that
+    possesses the token of the token ring. Transition $T_{\mathit{follow}}$
+    assigns non-zero ids to all other tokens. They model the state~$\iota_N$ of
+    a ring process, that is, not having the token in the token ring.
+    Formally,
+    $T_{\mathit{own}}$ and~$T_{\mathit{follow}}$ consume $x$ from~$P_{\mathit{counted}}$,
+    $c$ from~$P_N$, $d$ from~$P_{\mathit{id}}$, and $a$
+    from~$P_{\mathit{tag}}$. They produce tokens in $P_{\mathit{active}}$,
+    $P_N$, $P_{\mathit{id}}$, and~$P_{\mathit{tag}}$ with
     \begin{align*}
-      \pi_{T_2^0}(x, c, d, a) &= ((d_1, c_1, \iota_T), c, (d_1 + 1, 0, 0), a),\\
-      \pi_{T_2^+}(x, c, d, a) &= ((d_1, c_1, \iota_N), c, (d_1 + 1, 0, 0), a).
+      \pi_{T_{\mathit{own}}}(x, c, d, a)
+        &= ((d.v, c.v, \iota_T), c, (d.v + 1, 0, 0), a),\\
+      \pi_{T_{\mathit{follow}}}(x, c, d, a)
+        &= ((d.v, c.v, \iota_N), c, (d.v + 1, 0, 0), a).
     \end{align*}
-    The guard of~$T_2^0$ is $d_1 = 0 \wedge c_1 \ge 2$, and the guard
-    of~$T_2^+$ is $d_1 \ge 1$.
+    The guard of~$T_{\mathit{own}}$ is $d.v = 0 \wedge c.v \ge 2$, and the
+    guard of~$T_{\mathit{follow}}$ is $d.v \ge 1$.
 
-  \item $\mathit{Int}_{q, q'}$, for $(q, q') \in \delta_{\mathit{int}}$,
-    consumes $c$ from~$P_5$ and produces $(c_1, c_2, q')$ in~$P_5$. Its guard
-    is $c_3 = q$.
+  \item Transition $T_{\mathit{Internal}[q, r]}$, for $(q, r) \in
+    \delta_{\mathit{int}}$ models an internal transition of a ring process. It
+    consumes $c$ from~$P_{\mathit{active}}$ and produces $c' = (c.v, c.N, r)$
+    in~$P_{\mathit{active}}$. Its guard is $c.q = q$.
 
-  \item $\mathit{Pass}_{q, \theta, q', r, r'}$, for
-    $(q, \theta, q') \in \delta_!$ and $(r, \theta, r') \in \delta_?$, has two
-    arcs from~$P_5$ and two arcs to~$P_5$. It consumes $c$ and~$d$, and
-    produces $(c_1, c_2, q')$ and~$(d_1, d_2, r')$. Its guard is
-    \[
-      c_3 = q \wedge d_3 = r \wedge
-      \bigl(c_1 + 1 = d_1 \vee (c_1 + 1 = c_2 \wedge d_1 = 0)\bigr).
-    \]
+  \item Transition $T_{\mathit{Pass}[q_1, \theta, q_2, r_1, r_2]}$, for
+    $(q_1, \theta, q_2) \in \delta_!$ and $(r_1, \theta, r_2) \in \delta_?$,
+    models a token-passing transition in the modelled ring.
+    It has two arcs from~$P_{\mathit{active}}$ and two arcs
+    to~$P_{\mathit{active}}$. This transition consumes $c_1$ and~$c_2$, and produces
+    $c'_1 = (c_1.v, c_1.N, q_2)$ and~$c'_2 = (c_2.v, c_2.N, r_2)$. Its guard
+    is defined as:
+    %%%%%%
+    \begin{equation*}
+      c_1.q = q_1 \wedge c_2.q = r_1 \wedge
+      \bigl(c_1.v + 1 = c_2.v \vee (c_1.v + 1 = c_1.N \wedge c_2.v = 0)\bigr).
+    \end{equation*}
 
-  \item $\mathit{Idle}$ consumes $c$ from~$P_5$ and produces~$c$ in~$P_5$.
-    Its guard is~$\mathit{True}$.
+  \item Transition $T_{\mathit{Idle}}$ models a stuttering step by a process.
+    It consumes $c$ from~$P_{\mathit{active}}$ and
+    produces~$c$ in~$P_{\mathit{active}}$. Its guard is~$\mathit{True}$.
 
-  \item $\mathit{Det}_q$, for $q \in \mathit{Bad}$, consumes $c$ from~$P_5$
-    and produces~$c$ in~$\mathit{Err}$. Its guard is $c_3 = q$.
+  \item Transition~$T_{\mathit{Detect}[q]}$, for $q \in \mathit{Bad}$, detects
+    a process in an error state. It consumes $c$ from~$P_{\mathit{active}}$ and
+    produces~$c$ in~$P_{\mathit{Err}}$. Its guard is $c.q = q$.
+
 \end{itemize}
 
 For $n \in \NatZero$, the initialisation function~$\mathcal{I}_n$ puts
-$n$ tokens of colour~$\bar{0}$ in~$P_1$ and one token of colour~$\bar{0}$
-in each of $P_3$, $P_4$, and~$B$. All other places are empty. The functions
-$\mathcal{I}_n$ differ only in the number of tokens in~$P_1$.
+$n$ tokens of colour~$\bar{0}$ in~$P_{\mathit{init}}$ and one token of
+colour~$\bar{0}$ in each of $P_N$, $P_{\mathit{id}}$,
+and~$P_{\mathit{accum}}$. All other places are empty. The functions
+$\mathcal{I}_n$ differ only in the number of tokens in~$P_{\mathit{init}}$.
 
 \begin{figure}[tbp]
   \centering
@@ -695,20 +723,23 @@ $\mathcal{I}_n$ differ only in the number of tokens in~$P_1$.
         minimum width=3mm, minimum height=8mm},
       every label/.style={font=\small},
       ins/.style={font=\scriptsize},
-      arc/.style={->, thick}]
-    \node at (-1, 2.9) {(a)};
-    \node[place, label=left:$P_1$] (P1) at (0, 0) {$n$};
+      arc/.style={->, thick},
+      pair/.style={copy shadow={shadow xshift=0.7mm,
+        shadow yshift=0.7mm}}]
+    \node at (-1.5, 2.9) {(a)};
+    \node[place, label=left:$P_{\mathit{init}}$] (P1) at (0, 0) {$n$};
     \node[transition] (T1) at (2, 0) {};
-    \node[font=\small] at (2.5, 0.3) {$T_1$};
-    \node[place, label=below:$P_2$] (P2) at (4.25, 0) {};
-    \node[transition] (T2) at (6.5, 0) {};
-    \node[font=\small] at (5.55, -0.4) {$T_2^0, T_2^+$};
-    \node[place, label=right:$P_5$] (P5) at (9, 0) {};
-    \node[place, tokens=1, label=left:$B$] (B) at (2, 2.2) {};
-    \node[transition, label=above:$D$] (D) at (4.25, 2.2) {};
-    \node[place, label=right:$A$] (A) at (6.5, 2.2) {};
-    \node[place, tokens=1, label=below:$P_3$] (P3) at (4.25, -2.2) {};
-    \node[place, tokens=1, label=right:$P_4$] (P4) at (8, -2.2) {};
+    \node[font=\small] at (2.75, 0.35) {$T_{\mathit{IncN}}$};
+    \node[place, label=below:$P_{\mathit{counted}}$] (P2) at (4.25, 0) {};
+    \node[transition, pair] (T2) at (7.1, 0) {};
+    \node[font=\small, anchor=south east] at (6.85, 0.05)
+      {$T_{\mathit{own}}, T_{\mathit{follow}}$};
+    \node[place, label=right:$P_{\mathit{active}}$] (P5) at (9.6, 0) {};
+    \node[place, tokens=1, label=left:$P_{\mathit{accum}}$] (B) at (2, 2.2) {};
+    \node[transition, label=above:$T_{\mathit{EndCount}}$] (D) at (4.55, 2.2) {};
+    \node[place, label=right:$P_{\mathit{tag}}$] (A) at (7.1, 2.2) {};
+    \node[place, tokens=1, label=below:$P_N$] (P3) at (4.55, -2.2) {};
+    \node[place, tokens=1, label=right:$P_{\mathit{id}}$] (P4) at (8.6, -2.2) {};
     \draw[arc] (P1) -- (T1);
     \draw[arc] (T1) -- (P2);
     \draw[arc] (P2) -- (T2);
@@ -737,91 +768,104 @@ $\mathcal{I}_n$ differ only in the number of tokens in~$P_1$.
       every label/.style={font=\small},
       ins/.style={font=\scriptsize},
       arc/.style={->, thick},
-      aux/.style={draw=blue, text=blue}]
+      aux/.style={draw=blue, text=blue},
+      family/.style={double copy shadow={shadow xshift=0.7mm,
+        shadow yshift=0.7mm}}]
     \node at (-4.5, 2.4) {(b)};
-    \node[place, label={[xshift=3mm]below right:$P_5$}] (P5) at (0, 0) {};
-    \node[transition, label=above:$\mathit{Pass}$] (Pass) at (0, 2.2) {};
-    \node[transition, label=left:$\mathit{Int}$] (Int) at (-3, 0) {};
+    \node[place, label={[xshift=5mm]below right:$P_{\mathit{active}}$}] (P5)
+      at (0, 0) {};
+    \node[transition, family,
+      label={[yshift=1.5mm]above:$T_{\mathit{Pass}[q_1, \theta, q_2, r_1, r_2]}$}] (Pass) at (0, 2.2) {};
+    \node[transition, family,
+      label=left:$T_{\mathit{Internal}[q, r]}$] (Int) at (-3, 0) {};
     \node[transition, aux, fill=blue!15,
-      label={[text=blue]below:$\mathit{Idle}$}] (Idle) at (0, -2.2) {};
-    \node[transition, label=above:$\mathit{Det}$] (Det) at (3, 0) {};
-    \node[place, label=right:$\mathit{Err}$] (Err) at (5.25, 0) {};
+      label={[text=blue]below:$T_{\mathit{Idle}}$}] (Idle) at (0, -2.2) {};
+    \node[transition, family,
+      label={[yshift=1.5mm]above:$T_{\mathit{Detect}[q]}$}] (Det) at (3, 0) {};
+    \node[place, label=right:$P_{\mathit{Err}}$] (Err) at (5.25, 0) {};
     \draw[arc] (P5) to[bend left=35]
-      node[ins, left, pos=0.75] {$(i, N, p) + (i', N', p')$} (Pass);
+      node[ins, left, pos=0.75] {$\mset{c_1, c_2}$} (Pass);
     \draw[arc] (Pass) to[bend left=35]
-      node[ins, right, pos=0.25] {$(i, N, q') + (i', N', r')$} (P5);
-    \draw[arc] (P5) to[bend left=30] node[ins, below] {$(i, N, p)$} (Int);
-    \draw[arc] (Int) to[bend left=30] node[ins, above] {$(i, N, q')$} (P5);
+      node[ins, right, pos=0.25] {$\mset{c'_1, c'_2}$} (P5);
+    \draw[arc] (P5) to[bend left=30] node[ins, below] {$c$} (Int);
+    \draw[arc] (Int) to[bend left=30] node[ins, above] {$c'$} (P5);
     \draw[arc, aux] (P5) to[bend left=30] node[ins, right] {$c$} (Idle);
     \draw[arc, aux] (Idle) to[bend left=30] node[ins, left] {$c$} (P5);
-    \draw[arc] (P5) -- node[ins, above] {$(i, N, p)$} (Det);
-    \draw[arc] (Det) -- node[ins, above] {$(i, N, p)$} (Err);
+    \draw[arc] (P5) -- node[ins, above] {$c$} (Det);
+    \draw[arc] (Det) -- node[ins, above] {$c$} (Err);
   \end{tikzpicture}
   \caption{The \DCPN{0}~$\mathcal{N}_{\mathsf{P}}$ with the initial
     marking~$\mathcal{I}_n$: (a)~bootstrapping and (b)~token passing.
     A dot is a token of colour~$\bar{0}$, and $n$ stands for $n$~such tokens.
     Arcs without inscriptions carry tokens of colour~$\bar{0}$, and the
     inscriptions $v$ and~$j$ stand for the counter colours $(v, 0, 0)$
-    and~$(j, 0, 0)$. The box $T_2^0, T_2^+$ stands for two transitions with
-    the same arcs, which produce $\iota = \iota_T$ and $\iota = \iota_N$,
-    respectively. The boxes $\mathit{Pass}$, $\mathit{Int}$,
-    and~$\mathit{Det}$ stand for the families of transitions in the text, and
-    an inscription with two summands stands for two arcs. The auxiliary
-    self-loop~$\mathit{Idle}$, shown in blue, lets a process skip a round.}
+    and~$(j, 0, 0)$. The double box $T_{\mathit{own}}, T_{\mathit{follow}}$
+    stands for two transitions with the same arcs, which produce $\iota = \iota_T$
+    and $\iota = \iota_N$, respectively. The stacked boxes in~(b) stand for families of
+    transitions, with one transition for every choice of the parameters in
+    brackets, see the text. The inscriptions $\mset{c_1, c_2}$
+    and~$\mset{c'_1, c'_2}$ stand for two arcs each, and the primed colours are produced by the firing functions in
+    the text. The auxiliary self-loop~$T_{\mathit{Idle}}$, shown in blue,
+    lets a process skip a round.}
   \label{fig:ring}
 \end{figure}
 
 \paragraph{How the net works.}
 The net runs in three phases, which may overlap.
 \begin{enumerate}
-  \item \emph{Counting.} While the phase token is in~$B$, transition~$T_1$
-    moves the tokens from $P_1$ to~$P_2$ one by one, and increments the
-    counter in~$P_3$.
-  \item \emph{Assigning identifiers.} Transition~$D$ moves the phase token
-    to~$A$. From then on, the counter in~$P_3$ holds the ring size~$N$.
-    Transitions $T_2^0$ and~$T_2^+$ move the tokens from $P_2$ to~$P_5$ one
-    by one. Each moved token receives a fresh identifier from the counter
-    in~$P_4$ and the ring size~$N$. The process with identifier~$0$ starts in
-    the state~$\iota_T$, that is, with the token, and all other processes
-    start in~$\iota_N$.
-  \item \emph{Token passing.} In~$P_5$, transition~$\mathit{Int}$ performs
-    internal steps, and $\mathit{Pass}$ passes the token from process~$i$ to
-    process~$i \oplus 1$. Its guard expresses
-    $(c_1 + 1) \bmod c_2 = d_1$ in LIA, since identifiers are smaller than
-    the ring size. As in Section~\ref{sec:vaccination},
-    $\mathit{Idle}$ lets every process token skip a round. Finally,
-    $\mathit{Det}$ moves a process in a bad state to~$\mathit{Err}$.
+  \item \emph{Counting.} While the phase token is in~$P_{\mathit{accum}}$,
+    transition~$T_{\mathit{IncN}}$ moves the tokens from $P_{\mathit{init}}$
+    to~$P_{\mathit{counted}}$ one by one, and increments the counter in~$P_N$.
+  \item \emph{Assigning identifiers.} Transition~$T_{\mathit{EndCount}}$
+    moves the phase token to~$P_{\mathit{tag}}$. From then on, the counter
+    in~$P_N$ holds the ring size~$N$. Transitions $T_{\mathit{own}}$
+    and~$T_{\mathit{follow}}$ move the tokens from $P_{\mathit{counted}}$
+    to~$P_{\mathit{active}}$ one by one. Each moved token receives a fresh
+    identifier from the counter in~$P_{\mathit{id}}$ and the ring size~$N$.
+    The process with identifier~$0$ starts in the state~$\iota_T$, that is,
+    it owns the token, and all other processes start in~$\iota_N$.
+  \item \emph{Token passing.} In~$P_{\mathit{active}}$, the transitions
+    $T_{\mathit{Internal}[q, r]}$ perform internal steps, and the transitions
+    $T_{\mathit{Pass}[q_1, \theta, q_2, r_1, r_2]}$ pass the token from
+    process~$i$ to process~$i \oplus 1$. The guard of the latter expresses
+    $(c_1.v + 1) \bmod c_1.N = c_2.v$ in LIA, since identifiers are smaller than
+    the ring size. As in Section~\ref{sec:vaccination}, $T_{\mathit{Idle}}$
+    lets every process token skip a round. Finally, $T_{\mathit{Detect}[q]}$
+    moves a process in the bad state~$q$ to~$P_{\mathit{Err}}$.
 \end{enumerate}
 
 \paragraph{No inhibitor arcs.}
-Ideally, $T_2^0$ and~$T_2^+$ would fire only once $P_1$ is empty, and
-$\mathit{Pass}$ would fire only once $P_2$ is empty. Since \DCPN{0} has no
-inhibitor arcs, we cannot test these conditions, but neither is needed:
+Ideally, $T_{\mathit{own}}$ and~$T_{\mathit{follow}}$ would fire only once
+$P_{\mathit{init}}$ is empty, and the transitions $T_{\mathit{Pass}[\dots]}$
+would fire only once $P_{\mathit{counted}}$ is empty. Since \DCPN{0} has no inhibitor arcs, we
+cannot test these conditions, but neither is needed:
 \begin{itemize}
-  \item \emph{Emptiness of~$P_1$.} The phase token replaces this test.
-    If $D$ fires while $P_1$ is not empty, the remaining tokens of~$P_1$ are
-    stranded, since $T_1$ requires the phase token in~$B$. Then the ring is
-    smaller, which does not matter, since the ring size is existentially
-    quantified.
-  \item \emph{Emptiness of~$P_2$.} Process tokens may move before all
+  \item \emph{Emptiness of~$P_{\mathit{init}}$.} The phase token replaces
+    this test. If $T_{\mathit{EndCount}}$ fires while $P_{\mathit{init}}$ is
+    not empty, the remaining tokens of~$P_{\mathit{init}}$ are stranded,
+    since $T_{\mathit{IncN}}$ requires the phase token
+    in~$P_{\mathit{accum}}$. Then the ring is smaller, which does not matter,
+    since the ring size is existentially quantified.
+  \item \emph{Emptiness of~$P_{\mathit{counted}}$.} Process tokens may move before all
     identifiers are assigned. A process that has not been assigned yet
     behaves like a process that stays in~$\iota_N$. In particular,
-    $\mathit{Pass}$ cannot pass the token to it, since the guard
-    of~$\mathit{Pass}$ requires its process token.
+    $T_{\mathit{Pass}[\dots]}$ cannot pass the token to it, since its guard
+    requires the process token of the receiver.
 \end{itemize}
 
-We say that $\mathit{Err}$ is \emph{markable} from~$\mathcal{I}_n$ if some
-execution that starts with the initial marking defined by~$\mathcal{I}_n$
-contains a marking with a token in~$\mathit{Err}$.
+We say that $P_{\mathit{Err}}$ is \emph{markable} from~$\mathcal{I}_n$ if
+some execution that starts with the initial marking defined
+by~$\mathcal{I}_n$ contains a marking with a token in~$P_{\mathit{Err}}$.
 
 \begin{theorem}\label{thm:undecidable}
-  For every $n \in \NatZero$, the place $\mathit{Err}$ is markable
+  For every $n \in \NatZero$, the place $P_{\mathit{Err}}$ is markable
   from~$\mathcal{I}_n$ iff there are $N$ with $2 \le N \le n$ and a
   reachable global state~$s$ of the ring of size~$N$ with
   $s(i) \in \mathit{Bad}$ for some~$i$. Consequently, the following problem
-  is undecidable: given a \DCPN{0} with places $P_1$ and~$\mathit{Err}$ and
-  a family of initialisation functions~$\mathcal{I}_n$ that differ only in
-  the number~$n$ of tokens in~$P_1$, is $\mathit{Err}$ markable
+  is undecidable: given a \DCPN{0} with places $P_{\mathit{init}}$
+  and~$P_{\mathit{Err}}$ and a family of initialisation
+  functions~$\mathcal{I}_n$ that differ only in the number~$n$ of tokens
+  in~$P_{\mathit{init}}$, is $P_{\mathit{Err}}$ markable
   from~$\mathcal{I}_n$ for some~$n$?
 \end{theorem}
 
@@ -829,79 +873,85 @@ contains a marking with a token in~$\mathit{Err}$.
   Since $\mathcal{V}_P(c) = \bar{0}$ for every place~$P$, a tick of every
   duration~$h > 0$ is possible and leaves the marking unchanged. Since every
   marking has a successor round, every finite sequence of rounds extends to
-  an execution. Hence, $\mathit{Err}$ is markable from~$\mathcal{I}_n$ iff
-  there are rounds $\bfm_0 \Rightarrow \bfm_1 \Rightarrow \dots \Rightarrow
-  \bfm_\ell$, where $\bfm_0$ is the initial marking and $\bfm_\ell$ has a
-  token in~$\mathit{Err}$.
+  an execution. Hence, $P_{\mathit{Err}}$ is markable from~$\mathcal{I}_n$
+  iff there are rounds $\bfm_0 \Rightarrow \bfm_1 \Rightarrow \dots
+  \Rightarrow \bfm_\ell$, where $\bfm_0$ is the initial marking and
+  $\bfm_\ell$ has a token in~$P_{\mathit{Err}}$.
 
   ($\Leftarrow$) Let $s_0, s_1, \dots, s_r$ be a sequence of steps of the
   ring of size~$N$, where $2 \le N \le n$ and $s_r(i) \in \mathit{Bad}$. We
   construct the rounds as follows:
   \begin{itemize}
-    \item In each of the first $N$ rounds, $T_1$ fires.
-    \item In the next round, $D$ fires. Then the counter in~$P_3$ is~$N$,
-      and $P_2$ holds $N$ tokens.
-    \item In each of the next $N$ rounds, $T_2^0$ fires (in the first of
-      these rounds) or $T_2^+$ fires (in the other rounds), and
-      $\mathit{Idle}$ consumes all tokens in~$P_5$. Afterwards, $P_5$
-      holds exactly the tokens $(i, N, s_0(i))$ for $0 \le i < N$.
+    \item In each of the first $N$ rounds, $T_{\mathit{IncN}}$ fires.
+    \item In the next round, $T_{\mathit{EndCount}}$ fires. Then the counter
+      in~$P_N$ is~$N$, and $P_{\mathit{counted}}$ holds $N$ tokens.
+    \item In each of the next $N$ rounds, $T_{\mathit{own}}$ fires (in the
+      first of these rounds) or $T_{\mathit{follow}}$ fires (in the other
+      rounds), and $T_{\mathit{Idle}}$ consumes all tokens
+      in~$P_{\mathit{active}}$. Afterwards, $P_{\mathit{active}}$ holds
+      exactly the tokens $(i, N, s_0(i))$ for $0 \le i < N$.
     \item For every step from $s_{l-1}$ to~$s_l$, one round fires the
-      corresponding transition $\mathit{Int}_{q, q'}$ on the token of
+      corresponding transition $T_{\mathit{Internal}[q, r]}$ on the token of
       process~$i$, or the corresponding
-      $\mathit{Pass}_{q, \theta, q', r, r'}$ on the tokens of processes~$i$
-      and~$i \oplus 1$. $\mathit{Idle}$ consumes all other tokens in~$P_5$.
-      Since $P_2$ is empty and the phase token is in~$A$, no other
-      transition is enabled, so the round is maximal. Afterwards, $P_5$
-      holds exactly the tokens $(i, N, s_l(i))$.
-    \item In the last round, $\mathit{Det}_{s_r(i)}$ fires on the token of
-      process~$i$.
+      $T_{\mathit{Pass}[q_1, \theta, q_2, r_1, r_2]}$ on the tokens of
+      processes~$i$ and~$i \oplus 1$. $T_{\mathit{Idle}}$ consumes all other
+      tokens in~$P_{\mathit{active}}$. Since $P_{\mathit{counted}}$ is empty and the phase
+      token is in~$P_{\mathit{tag}}$, no other transition is enabled, so the
+      round is maximal. Afterwards, $P_{\mathit{active}}$ holds exactly the
+      tokens $(i, N, s_l(i))$.
+    \item In the last round, $T_{\mathit{Detect}[s_r(i)]}$ fires on the
+      token of process~$i$.
   \end{itemize}
 
   ($\Rightarrow$) Consider rounds from the initial marking up to the first
-  round in which a transition $\mathit{Det}_q$ fires. Every transition has
-  as many output arcs as input arcs, so the markings contain $n + 3$ tokens.
-  While the phase token is in~$B$, every round fires
-  exactly one of $T_1$ and~$D$, since both consume the phase token and $D$
-  is always enabled. Hence, the counter in~$P_3$ equals the number of tokens
-  in~$P_2$, and no process token exists. Once $D$ has fired, the phase token
-  stays in~$A$ forever, $T_1$ is disabled, and the counter in~$P_3$ keeps its
-  value~$N$, where $N \le n$. Then the following invariant holds, where $j$ is
-  the value of the counter in~$P_4$:
+  round in which a transition $T_{\mathit{Detect}[q]}$ fires. Every
+  transition has as many output arcs as input arcs, so the markings contain
+  $n + 3$ tokens. While the phase token is in~$P_{\mathit{accum}}$, every
+  round fires exactly one of $T_{\mathit{IncN}}$ and~$T_{\mathit{EndCount}}$,
+  since both consume the phase token and $T_{\mathit{EndCount}}$ is always
+  enabled. Hence, the counter in~$P_N$ equals the number of tokens in~$P_{\mathit{counted}}$,
+  and no process token exists. Once $T_{\mathit{EndCount}}$ has fired, the
+  phase token stays in~$P_{\mathit{tag}}$ forever, $T_{\mathit{IncN}}$ is
+  disabled, and the counter in~$P_N$ keeps its value~$N$, where $N \le n$.
+  Then the following invariant holds, where $j$ is the value of the counter
+  in~$P_{\mathit{id}}$:
   \begin{itemize}
-    \item $P_2$ holds $N - j$ tokens;
-    \item $P_5$ holds exactly one token $(i, N, q_i)$ for every $i < j$;
+    \item $P_{\mathit{counted}}$ holds $N - j$ tokens;
+    \item $P_{\mathit{active}}$ holds exactly one token $(i, N, q_i)$ for
+      every $i < j$;
     \item if $j \ge 1$, then $N \ge 2$, and the global state~$s$ with
       $s(i) = q_i$ for $i < j$ and $s(i) = \iota_N$ for $j \le i < N$ is
       reachable in the ring of size~$N$.
   \end{itemize}
-  The invariant holds when $D$ fires, since then $j = 0$ and $P_5$ is
-  empty. Consider a round that preserves the invariant. Since the counter
-  token in~$P_4$ is consumed by $T_2^0$ and~$T_2^+$, at most one of them
-  fires in the round:
+  The invariant holds when $T_{\mathit{EndCount}}$ fires, since then $j = 0$
+  and $P_{\mathit{active}}$ is empty. Consider a round that preserves the
+  invariant. Since the counter token in~$P_{\mathit{id}}$ is consumed by
+  $T_{\mathit{own}}$ and~$T_{\mathit{follow}}$, at most one of them fires in
+  the round:
   \begin{itemize}
-    \item If $T_2^0$ fires, then $j = 0$ and $N \ge 2$, and it adds the
-      token $(0, N, \iota_T)$. Then $s$ becomes the initial global
+    \item If $T_{\mathit{own}}$ fires, then $j = 0$ and $N \ge 2$, and it
+      adds the token $(0, N, \iota_T)$. Then $s$ becomes the initial global
       state~$s_0$.
-    \item If $T_2^+$ fires, then it adds the token $(j, N, \iota_N)$, which
-      agrees with $s(j) = \iota_N$.
+    \item If $T_{\mathit{follow}}$ fires, then it adds the token
+      $(j, N, \iota_N)$, which agrees with $s(j) = \iota_N$.
   \end{itemize}
   The other firings in the round consume pairwise distinct process tokens.
   Their guards are evaluated on the snapshot, and the identifiers are
   smaller than~$N$:
   \begin{itemize}
-    \item A firing of $\mathit{Int}_{q, q'}$ on the token of process~$i$ is
-      an internal step of process~$i$.
-    \item The guard of $\mathit{Pass}_{q, \theta, q', r, r'}$ on the tokens
-      of processes $i$ and~$i'$ implies $i' = i \oplus 1$, so its firing is
-      a token passing from~$i$ to~$i \oplus 1$.
-    \item $\mathit{Idle}$ changes nothing.
+    \item A firing of $T_{\mathit{Internal}[q, r]}$ on the token of
+      process~$i$ is an internal step of process~$i$.
+    \item The guard of $T_{\mathit{Pass}[q_1, \theta, q_2, r_1, r_2]}$ on the
+      tokens of processes $i$ and~$i'$ implies $i' = i \oplus 1$, so its
+      firing is a token passing from~$i$ to~$i \oplus 1$.
+    \item $T_{\mathit{Idle}}$ changes nothing.
   \end{itemize}
   Since these steps involve pairwise distinct processes, they can be
   performed one after another in any order. This yields a sequence of steps
   from~$s$ to the global state of the new marking. Hence, the invariant is
   preserved.
 
-  Finally, the first firing of $\mathit{Det}_q$ consumes a token
+  Finally, the first firing of $T_{\mathit{Detect}[q]}$ consumes a token
   $(i, N, q)$ with $q \in \mathit{Bad}$ from the snapshot. By the
   invariant, $N \ge 2$, and a global state~$s$ with $s(i) = q$ is reachable
   in the ring of size~$N$.
@@ -913,9 +963,10 @@ contains a marking with a token in~$\mathit{Err}$.
 
 \begin{corollary}[No computable cutoff]\label{cor:cutoff}
   There is no computable function~$f$ that maps every \DCPN{0} with places
-  $P_1$ and~$\mathit{Err}$ to a number such that the following holds: if
-  $\mathit{Err}$ is markable from~$\mathcal{I}_n$ for some~$n$, then it is
-  markable from~$\mathcal{I}_n$ for some $n \le f(\mathcal{N})$.
+  $P_{\mathit{init}}$ and~$P_{\mathit{Err}}$ to a number such that the
+  following holds: if $P_{\mathit{Err}}$ is markable from~$\mathcal{I}_n$
+  for some~$n$, then it is markable from~$\mathcal{I}_n$ for some
+  $n \le f(\mathcal{N})$.
 \end{corollary}
 
 \begin{proof}
@@ -948,8 +999,8 @@ contains a marking with a token in~$\mathit{Err}$.
   undecidability stems from the unbounded number of tokens alone.
   Corollary~\ref{cor:cutoff} is what a small model theorem has to work
   around. For instance, it has to forbid guards like that of
-  $\mathit{Pass}$, which compares the colours of two tokens and thus lets the
-  tokens arrange themselves in a ring.
+  $T_{\mathit{Pass}[q_1, \theta, q_2, r_1, r_2]}$, which compares the colours
+  of two tokens and thus lets the tokens arrange themselves in a ring.
 
   The construction also works for $\Dom = \Real$, since all colours remain
   integers.
