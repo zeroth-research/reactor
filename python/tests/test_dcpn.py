@@ -595,6 +595,419 @@ def test_any_truth_table():
         assert _evaluate(terms, result, dict(zip((a, b, c), values))) is any(values)
 
 
+# Transition controller -------------------------------------------------------
+
+
+class _System:
+    """Run the closed system ``Module(*net.to_modules(...))`` round by round.
+
+    ``marking`` optionally overrides the initial state per slot, with ``None``
+    for an absent token or ``(place, {field: value})`` for a resident one.
+    """
+
+    def __init__(self, net, *, token_capacity, marking=()):
+        self.tokens, self.controller = net.to_modules(token_capacity=token_capacity)
+        self.net = net
+        self.module = Module(*self.tokens, self.controller)
+        self.state = _init(self.module)
+        for token, entry in zip(self.tokens, marking):
+            if entry is None:
+                continue
+            place, colors = entry
+            self.state[X(token.place)] = torch.tensor([[net.place_ids[place]]])
+            for field, value in colors.items():
+                self.state[X(getattr(token.colors[place], field))] = torch.tensor([[value]])
+
+    def step(self):
+        state = _latch_updated_ctrl(self.module, self.state)
+        execute_update(state, self.module.atoms)
+        self.state = state
+        return self
+
+    def places(self):
+        return [self.state[X(token.place)].item() for token in self.tokens]
+
+    def color(self, slot, place, field):
+        return self.state[X(getattr(self.tokens[slot].colors[place], field))].item()
+
+    @property
+    def transition_round(self):
+        return self.state[X(self.controller.transition_round)].item()
+
+    @property
+    def overflow(self):
+        return self.state[X(self.controller.overflow)].item()
+
+
+def test_controller_closes_net():
+    @obj
+    class Work(Place):
+        x = Var(INT)
+
+    @obj
+    class Move(ImmediateTransition):
+        inputs = (Work,)
+        outputs = (Work,)
+
+        def produce(self, token):
+            return (Work.Color(x=token.x),)
+
+    net = _net(Work, transitions=(Move,))
+    lowered = net.to_modules(token_capacity=2)
+    assert isinstance(lowered, DCPNReactiveModules)
+    tokens, controller = lowered
+    assert lowered.tokens is tokens and lowered.controller is controller
+    assert len(tokens) == 2
+    assert all(isinstance(token, TokenModule) for token in tokens)
+    assert isinstance(controller, TransitionControllerModule)
+    assert all(token.transition_round is controller.transition_round for token in tokens)
+
+    # tokens alone are open, the composition with the controller is closed
+    assert all(token.open() for token in tokens)
+    assert Module(*tokens, controller).closed()
+
+    # tokens await the controller; the controller only reads latched token state
+    assert not controller.atoms[0].wait
+    for token in tokens:
+        assert token.place in controller.atoms[0].read
+        assert {token.in_transition, token.new_place, controller.transition_round} <= set(token.atoms[0].wait)
+
+
+def test_readme_example():
+    @obj
+    class Work(Place):
+        progress = Var(INT)
+
+        def update(self, progress):
+            return (progress + 1,)
+
+    @obj
+    class Finished(Place):
+        pass
+
+    @obj
+    class Source(ImmediateTransition):
+        inputs = ()
+        outputs = (Work,)
+
+        def produce(self):
+            return (Work.Color(progress=0),)
+
+    @obj
+    class Complete(GuardedTransition):
+        inputs = (Work,)
+        outputs = (Finished,)
+
+        def guard(self, token):
+            return token.progress >= 3
+
+        def produce(self, token):
+            return (Finished.Color(),)
+
+    net = _net(Work, Finished, transitions=(Source, Complete))
+    system = _System(net, token_capacity=2)
+    assert system.places() == [0, 0]
+    assert system.overflow is False
+
+    # `Source` fills one slot per round; resident tokens do not update meanwhile
+    system.step()
+    assert (system.places(), system.transition_round, system.overflow) == ([1, 0], True, False)
+    system.step()
+    assert (system.places(), system.transition_round, system.overflow) == ([1, 1], True, False)
+    assert [system.color(slot, Work, "progress") for slot in (0, 1)] == [0, 0]
+
+    # capacity is exhausted: `Source` overflows, all resident tokens update
+    for progress in (1, 2, 3):
+        system.step()
+        assert (system.places(), system.transition_round, system.overflow) == ([1, 1], False, True)
+        assert [system.color(slot, Work, "progress") for slot in (0, 1)] == [progress] * 2
+
+    # `Complete` is urgent: it fires as soon as the latched guard holds,
+    # in slot order, and the other token does not update in that round
+    system.step()
+    assert (system.places(), system.transition_round) == ([2, 1], True)
+    assert system.color(1, Work, "progress") == 3
+    system.step()
+    assert (system.places(), system.transition_round) == ([2, 2], True)
+    system.step()
+    assert (system.places(), system.transition_round) == ([2, 2], False)
+
+
+def test_global_precedence():
+    @obj
+    class Work(Place):
+        x = Var(INT)
+
+        def update(self, x):
+            return (x + 1,)
+
+    @obj
+    class Idle(Place):
+        c = Var(INT)
+
+        def update(self, c):
+            return (c + 1,)
+
+    @obj
+    class Done(Place):
+        pass
+
+    @obj
+    class Fire(GuardedTransition):
+        inputs = (Work,)
+        outputs = (Done,)
+
+        def guard(self, token):
+            return token.x >= 2
+
+        def produce(self, token):
+            return (Done.Color(),)
+
+    net = _net(Work, Idle, Done, transitions=(Fire,))
+    system = _System(net, token_capacity=2, marking=[(Work, {"x": 0}), (Idle, {"c": 0})])
+
+    # no transition is enabled: every token updates
+    for value in (1, 2):
+        system.step()
+        assert system.transition_round is False
+        assert (system.color(0, Work, "x"), system.color(1, Idle, "c")) == (value, value)
+
+    # `Fire` fires on the latched value 2; the bystander stutters
+    system.step()
+    assert system.transition_round is True
+    assert system.places() == [3, 2]
+    assert system.color(1, Idle, "c") == 2
+
+    system.step()
+    assert system.transition_round is False
+    assert system.color(1, Idle, "c") == 3
+
+
+def test_one_firing_per_round_in_definition_order():
+    @obj
+    class A(Place):
+        pass
+
+    @obj
+    class B(Place):
+        pass
+
+    @obj
+    class C(Place):
+        pass
+
+    @obj
+    class D(Place):
+        pass
+
+    def move(src, dst):
+        @obj
+        class Move(ImmediateTransition):
+            inputs = (src,)
+            outputs = (dst,)
+
+            def produce(self, token):
+                return (dst.Color(),)
+        return Move
+
+    # `ToD` competes with the earlier `ToB`; `ToC` consumes the output of `ToB`
+    to_c, to_b, to_d = move(B, C), move(A, B), move(A, D)
+    net = _net(A, B, C, D, transitions=(to_c, to_b, to_d))
+    a, b, c = (net.place_ids[place] for place in (A, B, C))
+    system = _System(net, token_capacity=2, marking=[(A, {}), (A, {})])
+
+    system.step()   # `ToB` on slot 0 only
+    assert system.places() == [b, a]
+    system.step()   # `ToC` sees the output of the previous round
+    assert system.places() == [c, a]
+    system.step()
+    assert system.places() == [c, b]
+    system.step()
+    assert system.places() == [c, c]
+    system.step()
+    assert system.transition_round is False
+
+
+def test_binding_order_guard_and_removal():
+    @obj
+    class Work(Place):
+        x = Var(INT)
+
+    @obj
+    class Take(GuardedTransition):
+        inputs = (Work,)
+        outputs = ()
+
+        def guard(self, token):
+            return token.x > 3
+
+    net = _net(Work, transitions=(Take,))
+    system = _System(net, token_capacity=3, marking=[(Work, {"x": 5}), (Work, {"x": 1}), (Work, {"x": 7})])
+
+    system.step()
+    assert system.places() == [0, 1, 1]
+    system.step()
+    assert system.places() == [0, 1, 0]
+    system.step()
+    assert (system.places(), system.transition_round) == ([0, 1, 0], False)
+
+
+def test_multiple_inputs_and_outputs():
+    @obj
+    class Work(Place):
+        x = Var(INT)
+
+    @obj
+    class Done(Place):
+        total = Var(INT)
+
+    @obj
+    class Merge(ImmediateTransition):
+        inputs = (Work, Work)
+        outputs = (Done,)
+
+        def produce(self, a, b):
+            return (Done.Color(total=a.x + 2 * b.x),)
+
+    @obj
+    class Split(ImmediateTransition):
+        inputs = (Done,)
+        outputs = (Work, Work, Work)
+
+        def produce(self, done):
+            return tuple(Work.Color(x=done.total + i) for i in range(3))
+
+    net = _net(Work, Done, transitions=(Merge, Split))
+    work, done = net.place_ids[Work], net.place_ids[Done]
+    system = _System(net, token_capacity=3, marking=[(Work, {"x": 1}), (Work, {"x": 10}), None])
+
+    # binding (0, 1): slot 0 is reused, the surplus consumed slot 1 becomes absent
+    system.step()
+    assert system.places() == [done, 0, 0]
+    assert system.color(0, Done, "total") == 21
+
+    # slot 0 is reused; the extra outputs take the lowest absent slots in order
+    system.step()
+    assert system.places() == [work] * 3
+    assert [system.color(slot, Work, "x") for slot in range(3)] == [21, 22, 23]
+    assert system.overflow is False
+
+
+def test_extra_outputs_take_fresh_slots():
+    @obj
+    class Work(Place):
+        x = Var(INT)
+
+    @obj
+    class Other(Place):
+        y = Var(INT)
+
+    @obj
+    class Spawn(GuardedTransition):
+        inputs = (Work,)
+        outputs = (Work, Work, Work)
+
+        def guard(self, token):
+            return token.x == 1
+
+        def produce(self, token):
+            return (Work.Color(x=10), Work.Color(x=20), Work.Color(x=30))
+
+    net = _net(Work, Other, transitions=(Spawn,))
+    work, other = net.place_ids[Work], net.place_ids[Other]
+    # absent slots 0, 2 and 4 around the bound slot 1 and an unrelated token in slot 3
+    system = _System(
+        net, token_capacity=5, marking=[None, (Work, {"x": 1}), None, (Other, {"y": 7}), None]
+    )
+
+    system.step()
+    assert (system.transition_round, system.overflow) == (True, False)
+    # the output paired with the input reuses the bound slot 1; the extra outputs
+    # take the lowest absent slots 0 and 2, in order; slot 4 stays absent
+    assert system.places() == [work, work, work, other, 0]
+    assert [system.color(slot, Work, "x") for slot in range(3)] == [20, 10, 30]
+    # the resident token in slot 3 is not touched
+    assert system.color(3, Other, "y") == 7
+    in_transition = [system.state[X(token.in_transition)].item() for token in system.tokens]
+    assert in_transition == [True, True, True, False, False]
+
+    # the guard no longer holds on any token
+    system.step()
+    assert system.transition_round is False
+    assert system.places() == [work, work, work, other, 0]
+
+
+def test_transition_to_the_same_place_updates_colors():
+    @obj
+    class Work(Place):
+        x = Var(INT)  # no `update`: only transitions change `x`
+
+    @obj
+    class Bump(GuardedTransition):
+        inputs = (Work,)
+        outputs = (Work,)
+
+        def guard(self, token):
+            return token.x < 3
+
+        def produce(self, token):
+            return (Work.Color(x=token.x + 1),)
+
+    net = _net(Work, transitions=(Bump,))
+    work = net.place_ids[Work]
+    system = _System(net, token_capacity=2, marking=[(Work, {"x": 0}), None])
+
+    # the token stays in `Work`, but takes the produced color in each firing
+    for x in range(1, 4):
+        system.step()
+        assert system.transition_round is True
+        assert system.places() == [work, 0]
+        assert system.color(0, Work, "x") == x
+        assert system.state[X(system.tokens[0].in_transition)].item() is True
+
+    # the guard no longer holds
+    system.step()
+    assert system.transition_round is False
+    assert system.color(0, Work, "x") == 3
+
+
+def test_overflow_skips_to_later_candidates():
+    @obj
+    class Work(Place):
+        x = Var(INT)
+
+    @obj
+    class Done(Place):
+        pass
+
+    @obj
+    class Grow(ImmediateTransition):
+        inputs = (Work,)
+        outputs = (Work, Work, Work)
+
+        def produce(self, token):
+            return (Work.Color(x=token.x),) * 3
+
+    @obj
+    class Finish(ImmediateTransition):
+        inputs = (Work,)
+        outputs = (Done,)
+
+        def produce(self, token):
+            return (Done.Color(),)
+
+    net = _net(Work, Done, transitions=(Grow, Finish))
+    system = _System(net, token_capacity=2, marking=[(Work, {"x": 0}), None])
+
+    system.step()
+    assert system.places() == [net.place_ids[Done], 0]
+    assert (system.transition_round, system.overflow) == (True, True)
+
+    # overflow is sticky
+    system.step()
+    assert (system.transition_round, system.overflow) == (False, True)
+
+
 # Validation ------------------------------------------------------------------
 
 
