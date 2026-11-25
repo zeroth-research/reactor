@@ -33,7 +33,7 @@ def atom_to_lean_functional(ctx: LeanContext) -> str:
 
     lines = []
     cod = product_type(ctx.ctrl_next)
-    noncomp = "noncomputable " if ctx.uses_real else ""
+    noncomp = ctx.noncomputable
 
     init_dom = f"(extl_n: {product_type(ctx.extl_next)})"
     lines.append(f"@[simp] {noncomp}def init {init_dom} : {cod} :=")

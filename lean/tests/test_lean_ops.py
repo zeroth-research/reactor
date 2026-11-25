@@ -23,9 +23,8 @@ from reactor import Wire, Term, Module, Bool, Int, Word, Var, X, tensor
 from reactor.tensor import Havoc, Skip
 from reactor_lean import ModuleToLean4
 from reactor_lean.lowering.sorts import THEORIES, itype_name, theory_of
-from reactor_lean.codegen.context import LeanContext, lean_context
+from reactor_lean.codegen.context import LeanContext, lean_context, lean_gaps
 from reactor_lean.errors import Refused
-from reactor_lean.codegen.terms import lean_gaps
 from reactor_lean.lowering import ops
 from testdata import all_encodings
 from reactor_lean.lowering.ops import (
@@ -539,6 +538,25 @@ def test_scale_by_rows_of_two_numbers_has_no_lean_form():
     update = [Term(tensor.int.Scale(torch.tensor([[2, 3]])), [X(x)], [x])]
     with pytest.raises(Refused, match="no Lean form: .*`int.Scale`.* no `diag"):
         lean_context(Module.sequential([x], init, update))
+
+
+def test_an_affine_map_of_arrays_that_are_not_torch_is_read_as_torch():
+    """`reactor.jax`'s `Scale` and `Linear` hold JAX arrays, which have
+    none of torch's `numel`/`diag`; numpy stands in for one here, as JAX
+    is not installed."""
+    import numpy
+    from types import SimpleNamespace
+    from reactor_lean.codegen.literals import affine_gap, affine_tensors
+
+    Scale = type("Scale", (), {"tensor": numpy.array([[2], [3]])})
+    Linear = type("Linear", (), {"a": numpy.array([[1, 2]]),
+                                 "b": numpy.array([[5, 5]])})
+    scale, linear = (SimpleNamespace(itype=op()) for op in (Scale, Linear))
+    assert affine_gap(scale) is None and affine_gap(linear) is None
+    A, b = affine_tensors(scale)
+    assert A.tolist() == [[2, 0], [0, 3]] and b.tolist() == [[0], [0]]
+    A, b = affine_tensors(linear)
+    assert A.tolist() == [[1, 2]] and b.tolist() == [[5]]
 
 
 def test_linear_with_a_bias_that_differs_across_columns_has_no_lean_form():

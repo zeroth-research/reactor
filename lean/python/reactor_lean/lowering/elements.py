@@ -86,11 +86,6 @@ class FlatLayout:
         i = self._position(wire)
         return self._offsets[i], wire_shape(wire).total
 
-    def slots_of(self, wire: Wire) -> "tuple[Slot, ...]":
-        """`wire`'s own slots, in flat order."""
-        offset, size = self.span(wire)
-        return self.slots[offset : offset + size]
-
     def flat_accessors(self, base: str) -> "list[str]":
         """Read every slot out of a flat product named `base`: `base.2.1`, …"""
         return [f"{base}{product_accessor(k, self.total)}" for k in range(self.total)]

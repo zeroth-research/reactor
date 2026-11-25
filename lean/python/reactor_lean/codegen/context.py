@@ -6,8 +6,9 @@ from reactor import Module, Real, Var, Wire
 
 from ..errors import Refused
 from ..lowering.elements import ModuleWires, product_accessor
-from .literals import ConstantRegistry
-from .terms import lean_gaps
+from ..lowering.ops import lean_gap
+from ..lowering.sorts import itype_name, theory_of
+from .literals import ConstantRegistry, affine_gap
 
 
 class LeanContext:
@@ -67,6 +68,12 @@ class LeanContext:
         self.init_wire_names = bind_wires(self.init_groups)
         self.update_wire_names = bind_wires(self.update_groups)
 
+    @property
+    def noncomputable(self) -> str:
+        """What a definition of the module's blocks starts with: `noncomputable `
+        when the module computes with Reals, else nothing."""
+        return "noncomputable " if self.uses_real else ""
+
 
 def lean_context(module) -> LeanContext:
     """The module's `LeanContext`, refusing a module with no Lean form.
@@ -83,6 +90,47 @@ def lean_context(module) -> LeanContext:
     if gaps:
         raise Refused("this module has no Lean form: " + "; also ".join(gaps))
     return ctx
+
+
+def lean_gaps(ctx) -> list[str]:
+    """Every operator in this module that no Lean column can write.
+
+    One sentence per operator, in the order the module first reaches for it:
+    which block, which wire, and the reason the op table records. Ops of
+    two theories that share a name (`word.unsigned.Div`, `word.signed.Div`)
+    are two operators. A `Linear` or `Scale` term is asked about on its
+    own, since whether it has a Lean form is a fact of the constants baked
+    into it (`literals.affine_gap`).
+
+    Asked before anything is generated, which is the whole point. The same
+    module met during codegen raises about a missing table cell, half way
+    through the project. Every term is asked about, read or not, because
+    the functional and scalar encodings translate a block's terms as they
+    are. A module that generates has nothing to report here: the gap is an
+    operator with no matrix form (:func:`lowering.ops.gap_of`), or an
+    affine op that is no affine map, and the functional encoding every
+    project has is made of matrix forms alone.
+    """
+    out, seen = [], set()
+    for block in ("init", "update"):
+        for term in getattr(ctx.atom, block):
+            theory, name = theory_of(term.itype), itype_name(term.itype)
+            if name in ("Linear", "Scale"):
+                why = affine_gap(term)
+            elif (theory, name) in seen:
+                why = None
+            else:
+                why = lean_gap(term.itype)
+                if why is not None:
+                    seen.add((theory, name))
+            if why is None:
+                continue
+            op = f"{theory}.{name}" if theory else name
+            out.append(
+                f"the `{block}` block writes wire #{term.write[0].id} with "
+                f"`{op}`, and {why}"
+            )
+    return out
 
 
 def any_float_wire(*wire_lists: list[Wire]) -> bool:

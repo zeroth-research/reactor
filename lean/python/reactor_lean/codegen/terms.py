@@ -1,10 +1,12 @@
-"""
-Translate a Python Module (reactive module with init/update blocks)
-into Lean4 code.
+"""A block's terms as Lean text.
 
-Python modules store computations as a flat list of Terms (SSA-style dataflow).
-We translate each Term into a `let` binding in a Lean function, mapping each
-IType operation to its Lean equivalent.
+A block is a flat list of Terms (SSA-style dataflow). Each becomes a `let`
+binding, its op printed by the op table's column for the encoding:
+`translate_terms_lean` the functional encoding's body, of matrices, and
+`translate_terms_scalar` the scalar encoding's, of their entries. With
+them, the product types and tuples both print, and the names of the
+scalar argmax helpers that the scalar body calls and `encodings.scalar`
+defines.
 """
 
 from __future__ import annotations
@@ -14,61 +16,18 @@ from reactor_lean.lowering.sorts import (
     dtype_to_lean_type,
     lean_elem_type,
     mat_mk,
-    theory_of,
     wire_shape,
 )
 from reactor_lean.lowering.elements import flat_indices, flat_layout
 from reactor_lean.codegen.literals import (
     ConstantRegistry,
-    affine_gap,
     constant_expr,
     linear_list_literals,
     tensor_to_lean_scalar,
 )
-from reactor_lean.lowering.ops import entrywise_shape, lean_gap, mat_emitter, scalar_emitter
+from reactor_lean.lowering.ops import entrywise_shape, mat_emitter, scalar_emitter
 
 from reactor import Wire
-
-
-def lean_gaps(ctx) -> list[str]:
-    """Every operator in this module that no Lean column can write.
-
-    One sentence per operator, in the order the module first reaches for it:
-    which block, which wire, and the reason the op table records. Ops of
-    two theories that share a name (`word.unsigned.Div`, `word.signed.Div`)
-    are two operators. A `Linear` or `Scale` term is asked about on its
-    own, since whether it has a Lean form is a fact of the constants baked
-    into it (`literals.affine_gap`).
-
-    Asked before anything is generated, which is the whole point. The same
-    module met during codegen raises about a missing table cell, half way
-    through the project. Every term is asked about, read or not, because
-    the functional and scalar encodings translate a block's terms as they
-    are. A module that generates has nothing to report here: the gap is an
-    operator with no matrix form (:func:`lowering.ops.gap_of`), or an
-    affine op that is no affine map, and the functional encoding every
-    project has is made of matrix forms alone.
-    """
-    out, seen = [], set()
-    for block in ("init", "update"):
-        for term in getattr(ctx.atom, block):
-            theory, name = theory_of(term.itype), itype_name(term.itype)
-            if name in ("Linear", "Scale"):
-                why = affine_gap(term)
-            elif (theory, name) in seen:
-                why = None
-            else:
-                why = lean_gap(term.itype)
-                if why is not None:
-                    seen.add((theory, name))
-            if why is None:
-                continue
-            op = f"{theory}.{name}" if theory else name
-            out.append(
-                f"the `{block}` block writes wire #{term.write[0].id} with "
-                f"`{op}`, and {why}"
-            )
-    return out
 
 
 def product_type(wires: list[Wire]) -> str:
@@ -79,13 +38,6 @@ def product_type(wires: list[Wire]) -> str:
         return dtype_to_lean_type(wires[0])
     parts = [dtype_to_lean_type(w) for w in wires]
     return " × ".join(parts)
-
-
-def extl_native_type(ctx) -> str:
-    """What a step of the module reads its inputs as: the latched inputs
-    and the awaited ones, `(latched) × (awaited)`. `RM`'s input type."""
-    return (f"({product_type(ctx.extl_latched)}) × "
-            f"({product_type(ctx.extl_next)})")
 
 
 def build_tuple(exprs: list[str]) -> str:

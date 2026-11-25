@@ -74,11 +74,6 @@ def load(path: str | Path, module_def: str = "module") -> Problem:
     )
 
 
-def load_module(path: str | Path, module_def: str = "module"):
-    """The module the Python file at `path` defines, without its names."""
-    return _as_module(_call(_existing(path), module_def))[0]
-
-
 def _existing(path: str | Path) -> Path:
     path = Path(path).resolve()
     if not path.exists():

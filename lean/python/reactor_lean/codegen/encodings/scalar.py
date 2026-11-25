@@ -22,6 +22,7 @@ from reactor_lean.codegen.encodings.common import (
     scalar_bindings_with_recon,
     has_block,
     scalar_eq_name,
+    scalar_unpack,
 )
 from reactor import Wire
 
@@ -162,7 +163,7 @@ def atom_to_lean_scalar(ctx: LeanContext) -> str:
     """Generate the scalar encoding inside ``namespace Scalar``, and the
     lemmas its theorems rewrite with ahead of it."""
     atom = ctx.atom
-    noncomp = "noncomputable " if ctx.uses_real else ""
+    noncomp = ctx.noncomputable
     cod = product_type_scalar(ctx.ctrl_next)
 
     lines: list[str] = []
@@ -236,9 +237,6 @@ def to_lean_scalar_equiv(ctx: LeanContext) -> str:
     """Generate theorems proving init/update = pack ∘ Scalar.init/update ∘ unpack."""
     lines: list[str] = []
 
-    def _call_arg(param: str, wires) -> str:
-        return f"(Scalar.unpack_{param} {param})" if wires else param
-
     argmax_eq_lemmas = [
         f"{argmax_scalar_name(ety, n)}_eq"
         for ety, n in _argmax_variants(ctx)
@@ -252,7 +250,7 @@ def to_lean_scalar_equiv(ctx: LeanContext) -> str:
         """`func_name` over `groups`, each a parameter and its wires."""
         vars_ = [p for p, _ in groups]
         binders = [f"({p} : {product_type(w)})" for p, w in groups]
-        scalar_args = [_call_arg(p, w) for p, w in groups]
+        scalar_args = [scalar_unpack(p, w) for p, w in groups]
         scalar_call = f"Scalar.{func_name} {' '.join(scalar_args)}"
         rhs = f"Scalar.pack ({scalar_call})"
         simp_names = (

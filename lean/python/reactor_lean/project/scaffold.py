@@ -15,9 +15,8 @@ from ..codegen.context import LeanContext
 from ..codegen.encodings import ModuleToLean4
 from .names import LINTERS_OFF, SYSTEM_LAYOUT, Layout
 from .templates import render
-from .lake_cache import lake_cache, use_lake_cache
-from .lakefile import (LEAN_TOOLCHAIN, generate_lakefile,
-                       project_requires)
+from .lake_cache import Packages, project_packages, use_lake_cache
+from .lakefile import LEAN_TOOLCHAIN, generate_lakefile
 from .main_lean import generate_main_lean
 
 
@@ -104,22 +103,20 @@ def write_files(project_dir: Path, files: Mapping[str, str]) -> None:
         print(f"Wrote {path}")
 
 
-def write_lakefile(project_dir: Path, project_name: str, *,
-                   executable: bool) -> Path:
-    """The project's `lakefile.toml`.
+def write_lakefile(project_dir: Path, project_name: str, packages: Packages,
+                   *, executable: bool) -> Path:
+    """The project's `lakefile.toml`, requiring `packages.requires`.
 
-    `create_project` writes it. With `$REACTOR_LAKE_CACHE`
-    set, the project's manifest is written with it, for the same requires
-    (`lake_cache`).
+    `create_project` writes it. With a cache, the project's manifest is
+    written with it, for the same requires (`use_lake_cache`).
     """
-    cache = lake_cache()
+    cache = packages.cache
     path = project_dir / "lakefile.toml"
-    path.write_text(
-        generate_lakefile(project_name, executable=executable))
+    path.write_text(generate_lakefile(project_name, packages.requires,
+                                      executable=executable))
     print(f"Wrote {path}")
     if cache is not None and use_lake_cache(
-            project_dir, project_requires(), name=project_name,
-            cache=cache):
+            project_dir, packages.requires, name=project_name, cache=cache):
         print(f"Wrote {project_dir / 'lake-manifest.json'}, "
               f"its packages {cache / 'packages'}")
     return path
@@ -133,6 +130,7 @@ def create_project(
     *,
     certificate: Mapping[str, str],
     source: str | None = None,
+    packages: Packages | None = None,
 ) -> Path:
     """
     Create a full Lean4 project.
@@ -147,7 +145,11 @@ def create_project(
                            as `proof.render.certificate_files` renders them.
         `source`:          The text of the input the module was read from,
                            written to `dbg/system.py` as a debug artifact.
+        `packages`:        What the lakefile requires, and the cache it
+                           builds against; `project_packages()` if not given.
     """
+    if packages is None:
+        packages = project_packages()
     project_dir = output_dir / project_name
     src_dir = project_dir / "System"
     dbg_dir = project_dir / "dbg"
@@ -165,7 +167,7 @@ def create_project(
         print("Wrote system.py")
 
     # Render and write project-level files from templates
-    write_lakefile(project_dir, project_name, executable=executable)
+    write_lakefile(project_dir, project_name, packages, executable=executable)
 
     toolchain = project_dir / "lean-toolchain"
     toolchain.write_text(

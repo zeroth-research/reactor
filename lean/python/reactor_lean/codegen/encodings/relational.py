@@ -33,6 +33,7 @@ from reactor_lean.codegen.encodings.common import (
     prepend_recon,
     flat_slice,
     effect_type,
+    scalar_unpack,
 )
 
 
@@ -52,7 +53,7 @@ from reactor_lean.codegen.encodings.common import (
 class RelSyntax:
     """What a slot is in one encoding."""
 
-    noncomputable: bool  # the bodies compute with reals
+    noncomp: str  # `LeanContext.noncomputable`
     slot_ty: Callable[[int], str]  # codomain of slot `i`'s body
     project: Callable[[str, int], str]  # slot `i` of a state expression
     # Extra `simp only` lemmas the `*_eq` proofs need. The scalar domain's
@@ -112,12 +113,11 @@ def emit_rel_block(
     the way that producer indents.
     """
     slots = range(len(bodies))
-    noncomp = "noncomputable " if syn.noncomputable else ""
     lines: "list[str]" = []
 
     for i, body in enumerate(bodies):
         lines.append(
-            f"@[simp] {noncomp}def {blk.body_name}_{i}{blk.binders} "
+            f"@[simp] {syn.noncomp}def {blk.body_name}_{i}{blk.binders} "
             f": {syn.slot_ty(i)} :="
         )
         lines.append(body)
@@ -314,25 +314,13 @@ def _pack_bridge_theorem(
     ]
 
 
-def _unpack(param: str, wires, var: str = "") -> str:
-    """`var`, read back as a matrix by `Scalar.unpack_<param>`.
-
-    Left alone when the group is empty: `unpack_extl_l` of no wires is `Unit`
-    to `Unit`, and `scalar.py` does not emit it. `var` defaults to the
-    parameter's own name; the two init/trans theorems quantify the *next*
-    ctrl state as `ctrl'` but still read it back with `unpack_ctrl`.
-    """
-    var = var or param
-    return f"(Scalar.unpack_{param} {var})" if wires else var
-
-
 def atom_to_lean_mat_rel(ctx: LeanContext) -> str:
     """Generate the matrix-domain relational encoding inside ``namespace Rel``."""
     n_ctrl = len(ctx.ctrl_next)
     dom = _domain(ctx, product_type)
 
     syn = RelSyntax(
-        noncomputable=ctx.uses_real,
+        noncomp=ctx.noncomputable,
         slot_ty=lambda i: dtype_to_lean_type(ctx.ctrl_next[i]),
         project=lambda e, i: f"{e}{product_accessor(i, n_ctrl)}",
     )
@@ -377,7 +365,7 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
     dom = _domain(ctx, product_type_scalar)
 
     syn = RelSyntax(
-        noncomputable=ctx.uses_real,
+        noncomp=ctx.noncomputable,
         slot_ty=lambda i: effect_type(ctx.ctrl_next[i]),
         project=lambda e, i: flat_slice(e, layout, ctx.ctrl_next[i]),
         eq_simp=("Fin.cons_zero", "Fin.cons_succ"),
@@ -404,7 +392,7 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
     # The matrix domain of the same module: what the two bridging theorems
     # quantify over, since they state the scalar relation in matrix terms.
     mat = _domain(ctx, product_type)
-    new_unpack = _unpack("ctrl", ctx.ctrl_next, "ctrl'")
+    new_unpack = scalar_unpack("ctrl", ctx.ctrl_next, "ctrl'")
 
     if has_block(ctx, "update"):
         blk = _update_block(dom, "Scalar.update")
@@ -413,8 +401,8 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
             "TransRel_scalar_eq", blk, n_ctrl,
             f"new = Scalar.update old {dom.extl_args}",
         )
-        old_unpack = _unpack("ctrl", ctx.ctrl_latched)
-        extl_unpacks = " ".join(_unpack(p, w) for p, w in ctx.update_groups[1:])
+        old_unpack = scalar_unpack("ctrl", ctx.ctrl_latched)
+        extl_unpacks = " ".join(scalar_unpack(p, w) for p, w in ctx.update_groups[1:])
         lines += _pack_bridge_theorem(
             "TransRel_func_eq",
             f"(ctrl ctrl' : {product_type(ctx.ctrl_latched)}) {mat.extl_binders}",
@@ -430,7 +418,7 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
         lines += _conj_eq_theorem(
             "InitCond_scalar_eq", blk, n_ctrl, "s = Scalar.init extl_n"
         )
-        extl_n_unpack = _unpack("extl_n", ctx.extl_next)
+        extl_n_unpack = scalar_unpack("extl_n", ctx.extl_next)
         lines += _pack_bridge_theorem(
             "InitCond_func_eq",
             f"(ctrl' : {mat.state_ty}) {mat.extl_n_binder}",

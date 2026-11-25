@@ -27,13 +27,32 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 
 from ..errors import Refused
-from .lakefile import Require
+from .lakefile import Require, project_requires
 
 LAKE_CACHE_ENV = "REACTOR_LAKE_CACHE"
 MANIFEST = "lake-manifest.json"
+
+
+@dataclass(frozen=True)
+class Packages:
+    """What a project's lakefile requires, and the cache it builds against
+    (None: it fetches into its own `.lake`)."""
+
+    requires: tuple[Require, ...]
+    cache: Path | None
+
+
+def project_packages() -> Packages:
+    """The packages of a project written now: `project_requires`, and
+    `$REACTOR_LAKE_CACHE` checked to hold them (`lake_cache`). `cli.main`
+    works them out before any of the project is written, and the project
+    is written with them."""
+    requires = project_requires()
+    return Packages(requires, lake_cache(requires))
 
 
 def lake_cache(requires: Iterable[Require] = ()) -> Path | None:
@@ -42,8 +61,7 @@ def lake_cache(requires: Iterable[Require] = ()) -> Path | None:
 
     Refused when it is set to something that is not a cache, or to one
     that does not hold a git require of `requires` at the revision the
-    lakefile asks for (`held_packages`). `cli.main` asks with the
-    project's requires, before any of the project is written.
+    lakefile asks for (`held_packages`).
     """
     value = os.environ.get(LAKE_CACHE_ENV)
     if not value:

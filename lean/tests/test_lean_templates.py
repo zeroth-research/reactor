@@ -20,6 +20,7 @@ from reactor_lean.project.lake_cache import (
     LAKE_CACHE_ENV,
     cached_manifest,
     lake_cache,
+    project_packages,
 )
 from reactor_lean.project.lakefile import (
     FIXED_REQUIRES,
@@ -80,7 +81,7 @@ def _require(lakefile: str, name: str) -> str:
 def test_the_lakefile_requires_each_package_from_its_directory_of_the_repo(
         monkeypatch):
     monkeypatch.delenv(REACTLIB_ENV, raising=False)
-    lakefile = generate_lakefile("P")
+    lakefile = generate_lakefile("P", project_requires())
     for p in REACTLIB_PACKAGES:
         req = _require(lakefile, p)
         assert f'git = "{REACTLIB_URL}"' in req
@@ -91,7 +92,7 @@ def test_the_lakefile_requires_each_package_from_its_directory_of_the_repo(
 def test_reactlib_set_requires_the_checkout_by_path(monkeypatch, tmp_path):
     root = _checkout(tmp_path / "rl")
     monkeypatch.setenv(REACTLIB_ENV, str(root))
-    lakefile = generate_lakefile("P")
+    lakefile = generate_lakefile("P", project_requires())
     for p in REACTLIB_PACKAGES:
         assert _require(lakefile, p) == f'path = "{root.resolve() / p}"'
     assert REACTLIB_URL not in lakefile
@@ -203,7 +204,7 @@ def test_the_lakefile_written_with_a_cache_brings_the_manifest_and_packages(
     project = tmp_path / "P"
     project.mkdir()
     for _ in range(2):              # and again, over the first
-        write_lakefile(project, "P", executable=False)
+        write_lakefile(project, "P", project_packages(), executable=False)
     link = project / ".lake" / "packages"
     assert link.is_symlink() and link.resolve() == (cache / "packages").resolve()
     manifest = json.loads((project / "lake-manifest.json").read_text())
@@ -219,7 +220,8 @@ def test_a_project_with_packages_of_its_own_keeps_them(monkeypatch, tmp_path):
     own = tmp_path / "P" / ".lake" / "packages" / "mathlib"
     own.mkdir(parents=True)
     (tmp_path / "P" / "lake-manifest.json").write_text("its own")
-    write_lakefile(tmp_path / "P", "P", executable=False)
+    write_lakefile(tmp_path / "P", "P", project_packages(),
+                   executable=False)
     assert own.is_dir()
     assert (tmp_path / "P" / "lake-manifest.json").read_text() == "its own"
 
@@ -290,10 +292,10 @@ def test_the_reductions_enumerate_with_ofFn_not_finRange():
 
 def _counter_ctx():
     from reactor_lean.codegen.context import LeanContext
-    from reactor_lean.parse import load_module
+    from reactor_lean.parse import load
 
     fixture = FIXTURES / "counter.py"
-    return LeanContext(load_module(fixture))
+    return LeanContext(load(fixture).module)
 
 
 def test_the_certificate_is_one_text_for_each_kind_of_property():
@@ -304,15 +306,15 @@ def test_the_certificate_is_one_text_for_each_kind_of_property():
     obligations of the property's kind and nothing else."""
     from reactor_lean.codegen.context import LeanContext
     from reactor_lean.parse import Certificate, Claim
-    from reactor_lean.parse import load_module
+    from reactor_lean.parse import load
     from reactor_lean.project.names import (
         CERTIFICATE, DATA, MODULE, PROOFS, cert_file,
     )
     from reactor_lean.proof.render import lean_certificate
     from reactor_lean.proof.render import certificate_files
 
-    counter = load_module(FIXTURES / "counter.py")
-    twobit = load_module(FIXTURES / "twobit.py")
+    counter = load(FIXTURES / "counter.py").module
+    twobit = load(FIXTURES / "twobit.py").module
     variants = {kind: [] for kind in ("buchi", "safety")}
     for m in (counter, twobit):
         for kind in variants:

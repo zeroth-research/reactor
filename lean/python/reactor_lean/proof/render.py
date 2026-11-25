@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from reactor_lean.codegen.encodings import ModuleToLean4
-from reactor_lean.codegen.terms import extl_native_type, product_type
+from reactor_lean.codegen.terms import product_type
 from reactor_lean.errors import PredicateRefused, Refused
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.parse.predicates import (
@@ -106,6 +106,13 @@ def lean_certificate(module, claim: "Claim | None",
     return render_certificate(read_predicates(module, claim, cert))
 
 
+def extl_native_type(ctx) -> str:
+    """What a step of the module reads its inputs as: the latched inputs
+    and the awaited ones, `(latched) × (awaited)`. `RM`'s input type."""
+    return (f"({product_type(ctx.extl_latched)}) × "
+            f"({product_type(ctx.extl_next)})")
+
+
 def _cert_def_context(ctx: LeanContext, lean_cert: LeanCertificate) -> dict:
     """Build a Jinja2 context dict for the Data.lean.j2 template.
 
@@ -115,7 +122,7 @@ def _cert_def_context(ctx: LeanContext, lean_cert: LeanCertificate) -> dict:
     return dict(
         extl_type=extl_native_type(ctx),
         ctrl_type=product_type(ctx.ctrl_next),
-        noncomp="noncomputable " if ctx.uses_real else "",
+        noncomp=ctx.noncomputable,
         is_safety=lean_cert.is_safety,
         init_pre_expr=lean_cert.init_assume,
         update_pre_expr=lean_cert.update_assume,

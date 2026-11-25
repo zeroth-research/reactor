@@ -11,7 +11,7 @@ import pytest
 
 from reactor_lean.errors import PredicateRefused, Unreadable
 from reactor_lean.lowering.elements import ModuleWires
-from reactor_lean.parse import load_module
+from reactor_lean.parse import load
 from reactor_lean.lowering.sorts import itype_name, theory_of
 from reactor_lean.parse import dsl
 from reactor_lean.parse.formula import Builder
@@ -23,7 +23,7 @@ from testdata import MODS
 
 
 def _wires(name: str) -> ModuleWires:
-    return ModuleWires.of(load_module(MODS / f"{name}.py"))
+    return ModuleWires.of(load(MODS / f"{name}.py").module)
 
 
 def _shape(formula, wires: ModuleWires):
@@ -143,7 +143,7 @@ def test_a_fault_in_the_syntax_itself_is_not_a_parse_error(monkeypatch, bug):
 
     monkeypatch.setattr(predicates.dsl, "evaluate", broken)
     with pytest.raises(bug, match="a bug") as raised:
-        read_predicates(load_module(MODS / "m_countdown.py"),
+        read_predicates(load(MODS / "m_countdown.py").module,
                         Claim(prp="s0[0][0] == 0"))
     assert type(raised.value) is bug    # not a refusal, which is a ValueError
 
@@ -156,14 +156,14 @@ COUNTDOWN = MODS / "m_countdown.py"
 
 
 def test_one_assumption_of_both_blocks_is_read_once():
-    q = read_predicates(load_module(COUNTDOWN),
+    q = read_predicates(load(COUNTDOWN).module,
                         Claim(init_assume="(>= s0 0)", update_assume="(>= s0 0)"))
     assert q.init_assume is q.update_assume
 
 
 def test_an_assumption_is_refused_by_the_flag_it_came_from():
     """`--extl-assume` is both blocks'; a block's own is its own flag's."""
-    m = load_module(COUNTDOWN)
+    m = load(COUNTDOWN).module
     with pytest.raises(PredicateRefused, match="^--extl-assume: must have sort Bool"):
         read_predicates(m, Claim(init_assume="(+ s0 1)", update_assume="(+ s0 1)"))
     with pytest.raises(PredicateRefused, match="^--extl-assume-update: must have sort Bool"):
@@ -171,7 +171,7 @@ def test_an_assumption_is_refused_by_the_flag_it_came_from():
 
 
 def test_an_unreadable_predicate_is_refused_by_its_flag():
-    m = load_module(COUNTDOWN)
+    m = load(COUNTDOWN).module
     with pytest.raises(PredicateRefused, match="--invariant: cannot read `\\(\\+ s0`"):
         read_predicates(m, Claim(), Certificate(inv="(+ s0"))
     with pytest.raises(PredicateRefused, match="--safety: cannot read"):
@@ -179,7 +179,7 @@ def test_an_unreadable_predicate_is_refused_by_its_flag():
 
 
 def test_a_predicate_of_the_wrong_sort_is_refused_by_its_flag():
-    m = load_module(COUNTDOWN)
+    m = load(COUNTDOWN).module
     with pytest.raises(PredicateRefused, match="--ranking: must have sort Int, got Bool"):
         read_predicates(m, Claim(), Certificate(ranking="(> s0 0)"))
     with pytest.raises(PredicateRefused, match="--invariant: must have sort Bool, got Int"):

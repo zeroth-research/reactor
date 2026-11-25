@@ -14,6 +14,19 @@ def has_block(ctx, block: str) -> bool:
     return bool(list(getattr(ctx.atom, block)))
 
 
+def scalar_unpack(param: str, wires, var: str = "") -> str:
+    """`var`, read back as a matrix by `Scalar.unpack_<param>`.
+
+    Left alone when the group is empty: `unpack_extl_l` of no wires is `Unit`
+    to `Unit`, and `scalar.py` does not emit it. `var` defaults to the
+    parameter's own name; the relational encoding's init/trans theorems
+    quantify the *next* ctrl state as `ctrl'` but still read it back with
+    `unpack_ctrl`.
+    """
+    var = var or param
+    return f"(Scalar.unpack_{param} {var})" if wires else var
+
+
 def scalar_eq_name(block: str) -> str:
     """The theorem `scalar.py` proves for `block`: the functional block is
     `Scalar.pack` of `Scalar.<block>` of the unpacked inputs. It exists

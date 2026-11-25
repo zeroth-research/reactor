@@ -107,11 +107,12 @@ def project_requires() -> tuple[Require, ...]:
     return FIXED_REQUIRES + reactlib_requires()
 
 
-def generate_lakefile(project_name: str, executable: bool = False) -> str:
-    """Render the project's lakefile."""
+def generate_lakefile(project_name: str, requires: tuple[Require, ...],
+                      executable: bool = False) -> str:
+    """Render the project's lakefile, which requires `requires`."""
     return render(
         "project/lakefile.toml.j2",
         project_name=project_name,
         executable=executable,
-        requires=project_requires(),
+        requires=requires,
     )

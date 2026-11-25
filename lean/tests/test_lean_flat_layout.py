@@ -91,7 +91,6 @@ def test_spans_tile_the_flat_tuple(wires):
         offset, size = layout.span(w)
         assert size == wire_shape(w).total
         covered += list(range(offset, offset + size))
-        assert layout.slots_of(w) == layout.slots[offset : offset + size]
     assert covered == list(range(layout.total))
     assert layout.total == sum(wire_shape(w).total for w in wires)
 

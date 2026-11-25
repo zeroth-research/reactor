@@ -27,7 +27,7 @@ from ..parse.formula import family
 
 # (prefix, base, wires): wire `i` is the variable `<prefix><i>`, read on
 # the parameter `base`.
-Bindings = "list[tuple[str, str, list[Wire]]]"
+Bindings = list[tuple[str, str, list[Wire]]]
 
 
 def build_var_map(bindings: Bindings) -> tuple[dict[str, str], dict[str, Wire]]:

@@ -51,8 +51,9 @@ class ConstantRegistry:
 
 
 def constant_expr(term: Term, w: Wire, constants: "ConstantRegistry") -> str:
-    # Matrix constants are interned as top-level defs; scalars are inlined as
-    # a 1x1 matrix literal driven by the wire's element type (Bool/Int/Real).
+    """The constant `term` writes to `w`: the name `constants` gave it
+    (`ConstantRegistry.intern`), or else, as a 1×1 Bool, Int or word
+    constant is, a 1×1 matrix literal."""
     name = constants.lookup(w.id)
     if name is not None:
         return name
@@ -163,12 +164,12 @@ def affine_gap(term: Term) -> "str | None":
     """
     op = term.itype
     if itype_name(op) == "Scale":
-        c = op.tensor
+        c = as_torch(op.tensor)
         if not bool((c == c[:, :1]).all()):
             return (f"its factor {c.tolist()} has rows that are not one "
                     "number each, so it is no `diag(c)·X`")
         return None
-    B = op.b
+    B = as_torch(op.b)
     if B.numel() and not bool((B == B[:, :1]).all()):
         return (f"its bias {B.tolist()} differs across its columns, and "
                 "`matVecAffine` adds one column")
@@ -178,16 +179,28 @@ def affine_gap(term: Term) -> "str | None":
 def affine_tensors(term: Term) -> "tuple[torch.Tensor, torch.Tensor]":
     """`A` and the bias column `b` of the affine map `Y = A·X + b` a `Linear`
     or `Scale` op is, `b` of shape `[out, 1]`. Refused when it is none
-    (`affine_gap`), which `codegen.terms.lean_gaps` asks before anything is
+    (`affine_gap`), which `codegen.context.lean_gaps` asks before anything is
     written."""
     op = term.itype
     gap = affine_gap(term)
     if gap is not None:
         raise Refused(f"no Lean form for `{itype_name(op)}`: {gap}")
     if itype_name(op) == "Scale":
-        c = op.tensor
+        c = as_torch(op.tensor)
         return torch.diag(c[:, 0]), torch.zeros(c.shape[0], 1, dtype=c.dtype)
-    return op.a, op.b[:, :1]
+    return as_torch(op.a), as_torch(op.b)[:, :1]
+
+
+def as_torch(tensor) -> torch.Tensor:
+    """`tensor` as a torch tensor of its dtype. The `Linear` and `Scale` ops
+    of `reactor.jax` hold JAX arrays, and those of `reactor.mixed` may,
+    and the affine map is built from them with torch's operations; numpy,
+    which JAX requires, reads a JAX array. (A `Const` is read by `item()`
+    and indexing alone, which a JAX array has too.)"""
+    if isinstance(tensor, torch.Tensor):
+        return tensor
+    import numpy
+    return torch.from_numpy(numpy.array(tensor))
 
 
 def linear_list_literals(term: Term) -> "tuple[int, str, str]":

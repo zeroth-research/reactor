@@ -77,8 +77,7 @@ from ..codegen.context import LeanContext, lean_context
 from ..codegen.encodings import ModuleToLean4
 from ..errors import Refused
 from ..parse import Certificate, Claim
-from ..project.lake_cache import lake_cache
-from ..project.lakefile import project_requires
+from ..project.lake_cache import Packages, project_packages
 from ..project.main_lean import check_runnable
 from ..project.scaffold import ENCODINGS, Layout, create_project, write_encoding
 from ..proof.render import (
@@ -101,8 +100,7 @@ def main():
         # `$REACTOR_LAKE_CACHE` the packages it will build against, holding
         # what the lakefile requires from git at its revision: a bad one is
         # refused here, before any of the project is written.
-        if not settings.cert_file:
-            lake_cache(project_requires())
+        packages = None if settings.cert_file else project_packages()
         problem = parse.load(settings.module_file, settings.module_def)
         module = problem.module
         print(module)
@@ -118,7 +116,7 @@ def main():
         standalone(settings.cert_file, ctx, lean_cert)
         return
 
-    project_dir = generate(settings, ctx, lean_cert, problem.source)
+    project_dir = generate(settings, ctx, lean_cert, problem.source, packages)
     print(f"\nProject ready at: {project_dir}")
 
 
@@ -183,7 +181,8 @@ def standalone(cert_file: str, ctx: LeanContext, lean_cert) -> None:
         # same imports. The functional encoding is already inlined in the
         # standalone certificate above, which is the base they import.
         m2l = ModuleToLean4(ctx)
-        layout = Layout(base=out.stem, flat=True, directory=out.parent)
+        layout = Layout(base=out.stem, prefix=lake_module_prefix(out.parent),
+                        flat=True, directory=out.parent)
         for enc in ENCODINGS:
             if enc.cert_file:
                 path = write_encoding(enc, m2l, layout, out.stem)
@@ -192,10 +191,24 @@ def standalone(cert_file: str, ctx: LeanContext, lean_cert) -> None:
         raise SystemExit(f"error: --cert-file: {e}") from e
 
 
+def lake_module_prefix(directory: Path) -> str:
+    """What Lake prefixes the module of a file in `directory` with: the
+    file's path from the nearest directory above that has a lakefile, so
+    `Certs.` in `tests/lean/Certs/` under `tests/lean/lakefile.toml`.
+    Nothing when no directory above has one."""
+    directory = directory.resolve()
+    for root in (directory, *directory.parents):
+        if any((root / f).is_file() for f in ("lakefile.lean", "lakefile.toml")):
+            return "".join(f"{p}." for p in directory.relative_to(root).parts)
+    return ""
+
+
 def generate(settings: Settings, ctx: LeanContext,
-             lean_cert: "LeanCertificate | None", source: str) -> Path:
+             lean_cert: "LeanCertificate | None", source: str,
+             packages: Packages) -> Path:
     """The Lean project, with the certificate as it stands; `source` is
-    the input's text, which the project keeps in `dbg/`."""
+    the input's text, which the project keeps in `dbg/`, and `packages`
+    what its lakefile requires."""
     print(".. Generating lean code")
     certificate = certificate_files(ctx, lean_cert)
     try:
@@ -206,6 +219,7 @@ def generate(settings: Settings, ctx: LeanContext,
             executable=settings.executable,
             certificate=certificate,
             source=source,
+            packages=packages,
         )
     except (Refused, OSError) as e:
         raise SystemExit(f"error: {e}") from e

@@ -544,11 +544,11 @@ def test_an_equivalence_theorem_alone_is_the_one_its_encoding_prints(mod):
     variants). Called first, on a fresh `ModuleToLean4`, it prints what the
     full producer prints rather than silently dropping the argmax lemmas."""
     from reactor_lean.codegen.encodings import ModuleToLean4
-    from reactor_lean.parse import load_module
+    from reactor_lean.parse import load
     from testdata import MODS
 
     module = (_argmax_row() if mod == "argmax_row"
-              else load_module(MODS / f"{mod}.py"))
+              else load(MODS / f"{mod}.py").module)
 
     scalar_alone = ModuleToLean4(LeanContext(module)).to_lean_scalar_equiv()
     assert ModuleToLean4(LeanContext(module)).to_lean_scalar().endswith(scalar_alone)

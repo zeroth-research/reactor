@@ -165,7 +165,7 @@ A **`Wire`** carries a `Sort` (`Bool`, `Int`, `Real`, `BitVec`) and a shape,
 always 2-D here: `[1, 1]` = scalar, `[1, n]` = row vector, `[m, n]` = matrix.
 
 A **`Term`** is one SSA node: a single operation drawn from a theory
-namespace (`LIA`, `LRA`, `BV`), reading from some wires (`term.read`) and
+namespace of `reactor.tensor` (`bool`, `int`, `real`, `word`, ...), reading from some wires (`term.read`) and
 writing one output wire (`term.write[0]`).  The term lists form a
 topologically-sorted dataflow graph.
 
@@ -181,7 +181,7 @@ layer.
 |------|------|
 | `errors` | `Refused`, the error a run is refused with, which every layer raises; it imports nothing of `reactor_lean` |
 | `lowering/` | What every backend reads of a module besides its terms: `sorts` (sorts and shapes of wires, the Lean types they print as, and a constant as the exact number every backend states), `elements` (tuple accessors, `flat_layout`, the row-major element order every scalar encoding shares, and `ModuleWires`, the module's wires in the order everything numbers them), `ops` (the op table: one row per theory variant, one column per backend) |
-| `codegen/` | The module as Lean text: `context` (`LeanContext`, what every encoding of one module shares, and `lean_context`, which refuses a module with no Lean form), `literals` (constants as Lean text, `ConstantRegistry`), `terms` (term lists → functional `let`-binding bodies, and `lean_gaps`), `encodings/` (`ModuleToLean4` and one module per encoding: `functional`, `scalar`, `relational`, which holds the shape both relational ones have; and `common`, what the scalar ones share) |
+| `codegen/` | The module as Lean text: `context` (`LeanContext`, what every encoding of one module shares, and `lean_context`, which refuses a module with no Lean form, as `lean_gaps` finds it), `literals` (constants as Lean text, `ConstantRegistry`), `terms` (term lists → the functional and scalar encodings' `let`-binding bodies), `encodings/` (`ModuleToLean4` and one module per encoding: `functional`, `scalar`, `relational`, which holds the shape both relational ones have; and `common`, what the scalar ones share) |
 | `parse/` | Reading the input: `Claim` and `Certificate` (what is claimed of the module and what certifies it, as text), `module` (`load`, the module file as a `Problem`; `Named`, a module with names for its variables), `names` (a claim's names, translated to the internal ones), and a predicate's text: `dsl` (the Python predicate syntax), `sexpr` and `smtlib` (SMT-LIB into reactor's terms), `formula` (`Formula`, a predicate in reactor's terms), `predicates` (the parser: `parse_predicate`, and `read_predicates`, a claim's and its certificate's) |
 | `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `lake_cache` (the built packages it can share), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table), the certificate's files as the text it is handed |
 | `proof/` | The certificate as Lean: `render` (`lean_certificate`, a claim's predicates parsed and printed; `render_certificate`, `LeanCertificate`, the project's `certificate_files` and the `--cert-file` one), `from_ir` (a `parse.Formula` printed as Lean) |
@@ -518,6 +518,10 @@ path/NameScalar.lean         # scalar encoding + equivalence theorems
 path/NameScalarRel.lean      # scalar-relational encoding + equivalence theorems
 ```
 
+The three beside it import `Name` by the module name Lake gives it: its
+path from the nearest directory above with a lakefile, so `Certs.Name` for
+`tests/lean/Certs/Name.lean`, or plain `Name` with no lakefile above.
+
 ### Safety or Büchi
 
 The property comes in under one of two flags, and the choice is not a label:
@@ -594,8 +598,8 @@ emitter, or `ViaMat`/`Inline`/`Unsupported` saying why it is not one —
 `Unsupported`'s reason is what the caller is told when it hits the gap.
 
 `scripts/op_table.py` (run from `lean/`) prints the whole matrix and every gap in it.
-`tests/test_lean_ops.py` checks the table against `LIA`/`LRA`/`BV` in both
-directions: a variant a theory gained but the table has not fails there, and
+`tests/test_lean_ops.py` checks the table against `reactor.tensor`'s theories
+in both directions: a variant a theory gained but the table has not fails there, and
 so does a row no theory backs.
 
 ---

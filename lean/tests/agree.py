@@ -39,14 +39,14 @@ def _corpus() -> dict:
     """Name -> a function building the module: loaded the way `reactor`
     loads a Python input, so a fixture returning a `Named` module is the
     module it names."""
-    from reactor_lean.parse import load_module as _load
+    from reactor_lean.parse import load as _load
 
     out = {}
     for p in sorted(MODS.glob("m_*.py")):
-        out[f"limits/{p.stem}"] = (lambda p=p: _load(p))
+        out[f"limits/{p.stem}"] = (lambda p=p: _load(p).module)
     for p in sorted(FIXTURES.glob("*.py")):
         if "def module(" in p.read_text():
-            out[f"fixtures/{p.stem}"] = (lambda p=p: _load(p))
+            out[f"fixtures/{p.stem}"] = (lambda p=p: _load(p).module)
     return out
 
 
@@ -248,8 +248,8 @@ def lean_script(module, rounds: list, ns: str) -> "tuple[str, dict[str, str]]":
     noncomputable, and a module with no Lean form has nothing to run.
     """
     from reactor_lean.lowering.elements import flat_layout
-    from reactor_lean.codegen.context import LeanContext
-    from reactor_lean.codegen.terms import build_tuple, lean_gaps
+    from reactor_lean.codegen.context import LeanContext, lean_gaps
+    from reactor_lean.codegen.terms import build_tuple
     from reactor_lean.codegen.encodings import ModuleToLean4
 
     wires = list(module.ctrl) + list(module.extl)
@@ -279,9 +279,10 @@ def lean_script(module, rounds: list, ns: str) -> "tuple[str, dict[str, str]]":
             lines.append(f"def {name} := {call}")
             shown, expected = [], []
             for p, c in enumerate(ctrl):
+                offset, size = layout.span(c)
                 shown.append(" ".join(
                     _lean_shown(c, layout.wire_accessor(f"{ns}.{name}", s))
-                    for s in layout.slots_of(c)))
+                    for s in layout.slots[offset:offset + size]))
                 expected.append(" ".join(
                     str(v).lower() if isinstance(v, bool) else str(int(v))
                     for v in flat(c, state[p])))

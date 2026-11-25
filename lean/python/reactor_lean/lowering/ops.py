@@ -22,7 +22,7 @@ every column. A cell is either an emitter or one of
 
 A row's two columns are both emitters or both refusals, so that a module
 no encoding can write is refused before any is generated
-(`codegen.terms.lean_gaps`), not half way through a project.
+(`codegen.context.lean_gaps`), not half way through a project.
 
 `scripts/op_table.py` prints the matrix, gaps and all.
 `tests/test_lean_ops.py` checks it against `reactor.tensor` in both
@@ -134,7 +134,7 @@ _ZERO = Unsupported(
 
 def _word_with_no_lean_form(lean_form: str) -> Unsupported:
     """A word op of the theory that no Lean backend emits, and why;
-    `codegen.terms.lean_gaps` reports it up front."""
+    `codegen.context.lean_gaps` reports it up front."""
     return Unsupported(
         f"no Lean form. {lean_form} A module using it is refused at project "
         "generation."
