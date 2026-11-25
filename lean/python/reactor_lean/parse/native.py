@@ -6,9 +6,8 @@ A predicate is read in two dialects -- the Python predicate syntax first
 module's own wires (`ModuleWires`): `s{i}` is `X`
 of the `i`th controlled variable, `e{i}` the `i`th input awaited in the
 round and `el{i}` the one latched before it. What it makes of one is a
-`Formula`. `NativeParser` reads them one at a time, and `read_predicates`
-a claim's and a certificate's together (`Claim`, `Certificate`), as
-`proof.render` prints them.
+`Formula` (`parse_predicate`). `read_predicates` reads a claim's and a
+certificate's (`Claim`, `Certificate`), as `proof.render` prints them.
 """
 
 from __future__ import annotations
@@ -240,39 +239,6 @@ def parse_predicate(wires: ModuleWires, src: str) -> Formula:
     return read_smtlib(x.scope, src)
 
 
-class NativeParser:
-    """A run's predicates read against `module` into reactor's terms, each
-    once."""
-
-    def __init__(self, module):
-        self.module = module
-        self.wires = ModuleWires.of(module)
-        self._parsed: dict = {}
-
-    def parse(self, src: "str | None", role: str, want: str = "Bool",
-              kind: str = "buchi") -> "Formula | None":
-        """`src` as a term over the state and inputs, or `PredicateRefused`
-        naming its `role`: `want` is the sort the predicate's field is
-        declared as."""
-        if src is None:
-            return None
-        hit = self._parsed.get(src)
-        if hit is None:
-            try:
-                hit = parse_predicate(self.wires, src)
-            except Unreadable as e:
-                hit = Unreadable(str(e))
-            self._parsed[src] = hit
-        if isinstance(hit, Unreadable):
-            raise PredicateRefused(
-                role, f"cannot read `{src}`: {hit}", kind=kind) from hit
-        got = family(hit.sort)
-        if got != want:
-            raise PredicateRefused(role, f"must have sort {want}, got {got}",
-                                   kind=kind)
-        return hit
-
-
 @dataclass(frozen=True)
 class NativePredicates:
     """A claim and a certificate read by the native parser: what
@@ -290,16 +256,34 @@ class NativePredicates:
 
 def read_predicates(module, claim: Claim,
                     cert: "Certificate | None" = None) -> NativePredicates:
-    """`claim` and `cert` read against `module`, each predicate refused by
-    its role."""
-    p = NativeParser(module)
+    """`claim` and `cert` read against `module`. A predicate that is no
+    predicate of the module, or not of the sort its field is declared as,
+    is refused by its role (`PredicateRefused`)."""
+    wires = ModuleWires.of(module)
     cert = cert or Certificate()
-    return NativePredicates(
-        kind=claim.kind,
-        wires=p.wires,
-        prp=p.parse(claim.prp, "property", kind=claim.kind),
-        inv=p.parse(cert.inv, "invariant"),
-        ranking=p.parse(cert.ranking, "ranking", want="Int"),
-        init_pre=p.parse(claim.init_pre, "pre"),
-        update_pre=p.parse(claim.update_pre, "pre"),
-    )
+
+    def read(src: "str | None", role: str, want: str = "Bool",
+             kind: str = "buchi") -> "Formula | None":
+        if src is None:
+            return None
+        try:
+            formula = parse_predicate(wires, src)
+        except Unreadable as e:
+            raise PredicateRefused(
+                role, f"cannot read `{src}`: {e}", kind=kind) from e
+        got = family(formula.sort)
+        if got != want:
+            raise PredicateRefused(role, f"must have sort {want}, got {got}",
+                                   kind=kind)
+        return formula
+
+    prp = read(claim.prp, "property", kind=claim.kind)
+    inv = read(cert.inv, "invariant")
+    ranking = read(cert.ranking, "ranking", want="Int")
+    init_pre = read(claim.init_pre, "pre")
+    # `--pre` is both, and is read once.
+    update_pre = (init_pre if claim.update_pre == claim.init_pre
+                  else read(claim.update_pre, "pre"))
+    return NativePredicates(kind=claim.kind, wires=wires, prp=prp, inv=inv,
+                            ranking=ranking, init_pre=init_pre,
+                            update_pre=update_pre)

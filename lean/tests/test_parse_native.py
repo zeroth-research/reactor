@@ -16,7 +16,7 @@ from reactor_lean.lowering.sorts import itype_name, theory_of
 from reactor_lean.parse import dsl
 from reactor_lean.parse.formula import Builder
 from reactor_lean.parse.native import (
-    NativeParser, namespace, parse_predicate, scope_of,
+    Certificate, Claim, namespace, parse_predicate, read_predicates, scope_of,
 )
 from reactor_lean.parse.smtlib import Elaborator
 from testdata import MODS
@@ -124,31 +124,34 @@ def test_a_fault_in_the_syntax_itself_is_not_a_parse_error(monkeypatch):
 
     monkeypatch.setattr(native.dsl, "evaluate", broken)
     with pytest.raises(AttributeError, match="a bug"):
-        NativeParser(load_module(MODS / "m_countdown.py")).parse(
-            "s0[0][0] == 0", "property")
+        read_predicates(load_module(MODS / "m_countdown.py"),
+                        Claim(prp="s0[0][0] == 0"))
 
 
 # ══════════════════════════════════════════════════════════════════════
 # A run's predicates
 # ══════════════════════════════════════════════════════════════════════
 
+COUNTDOWN = MODS / "m_countdown.py"
 
-def test_a_predicate_is_read_once():
-    parser = NativeParser(load_module(MODS / "m_countdown.py"))
-    assert parser.parse("(> s0 0)", "invariant") is parser.parse("(> s0 0)", "invariant")
+
+def test_the_pre_is_read_once_for_both_rounds():
+    q = read_predicates(load_module(COUNTDOWN),
+                        Claim(init_pre="(>= s0 0)", update_pre="(>= s0 0)"))
+    assert q.init_pre is q.update_pre
 
 
 def test_an_unreadable_predicate_is_refused_by_its_flag():
-    parser = NativeParser(load_module(MODS / "m_countdown.py"))
+    m = load_module(COUNTDOWN)
     with pytest.raises(PredicateRefused, match="--invariant: cannot read `\\(\\+ s0`"):
-        parser.parse("(+ s0", "invariant")
+        read_predicates(m, Claim(), Certificate(inv="(+ s0"))
     with pytest.raises(PredicateRefused, match="--safety: cannot read"):
-        parser.parse("(> s9 0)", "property", kind="safety")
+        read_predicates(m, Claim(prp="(> s9 0)", kind="safety"))
 
 
 def test_a_predicate_of_the_wrong_sort_is_refused_by_its_flag():
-    parser = NativeParser(load_module(MODS / "m_countdown.py"))
+    m = load_module(COUNTDOWN)
     with pytest.raises(PredicateRefused, match="--ranking: must have sort Int, got Bool"):
-        parser.parse("(> s0 0)", "ranking", want="Int")
+        read_predicates(m, Claim(), Certificate(ranking="(> s0 0)"))
     with pytest.raises(PredicateRefused, match="--invariant: must have sort Bool, got Int"):
-        parser.parse("s0", "invariant")
+        read_predicates(m, Claim(), Certificate(inv="s0"))
