@@ -31,8 +31,10 @@ The property goes under the flag of its proof rule:
 - `--buchi P` claims `G F P`, that `P` holds infinitely often. The
   certificate is an invariant and a ranking function.
 
-`P` is SMT-LIB written in the input's names, and so are `--pre`,
-`--invariant` and `--ranking`. For example, `(X x)` is `x` after the round
+`P` is SMT-LIB written in the input's names, and so are the assumptions
+on the inputs (`--extl-assume`, or `--extl-assume-init` and
+`--extl-assume-update` for each block's own), `--invariant` and
+`--ranking`. For example, `(X x)` is `x` after the round
 and `(X @intf.N)` is interface variable N by position. See [Writing a claim
 on the command line](#writing-a-claim-on-the-command-line) for the full
 spelling. This stage translates the names to the internal `s{i}`, `e{i}`
@@ -91,7 +93,9 @@ it: `.lake/packages` is a link to the cache's packages, and
 `lake-manifest.json` is made from the cache's, so the first `lake build`
 compiles only the project rather than Mathlib too
 (`project/lake_cache.py`). `reactor` refuses a `REACTOR_LAKE_CACHE` that is
-not a cache, and `just` sets it to `.lake` at the top of this repository.
+not a cache, or that does not hold what the lakefile requires from git at
+its revision, before it writes any of the project; `just` sets it to
+`.lake` at the top of this repository.
 
 [ReactLib]: https://github.com/zeroth-research/ReactLib
 
@@ -545,14 +549,18 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `-d` / `--module-def` | `module` | Name of the factory function in the Python file |
 | `--safety` | — | SMT-LIB 2 Bool over `(X @intf.0)..(X @intf.N-1)` (or names, see below), to hold in every reachable state (`G P`) |
 | `--buchi` | — | SMT-LIB 2 Bool over `(X @intf.0)..(X @intf.N-1)` (or names, see below), to hold infinitely often (`G (F P)`) |
+| `--extl-assume` | — | SMT-LIB 2 Bool assumption on the inputs of every round: the certificate's `init_pre` and `update_pre` |
+| `--extl-assume-init` | — | The assumption on the inputs `init` reads alone (`init_pre`); not with `--extl-assume` |
+| `--extl-assume-update` | — | The assumption on the inputs `update` reads alone (`update_pre`); not with `--extl-assume` |
 | `--invariant` | — | SMT-LIB 2 Bool invariant |
 | `--ranking` | — | SMT-LIB 2 Int ranking (`--buchi` only) |
+| `-x` / `--executable` | — | Add `Main.lean`, the module as a program; not with `--cert-file` |
 | `--cert-file` | — | Write standalone `.lean` file instead of full project |
 
 ### Writing a claim on the command line
 
-`--safety`, `--buchi`, `--pre`, `--invariant` and `--ranking` are written in
-the reactive module's own terms. The bare names `s0`, `e0`, `el0` (and the
+`--safety`, `--buchi`, the `--extl-assume` flags, `--invariant` and
+`--ranking` are written in the reactive module's own terms. The bare names `s0`, `e0`, `el0` (and the
 Python-DSL aliases `s`, `e`, `el`) are refused there.
 
 | surface (SMT-LIB) | surface (Python DSL) | means |

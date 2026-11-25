@@ -166,7 +166,7 @@ def test_matrix_update_signature():
 
 def test_main_lean_bool_module():
     m = _make_twobitcounter()
-    src = generate_main_lean(m)
+    src = generate_main_lean(LeanContext(m))
 
     assert "parseBool" in src
     assert "parseExtl" in src
@@ -176,7 +176,7 @@ def test_main_lean_bool_module():
 
 def test_main_lean_matrix_module():
     m = _make_matrix_module()
-    src = generate_main_lean(m)
+    src = generate_main_lean(LeanContext(m))
 
     assert "parseIntOrFail" in src
     assert "showMatrix" in src
@@ -187,7 +187,7 @@ def test_main_lean_matrix_module():
 
 def test_main_lean_bool_signatures():
     m = _make_twobitcounter()
-    src = generate_main_lean(m)
+    src = generate_main_lean(LeanContext(m))
 
     # parseExtl returns Bool, showCtrl takes Bool × Bool
     assert "Matrix (Fin 1) (Fin 1) Bool" in src
@@ -196,7 +196,7 @@ def test_main_lean_bool_signatures():
 
 def test_main_lean_matrix_signatures():
     m = _make_matrix_module()
-    src = generate_main_lean(m)
+    src = generate_main_lean(LeanContext(m))
 
     assert "Matrix (Fin 2) (Fin 1) Int" in src
     assert "Matrix (Fin 3) (Fin 1) Int" in src
@@ -454,12 +454,8 @@ def _mixed_dependency_module():
 
 
 def test_effect_gets_only_the_reconstructions_it_uses():
-    """An unused let mentions its parameter, which auto-binding then adds.
-
-    The call sites are built from what the body consumes (`_effect_args`),
-    so an extra parameter means every call under-applies. `effect_0` here
-    reads only `state`, but got the `extl_l` and `extl_n` reconstructions.
-    """
+    """`effect_0` here reads only `state`, and once got the `extl_l` and
+    `extl_n` reconstructions too: dead `let`s in every effect."""
     lean = ModuleToLean4(LeanContext(_mixed_dependency_module())).to_lean_rel()
     effects = _split_effects(lean)
     assert effects, f"no effects found in:\n{lean[:400]}"
@@ -474,23 +470,17 @@ def test_effect_gets_only_the_reconstructions_it_uses():
     )
 
 
-def test_recon_filter_keeps_order_and_transitive_uses():
-    """The filter is order-preserving and reaches a fixed point."""
-    from reactor_lean.codegen.encodings.common import _needed_recon
+def test_recon_filter_keeps_order_and_whole_words():
+    """The reconstructions a body reads, in their order; `_m10` is no use
+    of `_m1`."""
+    from reactor_lean.codegen.encodings.common import prepend_recon
 
-    lets = [
-        "  let _m0 : T := f extl_l",
-        "  let _m1 : T := g extl_n",
-        "  let _m2 : T := h _m0",
-    ]
-    assert _needed_recon(lets, "  x := _m1") == [lets[1]]
-    # _m2 pulls in _m0 transitively, and order is preserved
-    assert _needed_recon(lets, "  x := _m2") == [lets[0], lets[2]]
-    assert _needed_recon(lets, "  x := 0") == []
-    assert _needed_recon([], "  x := 0") == []
-    # a use is a whole word: `_m10` is no use of `_m1`
-    many = [f"  let _m{i} : T := f extl_l" for i in range(11)]
-    assert _needed_recon(many, "  x := _m10") == [many[10]]
+    lets = [(f"_m{i}", f"  let _m{i} : T := f extl_l") for i in range(11)]
+    assert prepend_recon(lets, "  (_m2, _m0)") == "\n".join(
+        [lets[0][1], lets[2][1], "  (_m2, _m0)"])
+    assert prepend_recon(lets, "  x := _m10") == lets[10][1] + "\n  x := _m10"
+    assert prepend_recon(lets, "  0") == "  0"
+    assert prepend_recon([], "  0") == "  0"
 
 
 # ──────────────────────────────────────────────────────────────

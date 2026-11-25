@@ -197,7 +197,7 @@ def create_project(
     # ----------------------------------------------------------
     if executable:
         main_lean = project_dir / "Main.lean"
-        main_lean.write_text(generate_main_lean(ctx.module))
+        main_lean.write_text(generate_main_lean(ctx))
         print(f"Wrote {main_lean}")
 
     print()

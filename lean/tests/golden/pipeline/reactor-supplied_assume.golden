@@ -21,7 +21,7 @@ Tensor[[1, 1], Int64]
     X(#N) := Skip #N
 
 .. --safety, in internal names: (>= s0 0)
-.. --pre, in internal names: (>= e0 0)
+.. --extl-assume, in internal names: (>= e0 0)
 .. --invariant, in internal names: (>= s0 0)
 .. Generating lean code
 Created project directory: `<OUT>/G`

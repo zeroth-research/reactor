@@ -23,6 +23,8 @@ from reactor_lean.project.names import (
 )
 from reactor_lean.project.templates import render
 
+from .from_ir import ir_to_lean
+
 
 # ══════════════════════════════════════════════════════════════════════════
 # The certificate as Lean
@@ -39,8 +41,8 @@ class LeanCertificate:
     prp: str | None = None
     inv: str | None = None
     ranking: str | None = None
-    init_pre: str | None = None
-    update_pre: str | None = None
+    init_assume: str | None = None
+    update_assume: str | None = None
 
     @property
     def is_safety(self) -> bool:
@@ -52,52 +54,44 @@ def render_certificate(q: "Predicates") -> LeanCertificate:
 
     `q` is what the parser read (`parse.predicates.Predicates`), printed
     by `from_ir` with repeated subterms `let`-bound, which Lean reads the
-    same once `simp` has zeta-reduced the `let`s.
+    same once `simp` has zeta-reduced the `let`s. The property, the
+    invariant and the ranking are over the state `s`; the assumptions over
+    the inputs `e`, the latched ones `e.1` and the awaited ones `e.2`.
     """
-    from .from_ir import ir_to_lean as prop
-    from .from_ir import ir_to_lean_nat as nat
-
     wires = q.wires
+    state = ("s", [("s", "s", wires.ctrl_next)])
+    inputs = ("e", [("e", "e.2", wires.extl_next),
+                    ("el", "e.1", wires.extl_latched)])
 
-    def translate(term, mode: str) -> str | None:
-        if term is None:
-            return None
-        if mode in ("property", "invariant"):
-            return prop(term, wires.ctrl_next, param_name="s")
-        if mode == "ranking":
-            return nat(term, wires.ctrl_next, param_name="s")
-        # preconditions
-        return prop(
-            term,
-            state_wires=[],
-            param_name="e",
-            extra=[
-                ("e", "e.2", wires.extl_next),
-                ("el", "e.1", wires.extl_latched),
-            ],
-        )
-
-    def named(term, role: str) -> str | None:
-        """`translate`, with the predicate's role on any refusal.
+    def printed(term, role: str, over, *, nat: bool = False) -> str | None:
+        """`term` as Lean over `over`, with its role on any refusal.
 
         The printer walks a term and knows nothing of where it came from;
-        `--pre (= s0 0)` parses and then fails on a name preconditions do
-        not bind, and "Unknown free variable `s0`" alone does not say which
-        of five sources asked for it.
+        `--extl-assume (= s0 0)` parses and then fails on a name an
+        assumption does not bind, and "Unknown free variable `s0`" alone
+        does not say which predicate asked for it.
         """
+        if term is None:
+            return None
+        param, bindings = over
         try:
-            return translate(term, role)
+            return ir_to_lean(term, param, bindings, nat=nat)
         except Refused as e:
             raise PredicateRefused(role, str(e), kind=q.kind) from e
 
-    prp = named(q.prp, "property")
-    init_pre = named(q.init_pre, "pre")
-    update_pre = named(q.update_pre, "pre")
-    inv = named(q.inv, "invariant")
-    ranking = named(q.ranking, "ranking")
+    # One assumption of both blocks (`read_predicates`) is printed once.
+    if q.update_assume is q.init_assume:
+        init_assume = update_assume = printed(q.init_assume, "extl-assume", inputs)
+    else:
+        init_assume = printed(q.init_assume, "extl-assume-init", inputs)
+        update_assume = printed(q.update_assume, "extl-assume-update", inputs)
     return LeanCertificate(
-        kind=q.kind, prp=prp, inv=inv, ranking=ranking,
-        init_pre=init_pre, update_pre=update_pre,
+        kind=q.kind,
+        prp=printed(q.prp, "property", state),
+        inv=printed(q.inv, "invariant", state),
+        ranking=printed(q.ranking, "ranking", state, nat=True),
+        init_assume=init_assume,
+        update_assume=update_assume,
     )
 
 
@@ -123,8 +117,8 @@ def _cert_def_context(ctx: LeanContext, lean_cert: LeanCertificate) -> dict:
         ctrl_type=product_type(ctx.ctrl_next),
         noncomp="noncomputable " if ctx.uses_real else "",
         is_safety=lean_cert.is_safety,
-        init_pre_expr=lean_cert.init_pre,
-        update_pre_expr=lean_cert.update_pre,
+        init_pre_expr=lean_cert.init_assume,
+        update_pre_expr=lean_cert.update_assume,
         inv_expr=lean_cert.inv,
         p_expr=lean_cert.prp,
         ranking_expr=None if lean_cert.is_safety else lean_cert.ranking,
@@ -135,7 +129,8 @@ def generate_data_lean(
     ctx: LeanContext,
     lean_cert: LeanCertificate | None = None,
 ) -> str:
-    """Generate Certificate/Data.lean: init_pre, update_pre, inv, P, ranking.
+    """Generate Certificate/Data.lean: init_pre, update_pre (the
+    assumptions on the inputs), inv, P, ranking.
 
     Imports only ``Relational.Basic``.  ``Module.lean`` imports it, and
     the proofs and the certificate through that.

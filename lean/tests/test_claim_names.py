@@ -76,12 +76,12 @@ def test_a_claim_in_names_is_the_claim_by_position(tmp_path):
     the positional claim generates."""
     named = reactor(str(FIXTURES / "twobit_named.py"),
                    "--buchi", "(and (not (X lo)) (not (X hi)))",
-                   "--pre", "(or (X enable) enable)",
+                   "--extl-assume", "(or (X enable) enable)",
                    "--invariant", "true",
                    "--cert-file", str(tmp_path / "named.lean"))
     positional = reactor(str(FIXTURES / "twobit_lia.py"),
                         "--buchi", "(and (not (X @intf.0)) (not (X @intf.1)))",
-                        "--pre", "(or (X @extl.0) @extl.0)",
+                        "--extl-assume", "(or (X @extl.0) @extl.0)",
                         "--invariant", "true",
                         "--cert-file", str(tmp_path / "positional.lean"))
     assert named.returncode == 0, named.stderr
@@ -89,7 +89,29 @@ def test_a_claim_in_names_is_the_claim_by_position(tmp_path):
     assert (tmp_path / "named.lean").read_bytes() == \
         (tmp_path / "positional.lean").read_bytes()
     assert ".. --buchi, in internal names: (and (not s0) (not s1))" in named.stdout
-    assert ".. --pre, in internal names: (or e0 el0)" in named.stdout
+    assert ".. --extl-assume, in internal names: (or e0 el0)" in named.stdout
+
+
+def test_each_block_can_have_its_own_assumption(tmp_path):
+    """`--extl-assume-init` is `init_pre` alone, `--extl-assume-update`
+    `update_pre` alone; a block given none assumes `True`."""
+    cert = tmp_path / "C.lean"
+    r = reactor(str(FIXTURES / "twobit_named.py"),
+                "--extl-assume-init", "(X enable)",
+                "--extl-assume-update", "(not enable)",
+                "--cert-file", str(cert))
+    assert r.returncode == 0, r.stderr
+    text = cert.read_text()
+    init = next(ln for ln in text.splitlines() if ln.startswith("def init_pre"))
+    update = next(ln for ln in text.splitlines() if ln.startswith("def update_pre"))
+    assert init.endswith("fun e => (e.2 0 0)"), init
+    assert update.endswith("fun e => ¬ ((e.1 0 0))"), update
+    r = reactor(str(FIXTURES / "twobit_named.py"),
+                "--extl-assume-update", "(not enable)",
+                "--cert-file", str(cert))
+    assert r.returncode == 0, r.stderr
+    assert "Prop := True" in next(ln for ln in cert.read_text().splitlines()
+                                  if ln.startswith("def init_pre"))
 
 
 def test_a_bad_claim_or_name_is_an_error_line(tmp_path):

@@ -4,7 +4,7 @@
 and inputs -- `s0..`, `e0..` and `el0..`, as a `Scope` binds them -- into a
 `Formula`. It reads the fragment a certificate is written in: the core
 theory, integer and real arithmetic, `to_real`,
-`to_int` and `ubv_to_int`, bit-vector literals, `let`, and
+`to_int` and `ubv_to_int`, bit-vector literals, and
 `((_ tuple.select k) v)` on a matrix variable. Of these:
 
 * a chain `(< a b c)` or `(= a b c)` is the conjunction of its links;
@@ -18,7 +18,8 @@ theory, integer and real arithmetic, `to_real`,
 
 `(distinct a b c)` is every pair distinct. What this parser does not read
 -- `/`, `abs`, `xor`, the bit-vector operations, which a predicate has no
-Lean form for (`proof.from_ir`) -- is refused, by name.
+Lean form for (`proof.from_ir`) -- is refused, by name; so is `let`, which
+a claim is refused before it gets here (`parse.names`).
 """
 
 from __future__ import annotations
@@ -94,7 +95,7 @@ def read_smtlib(scope: Scope, src: str) -> Formula:
     naming what is wrong with it."""
     b = Builder()
     x = Elaborator(scope, b)
-    return b.formula(x.settle(x.term(read(src), {}), None), scope.names)
+    return b.formula(x.settle(x.term(read(src)), None), scope.names)
 
 
 class Elaborator:
@@ -107,31 +108,31 @@ class Elaborator:
 
     # --- what an expression is -----------------------------------------------
 
-    def term(self, e, env: dict):
-        """`e` as a wire, a `Lit` or a `Matrix`; `env` is what `let` bound."""
+    def term(self, e):
+        """`e` as a wire, a `Lit` or a `Matrix`."""
         if isinstance(e, Atom):
-            return self.atom(e, env)
+            return self.atom(e)
         if not e:
             raise Unreadable("`()` is no term")
         head, args = e[0], e[1:]
         if isinstance(head, tuple):
-            return self.indexed_application(head, args, env)
+            return self.indexed_application(head, args)
         if head.kind != "symbol":
             raise Unreadable(f"`{show(e)}` applies `{head}`, which is no function")
         name = head.text
         if name == "let":
-            return self.let(e, args, env)
+            raise Unreadable(f"`{show(e)}`: `let` is not read")
         if name == "_":
             return self.indexed_constant(e, args)
         if name == "!":
             raise Unreadable(f"`{show(e)}`: an annotation is not read")
-        vals = [self.term(a, env) for a in args]
+        vals = [self.term(a) for a in args]
         if name == "-" and len(vals) == 1 and isinstance(vals[0], Lit) and not vals[0].neg:
             # `(- 5)` takes the sort it meets, as `5` does.
             return Lit(vals[0].value, vals[0].decimal, neg=True)
         return self.apply(name, vals, show(e))
 
-    def atom(self, a: Atom, env: dict):
+    def atom(self, a: Atom):
         if a.kind == "numeral":
             return Lit(int(a.text), decimal=False, bare=True)
         if a.kind == "decimal":
@@ -142,8 +143,6 @@ class Elaborator:
             return self.b.bitvec(4 * (len(a.text) - 2), int(a.text[2:], 16))
         if a.kind == "keyword":
             raise Unreadable(f"`{a}` is a keyword, not a term")
-        if a.text in env:
-            return env[a.text]
         if a.text in ("true", "false"):
             return self.b.boolean(a.text == "true")
         hit = self.scope.lookup(a.text)
@@ -155,19 +154,6 @@ class Elaborator:
                              f"{', '.join(sorted(self.scope.names)) or 'nothing'}")
         return hit
 
-    def let(self, e, args, env: dict):
-        if len(args) != 2 or not isinstance(args[0], tuple):
-            raise Unreadable(f"`{show(e)}` is no `(let ((x t) ...) body)`")
-        bound = dict(env)
-        for binding in args[0]:
-            if (not isinstance(binding, tuple) or len(binding) != 2
-                    or not isinstance(binding[0], Atom)
-                    or binding[0].kind != "symbol"):
-                raise Unreadable(f"`{show(binding)}` is no `(x t)` binding")
-            # In parallel: every value is read where the `let` is.
-            bound[binding[0].text] = self.term(binding[1], env)
-        return self.term(args[1], bound)
-
     def indexed_constant(self, e, args):
         """`(_ bvN W)`."""
         if (len(args) == 2 and isinstance(args[0], Atom)
@@ -177,13 +163,13 @@ class Elaborator:
                                  int(_BV_LITERAL.match(args[0].text)[1]))
         raise Unreadable(f"`{show(e)}` is no indexed constant this parser reads")
 
-    def indexed_application(self, head, args, env: dict):
+    def indexed_application(self, head, args):
         """`((_ tuple.select k) v)`, on a matrix variable `v`."""
         if (len(head) == 3 and isinstance(head[0], Atom) and head[0].text == "_"
                 and isinstance(head[1], Atom) and head[1].text == "tuple.select"
                 and isinstance(head[2], Atom) and head[2].kind == "numeral"
                 and len(args) == 1):
-            target = self.term(args[0], env)
+            target = self.term(args[0])
             if not isinstance(target, Matrix):
                 raise Unreadable(f"`{show((head, *args))}`: `{show(args[0])}` "
                                  f"is no matrix variable to select from")

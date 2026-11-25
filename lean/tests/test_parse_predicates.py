@@ -155,10 +155,19 @@ def test_a_fault_in_the_syntax_itself_is_not_a_parse_error(monkeypatch, bug):
 COUNTDOWN = MODS / "m_countdown.py"
 
 
-def test_the_pre_is_read_once_for_both_rounds():
+def test_one_assumption_of_both_blocks_is_read_once():
     q = read_predicates(load_module(COUNTDOWN),
-                        Claim(init_pre="(>= s0 0)", update_pre="(>= s0 0)"))
-    assert q.init_pre is q.update_pre
+                        Claim(init_assume="(>= s0 0)", update_assume="(>= s0 0)"))
+    assert q.init_assume is q.update_assume
+
+
+def test_an_assumption_is_refused_by_the_flag_it_came_from():
+    """`--extl-assume` is both blocks'; a block's own is its own flag's."""
+    m = load_module(COUNTDOWN)
+    with pytest.raises(PredicateRefused, match="^--extl-assume: must have sort Bool"):
+        read_predicates(m, Claim(init_assume="(+ s0 1)", update_assume="(+ s0 1)"))
+    with pytest.raises(PredicateRefused, match="^--extl-assume-update: must have sort Bool"):
+        read_predicates(m, Claim(init_assume="(>= s0 0)", update_assume="(+ s0 1)"))
 
 
 def test_an_unreadable_predicate_is_refused_by_its_flag():

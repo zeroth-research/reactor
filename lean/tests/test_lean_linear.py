@@ -28,11 +28,10 @@ def test_identity_with_bias():
     A = torch.eye(3, dtype=torch.int64)
     B = torch.tensor([[1], [0], [0]], dtype=torch.int64)
     term, _ = _int_linear(A, B, 3)
-    out_m, a_lit, b_lit, ty = linear_list_literals(term)
+    out_m, a_lit, b_lit = linear_list_literals(term)
     assert out_m == 3
     assert a_lit == "([[(1 : Int), (0 : Int), (0 : Int)], [(0 : Int), (1 : Int), (0 : Int)], [(0 : Int), (0 : Int), (1 : Int)]] : List (List Int))"
     assert b_lit == "([(1 : Int), (0 : Int), (0 : Int)] : List Int)"
-    assert ty == "Int"
 
 
 def test_orientation_is_row_major():
@@ -40,7 +39,7 @@ def test_orientation_is_row_major():
     A = torch.tensor([[1, 2, 3], [4, 5, 6]], dtype=torch.int64)  # out=2, in=3
     B = torch.zeros((2, 1), dtype=torch.int64)
     term, _ = _int_linear(A, B, 2)
-    out_m, a_lit, b_lit, _ = linear_list_literals(term)
+    out_m, a_lit, b_lit = linear_list_literals(term)
     assert out_m == 2
     # rows are A[i][:] in order — NOT the transpose [[1,4],[2,5],[3,6]]
     assert a_lit == "([[(1 : Int), (2 : Int), (3 : Int)], [(4 : Int), (5 : Int), (6 : Int)]] : List (List Int))"
@@ -51,7 +50,7 @@ def test_negative_coefficients():
     A = torch.tensor([[-1, 2], [0, -3]], dtype=torch.int64)
     B = torch.tensor([[-5], [7]], dtype=torch.int64)
     term, _ = _int_linear(A, B, 2)
-    _, a_lit, b_lit, _ = linear_list_literals(term)
+    _, a_lit, b_lit = linear_list_literals(term)
     assert a_lit == "([[(-1 : Int), (2 : Int)], [(0 : Int), (-3 : Int)]] : List (List Int))"
     assert b_lit == "([(-5 : Int), (7 : Int)] : List Int)"
 
@@ -64,7 +63,7 @@ def test_zero_bias_becomes_zeros():
         tensor.int.Linear(A, torch.zeros((0, 0), dtype=torch.int64))
     zero = torch.zeros((3, 1), dtype=torch.int64)
     term, _ = _int_linear(A, zero, 3)
-    out_m, a_lit, b_lit, _ = linear_list_literals(term)
+    out_m, a_lit, b_lit = linear_list_literals(term)
     assert out_m == 3
     assert a_lit == "([[(0 : Int), (0 : Int)], [(1 : Int), (0 : Int)], [(0 : Int), (1 : Int)]] : List (List Int))"
     assert b_lit == "([(0 : Int), (0 : Int), (0 : Int)] : List Int)"  # one zero per output row
@@ -76,9 +75,8 @@ def test_real_lra_formatting():
     out_w = Wire(Real([1, 1]))
     x_w = Wire(Real([2, 1]))
     term = Term(tensor.real.Linear(A, B), [out_w], [x_w])
-    out_m, a_lit, b_lit, ty = linear_list_literals(term)
+    out_m, a_lit, b_lit = linear_list_literals(term)
     assert out_m == 1
-    assert ty == "Real"
     assert a_lit == "([[((3 : Real) / 2), (0 : Real)]] : List (List Real))"
     assert b_lit == "([(2 : Real)] : List Real)"
 

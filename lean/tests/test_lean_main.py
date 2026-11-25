@@ -55,7 +55,7 @@ def test_main_applies_update_curried(make):
     functional = ModuleToLean4(LeanContext(module)).to_lean_functional()
     assert "def update (ctrl:" in functional, "signature shape changed; update this test"
 
-    main = generate_main_lean(module)
+    main = generate_main_lean(LeanContext(module))
     assert "update state extlPrev extl" in main, (
         "Main.lean must apply update's three parameter groups separately"
     )
@@ -70,7 +70,7 @@ def test_main_threads_the_previous_external_input(make):
 
     It previously had no source at all in `main`.
     """
-    main = generate_main_lean(make())
+    main = generate_main_lean(LeanContext(make()))
     assert "let mut extlPrev := extl0" in main, "extl_l is never initialised"
     assert "extlPrev := extl" in main, "extl_l is never advanced"
 
@@ -98,7 +98,7 @@ def test_show_ctrl_destructures_in_declaration_order():
     `product_type` and `product_accessor` both order components as declared, but
     the pattern was built reversed, so every slot got the wrong formatter.
     """
-    main = generate_main_lean(_heterogeneous_module())
+    main = generate_main_lean(LeanContext(_heterogeneous_module()))
     assert "let (v0, v1) := v" in main
     assert "let (v1, v0) := v" not in main, "destructuring is reversed"
     # and the ctrl type ascription is in the same order
@@ -114,14 +114,14 @@ def test_parse_extl_builds_the_tuple_in_declaration_order():
     update = [Term(tensor.int.Ite([1, 1]), [X(s)], [X(e0), X(e1), s])]
     module = Module.sequential([s, e0, e1], init, update)
 
-    main = generate_main_lean(module)
+    main = generate_main_lean(LeanContext(module))
     assert "pure (e0, e1)" in main
     assert "pure (e1, e0)" not in main, "parsed tuple is reversed"
 
 
 def test_single_component_needs_no_tuple():
     """One wire: the value itself, matching `product_accessor`'s total==1 case."""
-    main = generate_main_lean(_module_without_extl())
+    main = generate_main_lean(LeanContext(_module_without_extl()))
     assert "let v0 := v" in main
     assert "let (v0) := v" not in main
 
@@ -137,7 +137,7 @@ def test_main_imports_a_module_that_exists():
     The import was built as `{project_name}.{module_name}`, which named no
     file the generator writes.
     """
-    main = generate_main_lean(_module_without_extl())
+    main = generate_main_lean(LeanContext(_module_without_extl()))
     assert main.splitlines()[0] == "import System"
     assert "import Rea.Rea" not in main
 
@@ -145,7 +145,7 @@ def test_main_imports_a_module_that_exists():
 def test_bool_ctrl_is_shown_as_bool():
     """`dtype_to_lean_type` always returns a `Matrix ...`, so the old string
     comparison against "Bool" never matched and every element became Int."""
-    main = generate_main_lean(_heterogeneous_module())
+    main = generate_main_lean(LeanContext(_heterogeneous_module()))
     assert "showMatrix 1 1 showBool v0" in main, "Bool ctrl is not shown as Bool"
     assert "showMatrix 1 1 toString v1" in main, "Int ctrl is not shown as Int"
 
@@ -158,7 +158,7 @@ def test_bitvec_extl_is_parsed_as_bitvec():
     update = [Term(tensor.Skip(Word(8, [1, 1])), [X(s)], [X(b)])]
     module = Module.sequential([s, b], init, update)
 
-    main = generate_main_lean(module)
+    main = generate_main_lean(LeanContext(module))
     assert "Array (BitVec 8)" in main, "BitVec input parsed into an Int array"
     assert "BitVec.ofInt 8 v" in main, "BitVec input is not converted"
     assert "Matrix (Fin 1) (Fin 1) (BitVec 8)" in main
@@ -182,6 +182,6 @@ def test_real_io_is_refused_with_a_reason():
 
 def test_show_mat_is_generic_over_its_element():
     """The shower takes the element renderer, so it is not pinned to Int."""
-    main = generate_main_lean(_heterogeneous_module())
+    main = generate_main_lean(LeanContext(_heterogeneous_module()))
     assert "def showMatrix {t : Type} (m n : Nat) (f : t → String)" in main
     assert "(mat : Fin m → Fin n → Int)" not in main

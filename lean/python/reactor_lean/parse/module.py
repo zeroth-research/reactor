@@ -87,9 +87,21 @@ def _existing(path: str | Path) -> Path:
 
 
 def _as_module(result) -> "tuple[Any, Mapping[str, Any] | None]":
+    """The module `result` is, and the names a `Named` one gives it.
+
+    A Gymnasium environment is made a `Module` by `reactor.Env`. A `Named`
+    one is refused: its variables are made by `Env`, so a name given
+    beside the environment cannot be one of them.
+    """
     from reactor import Env
 
     if isinstance(result, Named):
+        if not isinstance(result.module, Module):
+            raise InputError(
+                f"`Named` takes a `Module`, not `{type(result.module).__name__}`"
+                ": make an environment one with `reactor.Env(env)`, and name "
+                "that module's variables"
+            )
         return result.module, result.names
     if isinstance(result, Module):
         return result, None

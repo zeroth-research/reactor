@@ -31,6 +31,17 @@ def test_a_callable_the_file_does_not_define_is_refused():
         parse.load(FIXTURES / "counter.py", "stray")
 
 
+def test_a_named_environment_is_refused(tmp_path):
+    """Only a `Module` has variables a name can be given to; an
+    environment has them once `reactor.Env` made it one."""
+    path = tmp_path / "m.py"
+    path.write_text("from reactor_lean.parse import Named\n"
+                    "def module():\n"
+                    "    return Named(object(), {})\n")
+    with pytest.raises(parse.InputError, match="takes a `Module`, not `object`"):
+        parse.load(path)
+
+
 def test_the_project_keeps_the_input(tmp_path):
     """`dbg/` holds the input the module was read from."""
     from reactor_lean.codegen.context import LeanContext

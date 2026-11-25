@@ -36,12 +36,14 @@ LAKE_CACHE_ENV = "REACTOR_LAKE_CACHE"
 MANIFEST = "lake-manifest.json"
 
 
-def lake_cache() -> Path | None:
+def lake_cache(requires: Iterable[Require] = ()) -> Path | None:
     """`$REACTOR_LAKE_CACHE` as a Lake package cache, or None when it is
     unset.
 
-    Refused when it is set to something that is not a cache, before any
-    project is written against it.
+    Refused when it is set to something that is not a cache, or to one
+    that does not hold a git require of `requires` at the revision the
+    lakefile asks for (`held_packages`). `cli.main` asks with the
+    project's requires, before any of the project is written.
     """
     value = os.environ.get(LAKE_CACHE_ENV)
     if not value:
@@ -53,25 +55,23 @@ def lake_cache() -> Path | None:
             f"${LAKE_CACHE_ENV}: {root} is not a Lake package cache: "
             f"it has no {' or '.join(missing)}",
         )
+    held_packages(root, requires)
     return root
 
 
-def cached_manifest(cache: Path, requires: Iterable[Require], *,
-                    name: str, project: Path) -> dict:
-    """The manifest of the project `name` at `project`, which requires
-    `requires` and builds against `cache`: the cache's entry for every git
-    package it holds, and an entry made from each path require.
+def held_packages(cache: Path, requires: Iterable[Require]) -> "tuple[dict, dict[str, dict]]":
+    """The cache's manifest, and its entry for each git package it holds,
+    by name.
 
-    Refused for a git require that the cache does not hold at the revision
-    the lakefile asks for: lake would fetch it into the cache, or fetch
-    another revision over the one every other project builds against.
+    Refused for a git require of `requires` that the cache does not hold
+    at the revision the lakefile asks for: lake would fetch it into the
+    cache, or fetch another revision over the one every other project
+    builds against.
     """
     cached = json.loads((cache / MANIFEST).read_text())
     held = {e["name"]: e for e in cached["packages"] if e["type"] == "git"}
-    paths = []
     for r in requires:
         if r.path is not None:
-            paths.append(_path_entry(r, project))
             continue
         entry = held.get(r.name)
         if entry is None:
@@ -86,6 +86,18 @@ def cached_manifest(cache: Path, requires: Iterable[Require], *,
                 f"{entry.get('inputRev') or entry.get('rev')}, and the project "
                 f"requires it at {r.rev}",
             )
+    return cached, held
+
+
+def cached_manifest(cache: Path, requires: Iterable[Require], *,
+                    name: str, project: Path) -> dict:
+    """The manifest of the project `name` at `project`, which requires
+    `requires` and builds against `cache`: the cache's entry for every git
+    package it holds, and an entry made from each path require. Refused as
+    `held_packages` refuses."""
+    requires = tuple(requires)
+    cached, held = held_packages(cache, requires)
+    paths = [_path_entry(r, project) for r in requires if r.path is not None]
     own = {e["name"] for e in paths}
     return {
         **cached,

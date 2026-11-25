@@ -43,13 +43,16 @@ class Claim:
       "safety" -- `G prp`, `rule_globally`: an invariant that implies
                   `prp`, and no ranking. `--safety`.
 
-    `init_pre` / `update_pre` constrain the inputs `init` and `update` see.
+    `init_assume` / `update_assume` are what the inputs `init` and `update`
+    read are assumed to satisfy: `--extl-assume-init` and
+    `--extl-assume-update`, or `--extl-assume` for both, when they are one
+    assumption.
     """
 
     prp: str | None = None
     kind: Literal["safety", "buchi"] = "buchi"
-    init_pre: str | None = None
-    update_pre: str | None = None
+    init_assume: str | None = None
+    update_assume: str | None = None
 
 
 @dataclass(frozen=True)
@@ -243,8 +246,8 @@ class Predicates:
     prp: "Formula | None" = None
     inv: "Formula | None" = None
     ranking: "Formula | None" = None
-    init_pre: "Formula | None" = None
-    update_pre: "Formula | None" = None
+    init_assume: "Formula | None" = None
+    update_assume: "Formula | None" = None
 
 
 def read_predicates(module, claim: Claim,
@@ -273,10 +276,13 @@ def read_predicates(module, claim: Claim,
     prp = read(claim.prp, "property", kind=claim.kind)
     inv = read(cert.inv, "invariant")
     ranking = read(cert.ranking, "ranking", want="Int")
-    init_pre = read(claim.init_pre, "pre")
-    # `--pre` is both, and is read once.
-    update_pre = (init_pre if claim.update_pre == claim.init_pre
-                  else read(claim.update_pre, "pre"))
+    # One assumption of both blocks is read once, and refused as
+    # `--extl-assume`'s; `proof.render` prints it once.
+    if claim.init_assume == claim.update_assume:
+        init_assume = update_assume = read(claim.init_assume, "extl-assume")
+    else:
+        init_assume = read(claim.init_assume, "extl-assume-init")
+        update_assume = read(claim.update_assume, "extl-assume-update")
     return Predicates(kind=claim.kind, wires=wires, prp=prp, inv=inv,
-                            ranking=ranking, init_pre=init_pre,
-                            update_pre=update_pre)
+                      ranking=ranking, init_assume=init_assume,
+                      update_assume=update_assume)

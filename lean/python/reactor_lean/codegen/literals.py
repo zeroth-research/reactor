@@ -46,9 +46,6 @@ class ConstantRegistry:
     def lookup(self, wire_id: int) -> str | None:
         return self._by_id.get(wire_id)
 
-    def names(self) -> list[str]:
-        return list(self._by_id.values())
-
     def defs(self) -> list[str]:
         return list(self._defs)
 
@@ -155,39 +152,49 @@ def tensor_to_lean_scalar(tensor, wire: Wire) -> str:
     return lean_literal(wire.dtype, tensor.item())
 
 
-def affine_tensors(term: Term) -> "tuple[torch.Tensor, torch.Tensor]":
-    """`A` and the bias column `b` of the affine map `Y = A·X + b` a `Linear`
-    or `Scale` op is, `b` of shape `[out, 1]`.
+def affine_gap(term: Term) -> "str | None":
+    """Why the `Linear` or `Scale` op of `term` is no affine map
+    `Y = A·X + b` with one bias column, or None when it is one.
 
     `Linear(A, B)`'s `B` is of the output's shape `[out, k]`, which the
     reflected form takes as one column added to every column of `A·X`: a `B`
-    whose columns differ is refused. `Scale(c)` is the pointwise product of
-    `c` and `X`, which is `diag(c)·X` when every row of `c` is one number: a
-    `c` whose rows are not is refused.
+    whose columns differ is no such map. `Scale(c)` is the pointwise product
+    of `c` and `X`, which is `diag(c)·X` when every row of `c` is one number.
     """
     op = term.itype
     if itype_name(op) == "Scale":
         c = op.tensor
         if not bool((c == c[:, :1]).all()):
-            raise Refused(
-                f"no Lean form for `Scale` by {c.tolist()}: its rows are not "
-                "one number each, so it is no `diag(c)·X`"
-            )
-        return torch.diag(c[:, 0]), torch.zeros(c.shape[0], 1, dtype=c.dtype)
-    A, B = op.a, op.b
+            return (f"its factor {c.tolist()} has rows that are not one "
+                    "number each, so it is no `diag(c)·X`")
+        return None
+    B = op.b
     if B.numel() and not bool((B == B[:, :1]).all()):
-        raise Refused(
-            f"no Lean form for a `Linear` whose bias {B.tolist()} differs "
-            "across its columns: `matVecAffine` adds one column"
-        )
-    return A, B[:, :1]
+        return (f"its bias {B.tolist()} differs across its columns, and "
+                "`matVecAffine` adds one column")
+    return None
 
 
-def linear_list_literals(term: Term) -> "tuple[int, str, str, str]":
+def affine_tensors(term: Term) -> "tuple[torch.Tensor, torch.Tensor]":
+    """`A` and the bias column `b` of the affine map `Y = A·X + b` a `Linear`
+    or `Scale` op is, `b` of shape `[out, 1]`. Refused when it is none
+    (`affine_gap`), which `codegen.terms.lean_gaps` asks before anything is
+    written."""
+    op = term.itype
+    gap = affine_gap(term)
+    if gap is not None:
+        raise Refused(f"no Lean form for `{itype_name(op)}`: {gap}")
+    if itype_name(op) == "Scale":
+        c = op.tensor
+        return torch.diag(c[:, 0]), torch.zeros(c.shape[0], 1, dtype=c.dtype)
+    return op.a, op.b[:, :1]
+
+
+def linear_list_literals(term: Term) -> "tuple[int, str, str]":
     """List-literal operands for a baked-constant `Linear` or `Scale` op
     (`Y = A·X + b`, see `affine_tensors`).
 
-    Returns ``(out_rows, A_literal, b_literal, elem_ty)`` where ``A_literal`` is a
+    Returns ``(out_rows, A_literal, b_literal)`` where ``A_literal`` is a
     ``List (List t)`` and ``b_literal`` a ``List t`` (empty bias → zeros), both
     type-ascribed. What the functional and scalar encodings hand
     `matVecAffine`.
@@ -208,4 +215,4 @@ def linear_list_literals(term: Term) -> "tuple[int, str, str, str]":
     else:
         bias = [lean_literal(out_wire.dtype, B[i][0].item()) for i in range(out_m)]
     b_lit = f"([{', '.join(bias)}] : List {ty})"
-    return out_m, a_lit, b_lit, ty
+    return out_m, a_lit, b_lit

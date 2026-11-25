@@ -96,3 +96,37 @@ def test_a_let_in_a_claim(tmp_path):
                            "--invariant", "(let ((y (X @intf.0))) (>= y 0))",
                            "-o", str(tmp_path)))
     assert "--invariant: `let` is not supported in a claim" in err
+
+
+def test_a_scale_with_no_lean_form_writes_nothing(tmp_path):
+    """Whether a `Scale` has a Lean form is a fact of its factor, and is
+    asked before the project directory is made, as an op's is."""
+    path = tmp_path / "scale.py"
+    path.write_text(
+        "import torch\n"
+        "from reactor import Int, Module, Term, Var, X, tensor\n"
+        "def module():\n"
+        "    x = Var(Int([1, 2]))\n"
+        "    init = [Term(tensor.int.Const(torch.ones(1, 2, dtype=torch.int64)), [X(x)])]\n"
+        "    update = [Term(tensor.int.Scale(torch.tensor([[2, 3]])), [X(x)], [x])]\n"
+        "    return Module.sequential([x], init, update)\n"
+    )
+    out = tmp_path / "out"
+    err = _refused(reactor(str(path), "-o", str(out)))
+    assert "`int.Scale`, and its factor [[2, 3]]" in err
+    assert not out.exists()
+
+
+@pytest.mark.parametrize("argv, why", [
+    (["--extl-assume", "true", "--extl-assume-init", "true"],
+     "--extl-assume is the assumption of both blocks"),
+    (["--extl-assume", "true", "--extl-assume-update", "true"],
+     "--extl-assume is the assumption of both blocks"),
+    (["-x", "--cert-file", "C.lean"], "--cert-file writes no project"),
+])
+def test_flags_that_would_be_dropped_are_refused(capsys, argv, why):
+    from reactor_lean.cli import parse_args
+
+    with pytest.raises(SystemExit):
+        parse_args([COUNTER, *argv])
+    assert why in capsys.readouterr().err

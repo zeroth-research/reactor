@@ -26,8 +26,10 @@ class Unreadable(Refused):
 
 class PredicateRefused(Refused):
     """A refusal about one of the claim's predicates, named by its `role`:
-    "property" (of `kind` "safety" or "buchi"), "pre", "invariant" or
-    "ranking" -- or any other label, for a term made up along the way.
+    "property" (of `kind` "safety" or "buchi"), "invariant", "ranking",
+    or an assumption on the inputs: "extl-assume" (of both blocks),
+    "extl-assume-init" or "extl-assume-update" -- or any other label, for a
+    term made up along the way.
     The layers that raise it know predicates by role; a claim's predicate
     is shown as the command-line flag it came from, which is where a user
     can act on it, and this is the one place that spelling lives."""
@@ -40,7 +42,8 @@ class PredicateRefused(Refused):
     def flag(self) -> str:
         if self.role == "property":
             return f"--{self.kind}"
-        if self.role in ("pre", "invariant", "ranking"):
+        if self.role in ("invariant", "ranking", "extl-assume",
+                         "extl-assume-init", "extl-assume-update"):
             return f"--{self.role}"
         return self.role
 

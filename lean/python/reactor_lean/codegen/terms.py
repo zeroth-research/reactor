@@ -20,6 +20,7 @@ from reactor_lean.lowering.sorts import (
 from reactor_lean.lowering.elements import flat_indices, flat_layout
 from reactor_lean.codegen.literals import (
     ConstantRegistry,
+    affine_gap,
     constant_expr,
     linear_list_literals,
     tensor_to_lean_scalar,
@@ -35,24 +36,33 @@ def lean_gaps(ctx) -> list[str]:
     One sentence per operator, in the order the module first reaches for it:
     which block, which wire, and the reason the op table records. Ops of
     two theories that share a name (`word.unsigned.Div`, `word.signed.Div`)
-    are two operators.
+    are two operators. A `Linear` or `Scale` term is asked about on its
+    own, since whether it has a Lean form is a fact of the constants baked
+    into it (`literals.affine_gap`).
 
     Asked before anything is generated, which is the whole point. The same
     module met during codegen raises about a missing table cell, half way
     through the project. Every term is asked about, read or not, because
     the functional and scalar encodings translate a block's terms as they
     are. A module that generates has nothing to report here: the gap is an
-    operator with no matrix form (:func:`lowering.ops.gap_of`), and the
-    functional encoding every project has is made of matrix forms alone.
+    operator with no matrix form (:func:`lowering.ops.gap_of`), or an
+    affine op that is no affine map, and the functional encoding every
+    project has is made of matrix forms alone.
     """
     out, seen = [], set()
     for block in ("init", "update"):
         for term in getattr(ctx.atom, block):
             theory, name = theory_of(term.itype), itype_name(term.itype)
-            why = None if (theory, name) in seen else lean_gap(term.itype)
+            if name in ("Linear", "Scale"):
+                why = affine_gap(term)
+            elif (theory, name) in seen:
+                why = None
+            else:
+                why = lean_gap(term.itype)
+                if why is not None:
+                    seen.add((theory, name))
             if why is None:
                 continue
-            seen.add((theory, name))
             op = f"{theory}.{name}" if theory else name
             out.append(
                 f"the `{block}` block writes wire #{term.write[0].id} with "
@@ -148,7 +158,7 @@ def _linear_expr(term, wire_expr: dict[int, str]) -> str:
     contraction is machine-checked rather than trusted.
     """
     x_expr = wire_expr[term.read[0].id]
-    out_m, a_lit, b_lit, _ = linear_list_literals(term)
+    out_m, a_lit, b_lit = linear_list_literals(term)
     return f"(matVecAffine {out_m} {a_lit} {b_lit} {x_expr})"
 
 

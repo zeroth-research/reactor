@@ -78,7 +78,7 @@ from ..codegen.encodings import ModuleToLean4
 from ..errors import Refused
 from ..parse import Certificate, Claim
 from ..project.lake_cache import lake_cache
-from ..project.lakefile import reactlib_checkout
+from ..project.lakefile import project_requires
 from ..project.main_lean import check_runnable
 from ..project.scaffold import ENCODINGS, Layout, create_project, write_encoding
 from ..proof.render import (
@@ -98,17 +98,17 @@ def main():
     # its traceback.
     try:
         # `$REACTLIB` is a checkout the project's lakefile will require, and
-        # `$REACTOR_LAKE_CACHE` the packages it will build against, so a bad
-        # one is refused here, before any of the project is written.
+        # `$REACTOR_LAKE_CACHE` the packages it will build against, holding
+        # what the lakefile requires from git at its revision: a bad one is
+        # refused here, before any of the project is written.
         if not settings.cert_file:
-            reactlib_checkout()
-            lake_cache()
+            lake_cache(project_requires())
         problem = parse.load(settings.module_file, settings.module_def)
         module = problem.module
         print(module)
         claim, given = claim_from_flags(settings, problem.names)
         ctx = lean_context(module)
-        if settings.executable and not settings.cert_file:
+        if settings.executable:
             check_runnable(ctx)
         lean_cert = lean_certificate(module, claim, given)
     except Refused as e:
@@ -137,7 +137,8 @@ def claim_from_flags(
     is in the internal names every later stage reads, and each flag is
     printed in them once, since that is how the logs and
     any refusal will spell it."""
-    if not (settings.prp or settings.pre or settings.invariant
+    if not (settings.prp or settings.extl_assume or settings.extl_assume_init
+            or settings.extl_assume_update or settings.invariant
             or settings.ranking):
         return None, Certificate()
     prp_flag = "--safety" if settings.is_safety else "--buchi"
@@ -150,8 +151,13 @@ def claim_from_flags(
         return spelled
 
     prp = internal(settings.prp, prp_flag)
-    pre = internal(settings.pre, "--pre")
-    claim = Claim(prp=prp, kind=settings.kind, init_pre=pre, update_pre=pre)
+    # `--extl-assume` is both blocks' assumption; it excludes the other two.
+    both = internal(settings.extl_assume, "--extl-assume")
+    init = internal(settings.extl_assume_init, "--extl-assume-init") or both
+    update = (internal(settings.extl_assume_update, "--extl-assume-update")
+              or both)
+    claim = Claim(prp=prp, kind=settings.kind, init_assume=init,
+                  update_assume=update)
     return claim, Certificate(internal(settings.invariant, "--invariant"),
                               internal(settings.ranking, "--ranking"))
 

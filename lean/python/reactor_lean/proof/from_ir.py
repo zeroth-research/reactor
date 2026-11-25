@@ -1,8 +1,9 @@
 """Reactor's terms (a `parse.formula.Formula`) -> a Lean 4 expression.
 
 The printer of the predicates `parse.predicates` reads: one
-parameter `s`, a left-nested tuple whose components are reached by `.1`,
-`.2.1`, ... with a scalar taken out of its 1×1 `Matrix` by `0 0`; an `ite`
+parameter, the state `s` or the inputs `e`, a tuple whose components are
+reached by `.1`, `.2.1`, ... with a scalar taken out of its 1×1 `Matrix`
+by `0 0`; a cast as the op table's scalar column writes it; an `ite`
 that is a `min` or a `max` printed as one; an arithmetic subterm read more
 than once `let`-bound, when that makes the text shorter; and a refusal for
 what has no Lean form, as `Refused`.
@@ -20,6 +21,7 @@ from reactor import Wire
 from ..codegen.literals import lean_literal, lean_real
 from ..errors import Refused
 from ..lowering.elements import product_accessor
+from ..lowering.ops import scalar_emitter
 from ..lowering.sorts import itype_name, theory_of, wire_shape
 from ..parse.formula import family
 
@@ -75,21 +77,15 @@ _MIN_MAX = {("Ge", True): "max", ("Gt", True): "max",
             ("Le", False): "max", ("Lt", False): "max"}
 
 
-def ir_to_lean(formula, state_wires: list[Wire], *, param_name: str = "s",
-               extra: "Bindings | None" = None, share: bool = True) -> str:
-    """`formula` as `fun {param_name} => ...`. `extra` binds more
-    variables -- `e0..`, `el0..` -- to accessors on the parameter."""
-    p = _Printer(formula, [("s", param_name, state_wires)] + (extra or []))
-    body, lets = p.parts(share)
-    return f"fun {param_name} => {with_lets(body, lets)}"
-
-
-def ir_to_lean_nat(formula, state_wires: list[Wire], *, param_name: str = "s",
-                   extra: "Bindings | None" = None, share: bool = True) -> str:
-    """An Int-sorted `formula` as a Lean `Nat`, clamped by `Int.toNat`."""
-    p = _Printer(formula, [("s", param_name, state_wires)] + (extra or []))
-    body, lets = p.parts(share)
-    return f"fun {param_name} => {with_lets(f'(({body} : Int)).toNat', lets)}"
+def ir_to_lean(formula, param: str, bindings: Bindings, *,
+               nat: bool = False) -> str:
+    """`formula` as `fun {param} => ...`, its variables read on `param` as
+    `bindings` say. With `nat`, an Int-sorted `formula` as a Lean `Nat`,
+    clamped by `Int.toNat`."""
+    body, lets = _Printer(formula, bindings).parts()
+    if nat:
+        body = f"(({body} : Int)).toNat"
+    return f"fun {param} => {with_lets(body, lets)}"
 
 
 class _Printer:
@@ -105,11 +101,9 @@ class _Printer:
 
     # --- sharing -------------------------------------------------------------
 
-    def parts(self, share: bool) -> tuple[str, list]:
+    def parts(self) -> tuple[str, list]:
         """`(body, lets)`, the `lets` in dependency order."""
         plain = self.walk(self.formula.out)
-        if not share:
-            return plain, []
         self.shared = self.shared_wires()
         if not self.shared:
             return plain, []
@@ -213,17 +207,15 @@ class _Printer:
         return lean_literal(t.write[0].dtype, t.itype.tensor.item())
 
     def cast(self, t, name: str, args: list, recur) -> str:
-        if name == "ToInt":
-            return f"⌊{recur(args[0])}⌋"
-        if name == "UbvToInt":
-            return f"(Int.ofNat (BitVec.toNat {recur(args[0])}))"
-        if name == "ToReal":
-            # An Int literal becomes a Real one; anything else is cast.
-            inner = self.by_wire.get(args[0].id)
-            if inner is not None and itype_name(inner.itype) == "Const":
-                return lean_real(inner.itype.tensor.item())
-            return f"((({recur(args[0])}) : Int) : Real)"
-        raise Refused(f"no Lean form for cast.{name} in a predicate")
+        """The casts the parser builds, as the module's terms write them;
+        an Int literal cast to Real is a Real literal."""
+        if name not in ("ToInt", "UbvToInt", "ToReal"):
+            raise Refused(f"no Lean form for cast.{name} in a predicate")
+        inner = self.by_wire.get(args[0].id)
+        if (name == "ToReal" and inner is not None
+                and itype_name(inner.itype) == "Const"):
+            return lean_real(inner.itype.tensor.item())
+        return scalar_emitter(t.itype)([recur(args[0])])
 
     def ite(self, t, theory: str, args: list, recur) -> str:
         cond = args[0]

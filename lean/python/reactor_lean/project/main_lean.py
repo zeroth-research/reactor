@@ -5,24 +5,11 @@ reads its inputs from stdin and prints its state each round.
 from __future__ import annotations
 
 
-from reactor import Module, Wire
-
 from ..errors import Refused
 from ..lowering.sorts import lean_elem_type, mat_mk, wire_shape
-from ..lowering.elements import ModuleWires
 from ..codegen.context import LeanContext
 from ..codegen.terms import build_tuple, product_type
-from .names import (
-    LINTERS_OFF,
-)
-
-
-def _token_count(wire: Wire) -> int:
-    """When reading a value from user, we need to know how many primitive values (Int/Bool)
-    to read to get a single input value (which can be e.g., a matrix).
-    This function computes this.
-    """
-    return wire_shape(wire).total
+from .names import LINTERS_OFF
 
 
 def check_runnable(ctx: LeanContext) -> None:
@@ -38,13 +25,10 @@ def check_runnable(ctx: LeanContext) -> None:
         )
 
 
-def _no_io(elem: str) -> ValueError:
-    return ValueError(f"no Lean IO for {elem}; `check_runnable` refuses "
-                      "a module with a `Real`")
-
-
 def _elem_parser(elem: str) -> "tuple[str, str, str]":
-    """`(bind, parser, push)` for reading one element of `elem` from a token.
+    """`(bind, parser, push)` for reading one element of `elem` -- a
+    `Bool`, an `Int` or a bit-vector, since `check_runnable` refused a
+    `Real` -- from a token.
 
     The emitted line is `let v <bind> <parser> tokens[...]!`, so `bind` is
     `:=` for a pure parser and `←` for one in IO; `push` is the expression
@@ -54,29 +38,24 @@ def _elem_parser(elem: str) -> "tuple[str, str, str]":
         return ":=", "parseBool", "v"
     if elem == "Int":
         return "←", "parseIntOrFail", "v"
-    if elem.startswith("(BitVec "):
-        width = elem[len("(BitVec ") : -1]
-        return "←", "parseIntOrFail", f"(BitVec.ofInt {width} v)"
-    raise _no_io(elem)
+    assert elem.startswith("(BitVec "), elem
+    width = elem[len("(BitVec ") : -1]
+    return "←", "parseIntOrFail", f"(BitVec.ofInt {width} v)"
 
 
 def _elem_shower(elem: str) -> str:
-    """Lean function rendering one element of `elem` as a String."""
-    if elem == "Bool":
-        return "showBool"
-    if elem == "Int":
-        return "toString"
-    if elem.startswith("(BitVec "):
-        return "toString"
-    raise _no_io(elem)
+    """Lean function rendering one element of `elem` (as `_elem_parser`
+    reads it) as a String."""
+    return "showBool" if elem == "Bool" else "toString"
 
 
-def generate_main_lean(module: Module) -> str:
-    """Generate Main.lean source that runs init/update in a stdin/stdout loop."""
-    wires = ModuleWires.of(module)
-    extl_next, ctrl_next = wires.extl_next, wires.ctrl_next
+def generate_main_lean(ctx: LeanContext) -> str:
+    """Generate Main.lean source that runs init/update in a stdin/stdout
+    loop, for a module `check_runnable` passed."""
+    extl_next, ctrl_next = ctx.extl_next, ctx.ctrl_next
 
-    total_extl_tokens = sum(_token_count(w) for w in extl_next)
+    # Each input is read as its elements, one token each.
+    total_extl_tokens = sum(wire_shape(w).total for w in extl_next)
 
     lines: list[str] = []
 

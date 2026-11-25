@@ -503,7 +503,7 @@ OPS: tuple[Op, ...] = (
 # keyed by ("", name), which is what `theory_of` returns for them.
 _BY_KEY: dict[tuple[str, str], Op] = {}
 for _op in OPS:
-    for _theory in _op.theories or ("",):
+    for _theory in _op.theories:
         _key = (_theory, _op.name)
         if _key in _BY_KEY:
             raise RuntimeError(f"two op-table rows for {_theory}.{_op.name}")

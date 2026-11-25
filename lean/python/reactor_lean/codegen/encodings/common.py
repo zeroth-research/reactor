@@ -52,7 +52,7 @@ def effect_type(wire) -> str:
 
 def scalar_bindings_with_recon(
     params: "list[tuple[str, list]]",
-) -> "tuple[list[str], dict[int, str], dict[int, list[str]]]":
+) -> "tuple[list[tuple[str, str]], dict[int, str], dict[int, list[str]]]":
     """Build wire bindings and flat scalar slot tracking for scalar encoding.
 
     For each wire:
@@ -61,15 +61,15 @@ def scalar_bindings_with_recon(
       ``Matrix (Fin m) (Fin n) T`` (for operations that need the full matrix); flat_slots also
       records the individual scalar accessor strings for argmax and similar.
 
-    Returns ``(let_lines, bindings, flat_slots)`` where:
-    - ``let_lines`` should be prepended to the function body (matrix reconstructions)
+    Returns ``(recon, bindings, flat_slots)`` where:
+    - ``recon`` is each matrix reconstruction as ``(var, let_line)``, for
+      `prepend_recon`
     - ``bindings`` maps wire_id → matrix var or scalar accessor
     - ``flat_slots`` maps wire_id → list of flat scalar accessor strings
     """
-    let_lines: list[str] = []
+    recon: list[tuple[str, str]] = []
     bindings: dict[int, str] = {}
     flat_slots: dict[int, list[str]] = {}
-    let_counter = [0]
 
     for name, wires in params:
         layout = flat_layout(wires)
@@ -82,49 +82,23 @@ def scalar_bindings_with_recon(
             if size == 1:
                 bindings[w.id] = slots[0]
             else:
-                mat_ty = dtype_to_lean_type(w)
+                var = f"_m{len(recon)}"
                 mat_expr = mat_from_scalars(slots, wire_shape(w))
-                var_name = f"_m{let_counter[0]}"
-                let_counter[0] += 1
-                let_lines.append(f"  let {var_name} : {mat_ty} := {mat_expr}")
-                bindings[w.id] = var_name
+                recon.append(
+                    (var, f"  let {var} : {dtype_to_lean_type(w)} := {mat_expr}"))
+                bindings[w.id] = var
 
-    return let_lines, bindings, flat_slots
-
-
-def _recon_var(let_line: str) -> str:
-    """The variable a reconstruction let binds (`  let _m0 : ... := ...`)."""
-    return let_line.split("let ", 1)[1].split(" ", 1)[0]
+    return recon, bindings, flat_slots
 
 
-def _needed_recon(recon_lets: "list[str]", body: str) -> "list[str]":
-    """The reconstruction lets `body` actually refers to, in order.
+def prepend_recon(recon: "list[tuple[str, str]]", body: str) -> str:
+    """`body` after the matrix reconstructions it reads, in order.
 
-    An unused let still mentions its parameter group (`extl_l.1` and so on),
-    and Lean's `variable` auto-binding would then add that parameter to the
-    declaration -- while the call sites are built from what the body
-    consumes, so they would under-apply it. Iterated to a fixed point in
-    case one reconstruction ever refers to another. A use is a whole word:
-    `_m10` is no use of `_m1`.
+    A body reads few of them when it is one `effect_i` of the relational
+    encoding, which keeps the terms one ctrl wire needs; the others would be
+    dead `let`s in every such definition. A reconstruction reads only flat
+    accessors, never another reconstruction, so the body alone decides. A
+    use is a whole word: `_m10` is no use of `_m1`.
     """
-    kept: list[str] = []
-    text = body
-    changed = True
-    while changed:
-        changed = False
-        for line in recon_lets:
-            if line in kept:
-                continue
-            if re.search(rf"\b{_recon_var(line)}\b", text):
-                kept.append(line)
-                text += "\n" + line
-                changed = True
-    return [line for line in recon_lets if line in kept]
-
-
-def prepend_recon(recon_lets: "list[str]", body: str) -> str:
-    """Prepend the matrix reconstruction let-lines this body needs."""
-    needed = _needed_recon(recon_lets, body)
-    if needed:
-        return "\n".join(needed) + "\n" + body
-    return body
+    lines = [line for var, line in recon if re.search(rf"\b{var}\b", body)]
+    return "\n".join(lines + [body])

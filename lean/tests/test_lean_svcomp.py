@@ -19,9 +19,9 @@ OUTPUT_DIR = TESTS / "LeanTests"
 # ──────────────────────────────────────────────────────────────
 
 
-def _gen(name, module, prp, inv, ranking, pre=None):
+def _gen(name, module, prp, inv, ranking, assume=None):
     """Generate a Lean project with certificate and return the project dir."""
-    claim = Claim(prp=prp, init_pre=pre, update_pre=pre)
+    claim = Claim(prp=prp, init_assume=assume, update_assume=assume)
     cert = Certificate(inv=inv, ranking=ranking)
     ctx = LeanContext(module)
     lean_cert = lean_certificate(module, claim, cert)

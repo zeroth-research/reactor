@@ -4,7 +4,6 @@ from pathlib import Path
 from reactor_lean.project.names import LINTERS_OFF
 
 TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
-PROJECT_TEMPLATES_DIR = TEMPLATES_DIR / "project"
 
 env = Environment(
     loader=FileSystemLoader(str(TEMPLATES_DIR)),

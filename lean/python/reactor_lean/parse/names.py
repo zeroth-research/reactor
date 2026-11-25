@@ -1,6 +1,7 @@
 """Claims in the reactive module's own terms.
 
-A claim -- `--safety`, `--buchi`, `--pre`, `--invariant`, `--ranking` --
+A claim -- `--safety`, `--buchi`, `--extl-assume` (and its `-init` and
+`-update` forms), `--invariant`, `--ranking` --
 names a variable the way the module's own update does: a variable is its
 latched value, and `(X v)` (`X(v)` in the Python predicate DSL) the value
 after the round. A variable is named by the input's own name for it, or

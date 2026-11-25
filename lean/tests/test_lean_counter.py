@@ -96,7 +96,7 @@ def test_counter_generates_lean():
             m,
             Claim(
                 prp="s0[0][0] == 0",
-                init_pre="And(e0[0][0] >= 0, e0[1][0] >= 0)",
+                init_assume="And(e0[0][0] >= 0, e0[1][0] >= 0)",
             ),
             Certificate(
                 inv="And(s0[0][0] >= 0, Or(s0[0][0] <= s0[1][0], s0[0][0] <= s0[2][0]))",

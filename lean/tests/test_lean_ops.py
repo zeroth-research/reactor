@@ -23,7 +23,8 @@ from reactor import Wire, Term, Module, Bool, Int, Word, Var, X, tensor
 from reactor.tensor import Havoc, Skip
 from reactor_lean import ModuleToLean4
 from reactor_lean.lowering.sorts import THEORIES, itype_name, theory_of
-from reactor_lean.codegen.context import LeanContext
+from reactor_lean.codegen.context import LeanContext, lean_context
+from reactor_lean.errors import Refused
 from reactor_lean.codegen.terms import lean_gaps
 from reactor_lean.lowering import ops
 from testdata import all_encodings
@@ -532,11 +533,22 @@ def test_scale_is_written_as_the_affine_map_diag_c():
 
 
 def test_scale_by_rows_of_two_numbers_has_no_lean_form():
+    """Refused up front, with the module, as an op with no Lean form is."""
     x = Var(Int([1, 2]))
     init = [Term(tensor.int.Const(torch.ones(1, 2, dtype=torch.int64)), [X(x)])]
     update = [Term(tensor.int.Scale(torch.tensor([[2, 3]])), [X(x)], [x])]
-    with pytest.raises(ValueError, match="no `diag"):
-        ModuleToLean4(LeanContext(Module.sequential([x], init, update))).to_lean_functional()
+    with pytest.raises(Refused, match="no Lean form: .*`int.Scale`.* no `diag"):
+        lean_context(Module.sequential([x], init, update))
+
+
+def test_linear_with_a_bias_that_differs_across_columns_has_no_lean_form():
+    x = Var(Int([2, 2]))
+    init = [Term(tensor.int.Const(torch.ones(2, 2, dtype=torch.int64)), [X(x)])]
+    linear = tensor.int.Linear(torch.eye(2, dtype=torch.int64),
+                               torch.tensor([[1, 2], [3, 3]]))
+    update = [Term(linear, [X(x)], [x])]
+    with pytest.raises(Refused, match="`int.Linear`, and its bias .* differs"):
+        lean_context(Module.sequential([x], init, update))
 
 
 

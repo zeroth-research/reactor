@@ -85,8 +85,6 @@ READ = [
     "(ite s1 s2 1.0)",
     "(ite s1 s3 #b0000)",
     "(ite s1 true (> s0 0))",
-    "(let ((x (+ s0 1)) (y 2)) (> (* x x) y))",
-    "(let ((s0 1)) (let ((s0 (+ s0 1)) (y s0)) (= s0 (+ y 1))))",
     "(> ((_ tuple.select 3) s4) ((_ tuple.select 0) s4))",
     "(not (not s1))",
     "(and s1)",
@@ -179,6 +177,7 @@ def test_the_python_syntax_reads_no_bit_vector_operation_either(src):
     ("s4", "one element at a time"),
     ("(< s2 0.1234567890123456789)", "no float"),
     ("(! s1 :named p)", "annotation"),
+    ("(let ((x (+ s0 1))) (> x 0))", "`let` is not read"),
 ])
 def test_what_it_cannot_read_it_says_why(src, why):
     with pytest.raises(Unreadable, match=why):

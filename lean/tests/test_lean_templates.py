@@ -33,7 +33,7 @@ from reactor_lean.project.lakefile import (
     reactlib_checkout,
 )
 from reactor_lean.project.scaffold import write_lakefile
-from reactor_lean.project.templates import TEMPLATES_DIR, PROJECT_TEMPLATES_DIR
+from reactor_lean.project.templates import TEMPLATES_DIR
 from testdata import FIXTURES
 
 
@@ -53,7 +53,7 @@ def test_every_project_template_is_rendered():
     src = "\n".join(p.read_text() for p in lean_pkg.rglob("*.py"))
     unused = sorted(
         rel
-        for p in PROJECT_TEMPLATES_DIR.rglob("*.j2")
+        for p in (TEMPLATES_DIR / "project").rglob("*.j2")
         if f'"{(rel := p.relative_to(TEMPLATES_DIR).as_posix())}"' not in src
     )
     assert not unused, f"these templates are rendered by nothing: {unused}"
@@ -233,6 +233,23 @@ def test_a_bad_cache_is_refused_before_the_project(monkeypatch, tmp_path):
         "reactor", str(FIXTURES / "counter.py"),
         "--safety", "(>= (X @intf.0) 0)", "-o", str(out), "-p", "P"])
     with pytest.raises(SystemExit, match="is not a Lake package cache"):
+        main()
+    assert not out.exists()
+
+
+def test_a_cache_without_the_required_revision_is_refused_before_the_project(
+        monkeypatch, tmp_path):
+    """Asked with the project's requires before anything is written: it
+    used to be asked when the lakefile was, which left a project with a
+    lakefile and nothing else."""
+    from reactor_lean.cli import main
+
+    monkeypatch.delenv(REACTLIB_ENV, raising=False)
+    monkeypatch.setenv(LAKE_CACHE_ENV, str(_cache(tmp_path / "c")))
+    out = tmp_path / "out"
+    monkeypatch.setattr("sys.argv", [
+        "reactor", str(FIXTURES / "counter.py"), "-o", str(out), "-p", "P"])
+    with pytest.raises(SystemExit, match="does not hold ReactLib"):
         main()
     assert not out.exists()
 

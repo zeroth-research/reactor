@@ -28,7 +28,11 @@ class Settings:
     prp: str | None                     # the property, whichever flag carried it
     kind: str                           # "safety" | "buchi"
 
-    pre: str | None
+    # Assumptions on the inputs: of both blocks, or of `init` / `update`
+    # alone. The first excludes the other two.
+    extl_assume: str | None
+    extl_assume_init: str | None
+    extl_assume_update: str | None
     invariant: str | None
     ranking: str | None
 
@@ -148,15 +152,36 @@ def add_claim(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
-        "--pre",
+        "--extl-assume",
         default=None,
+        metavar="FORMULA",
         help=(
-            "Precondition as an SMT-LIB 2 Bool expression over the inputs "
-            "of a round: `(X u)` / `(X @extl.N)` for the input read in it, "
-            "`u` / `@extl.N` for the one read in the round before. Tuple "
-            "(matrix) elements use '((_ tuple.select k) (X u))'. "
-            "Applied to both init_pre and update_pre. "
+            "Assumption on the inputs of every round, as an SMT-LIB 2 Bool "
+            "expression: `(X u)` / `(X @extl.N)` for the input read in the "
+            "round, `u` / `@extl.N` for the one read in the round before. "
+            "Tuple (matrix) elements use '((_ tuple.select k) (X u))'. "
+            "Both `init_pre` and `update_pre` of the certificate. "
             "Example: '(>= ((_ tuple.select 0) (X @extl.0)) 1.0)'."
+        ),
+    )
+    parser.add_argument(
+        "--extl-assume-init",
+        default=None,
+        metavar="FORMULA",
+        help=(
+            "Assumption on the inputs `init` reads, named as --extl-assume "
+            "names them: the certificate's `init_pre` alone. Not with "
+            "--extl-assume."
+        ),
+    )
+    parser.add_argument(
+        "--extl-assume-update",
+        default=None,
+        metavar="FORMULA",
+        help=(
+            "Assumption on the inputs `update` reads, named as --extl-assume "
+            "names them: the certificate's `update_pre` alone. Not with "
+            "--extl-assume."
         ),
     )
     parser.add_argument(
@@ -218,7 +243,9 @@ def check_blanks(parser: argparse.ArgumentParser, args) -> None:
 
 
 def check_claim_flags(parser: argparse.ArgumentParser, args) -> None:
-    """The property is one flag, and a ranking function is for --buchi."""
+    """The property is one flag, a ranking function is for --buchi, an
+    assumption of both blocks is not given beside one of a block's, and
+    an executable is for a project."""
     # A certificate proves one property under one proof rule, and which rule
     # decides what the certificate even consists of -- a ranking function or
     # no ranking function. So the two flags are not a pair of properties to
@@ -235,6 +262,20 @@ def check_claim_flags(parser: argparse.ArgumentParser, args) -> None:
             "--ranking is meaningless with --safety: `G FORMULA` is proved "
             "by an invariant that implies FORMULA, and `rule_globally` takes "
             "no ranking function. Ranking functions belong to --buchi."
+        )
+    # Which of two assumptions of a block holds would be a guess: their
+    # conjunction, or the block's own over the shared one.
+    if args.extl_assume and (args.extl_assume_init or args.extl_assume_update):
+        parser.error(
+            "--extl-assume is the assumption of both blocks: give it alone, "
+            "or give each block's with --extl-assume-init and "
+            "--extl-assume-update"
+        )
+    # `--cert-file` writes no project, so there is no `Main.lean` to add.
+    if args.executable and args.cert_file:
+        parser.error(
+            "--executable adds Main.lean to a project, and --cert-file "
+            "writes no project"
         )
 
 
@@ -253,7 +294,9 @@ def parse_args(argv: "list[str] | None" = None) -> Settings:
         executable=args.executable,
         prp=args.safety or args.buchi,
         kind="safety" if args.safety else "buchi",
-        pre=args.pre,
+        extl_assume=args.extl_assume,
+        extl_assume_init=args.extl_assume_init,
+        extl_assume_update=args.extl_assume_update,
         invariant=args.invariant,
         ranking=args.ranking,
         cert_file=args.cert_file,

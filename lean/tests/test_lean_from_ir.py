@@ -18,7 +18,7 @@ from reactor_lean.parse import Certificate, Claim
 from reactor_lean.errors import PredicateRefused
 from reactor_lean.parse.predicates import read_predicates
 from reactor_lean.proof.render import lean_certificate
-from reactor_lean.proof.from_ir import ir_to_lean_nat
+from reactor_lean.proof.from_ir import _Printer, ir_to_lean
 from testdata import dense, relu
 
 
@@ -131,26 +131,26 @@ def test_a_deep_net_is_emitted_once_per_unit_not_once_per_path():
     assert lean.count("let ") == 14
 
 
-def _ranking(smt: str):
-    """`smt` read as a ranking: the term, the state wires, and the printer
-    that prints it."""
+def _ranking(smt: str) -> "tuple[str, str]":
+    """`smt` read as a ranking, printed with the sharing pass and without:
+    the second is what the printer walks to before it shares."""
     q = read_predicates(_int_module(), Claim(), Certificate(ranking=smt))
-    return q.ranking, q.wires.ctrl_next, ir_to_lean_nat
+    bindings = [("s", "s", q.wires.ctrl_next)]
+    shared = ir_to_lean(q.ranking, "s", bindings, nat=True)
+    return shared, _Printer(q.ranking, bindings).walk(q.ranking.out)
 
 
 def test_the_same_net_without_sharing_shows_what_it_costs():
-    term, wires, nat = _ranking(dense(4))
-    plain = nat(term, wires, share=False)
+    _, plain = _ranking(dense(4))
     assert plain.count("(max ") == 30
     assert "let " not in plain
 
 
 def test_sharing_never_makes_the_output_longer():
     for smt in ("s0", "(+ s0 1)", relu("s0"), dense(1), dense(2), dense(5)):
-        term, wires, nat = _ranking(smt)
-        assert len(nat(term, wires, share=True)) <= len(
-            nat(term, wires, share=False)
-        ), smt
+        shared, plain = _ranking(smt)
+        body = shared.removeprefix("fun s => ")
+        assert len(body) <= len(f"(({plain} : Int)).toNat"), smt
 
 
 def test_a_shallow_net_gets_no_bindings():

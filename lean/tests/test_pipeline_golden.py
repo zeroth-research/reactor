@@ -114,10 +114,10 @@ CODEGEN = [
     ("twovars", lambda: fixture("svcomp_twovars"), Claim(prp="(= s0 s1)"),
      Certificate("(and (>= s0 0) (<= s0 s1) (= s1 10))",
                  "(ite (= s0 s1) 0 (- s1 s0))")),
-    ("vector_counter_pre", _vector_counter,
+    ("vector_counter_assume", _vector_counter,
      Claim(prp="s0[0][0] == 0",
-           init_pre="And(e0[0][0] >= 0, e0[1][0] >= 0)",
-           update_pre="e0[0][0] >= 0"),
+           init_assume="And(e0[0][0] >= 0, e0[1][0] >= 0)",
+           update_assume="e0[0][0] >= 0"),
      Certificate(
          "And(s0[0][0] >= 0, Or(s0[0][0] <= s0[1][0], s0[0][0] <= s0[2][0]))",
          "Ite(s0[0][0] == 0, 0, (Ite(s0[1][0] >= s0[2][0], s0[1][0], "
@@ -173,8 +173,8 @@ RUNS = [
         "--invariant", "(and (>= (X @intf.0) 0) (<= (X @intf.0) 9))",
         "--ranking", "(ite (<= (X @intf.0) 200) (ite (= (X @intf.0) 0) 0 (- 10 (X @intf.0))) 999)",
     ]),
-    ("supplied_pre", BOUNDED, [
-        "--safety", "(>= (X @intf.0) 0)", "--pre", "(>= (X @extl.0) 0)",
+    ("supplied_assume", BOUNDED, [
+        "--safety", "(>= (X @intf.0) 0)", "--extl-assume", "(>= (X @extl.0) 0)",
         "--invariant", "(>= (X @intf.0) 0)",
     ]),
     ("cert_file", COUNTER, [
