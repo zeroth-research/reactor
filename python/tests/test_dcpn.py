@@ -1,6 +1,8 @@
 """LIA declarations and token lowering, without a transition coordinator."""
 
 from dataclasses import FrozenInstanceError, fields
+from itertools import product
+from types import SimpleNamespace
 from typing import get_type_hints
 
 import pytest
@@ -8,7 +10,9 @@ import torch
 
 from reactor import Bool, Int, LIA, LRA, Module, NonLinearError, Real, Var, X
 from reactor.dcpn import DCPN, GuardedTransition, ImmediateTransition, Place, TokenModule, obj
+from reactor.dcpn.lowering import _all, _any
 from reactor.eval import execute_init, execute_update
+from reactor.expr import collecting, expr
 from reactor.sugar import Module as SugarModule
 
 
@@ -484,6 +488,66 @@ def test_empty_net_and_capacity():
     for capacity in (-1, 0, True, 1.5):
         with pytest.raises(ValueError, match="token_capacity"):
             net.to_token_modules(token_capacity=capacity)
+
+
+# Boolean folding helpers -----------------------------------------------------
+
+
+def _evaluate(terms, result, assignment):
+    """Evaluate collected ``terms`` under ``assignment`` and return ``result``'s value."""
+    state = {var: torch.tensor([[value]]) for var, value in assignment.items()}
+    execute_update(state, [SimpleNamespace(update=terms)])
+    return state[result.wire].item()
+
+
+def test_all_empty_is_true():
+    with collecting() as terms:
+        result = _all([])
+    assert result.dtype == BOOL
+    assert result.theory is LIA
+    assert _evaluate(terms, result, {}) is True
+
+
+def test_any_empty_is_false():
+    with collecting() as terms:
+        result = _any([])
+    assert result.dtype == BOOL
+    assert result.theory is LIA
+    assert _evaluate(terms, result, {}) is False
+
+
+def test_all_single_returns_operand():
+    with collecting() as terms:
+        operand = expr(Var(BOOL), theory=LIA)
+        assert _all([operand]) is operand
+    assert not any(isinstance(term.itype, LIA.And) for term in terms)
+
+
+def test_any_single_returns_operand():
+    with collecting() as terms:
+        operand = expr(Var(BOOL), theory=LIA)
+        assert _any([operand]) is operand
+    assert not any(isinstance(term.itype, LIA.Or) for term in terms)
+
+
+def test_all_truth_table():
+    a, b, c = Var(BOOL), Var(BOOL), Var(BOOL)
+    with collecting() as terms:
+        # a generator, as used by the transition controller
+        result = _all(expr(var, theory=LIA) for var in (a, b, c))
+    assert result.dtype == BOOL
+    for values in product([False, True], repeat=3):
+        assert _evaluate(terms, result, dict(zip((a, b, c), values))) is all(values)
+
+
+def test_any_truth_table():
+    a, b, c = Var(BOOL), Var(BOOL), Var(BOOL)
+    with collecting() as terms:
+        # a generator, as used by the transition controller
+        result = _any(expr(var, theory=LIA) for var in (a, b, c))
+    assert result.dtype == BOOL
+    for values in product([False, True], repeat=3):
+        assert _evaluate(terms, result, dict(zip((a, b, c), values))) is any(values)
 
 
 # Validation ------------------------------------------------------------------

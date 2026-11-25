@@ -24,6 +24,9 @@ from ..sort import Bool, Int, tensor_for
 from ..expr import Expr, collecting, expr, ite
 
 
+BOOL = Bool([1, 1])
+
+
 def _value(value, sort):
     """Wrap ``value`` in a LIA expression of ``sort``.
 
@@ -87,6 +90,22 @@ def _allocate_color_records(places):
 
 def _color_record_to_tuple(color):
     return tuple(getattr(color, field.name) for field in fields(color))
+
+
+def _all(conditions):
+    """Conjoin Boolean expressions; the empty conjunction is True."""
+    result = None
+    for condition in conditions:
+        result = condition if result is None else result & condition
+    return _value(True, BOOL) if result is None else result
+
+
+def _any(conditions):
+    """Disjoin Boolean expressions; the empty disjunction is False."""
+    result = None
+    for condition in conditions:
+        result = condition if result is None else result | condition
+    return _value(False, BOOL) if result is None else result
 
 
 class TokenModule(Module):
