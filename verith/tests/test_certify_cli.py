@@ -223,6 +223,23 @@ def test_a_stale_bridge_is_not_left_for_lake_to_build():
         assert (cert_dir / "Certificate.lean").exists()
 
 
+def test_a_project_carries_every_encoding_but_the_circuit_one():
+    """Neither the certificate nor any route reads `System/Circ.lean`, so
+    `certify` does not write it -- and removes one an earlier run in the
+    same `-o` left, which the root would no longer import anyway."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        project = Path(tmpdir) / "Encodings"
+        (project / "System").mkdir(parents=True)
+        (project / "System" / "Circ.lean").write_text("import NoSuchModule\n")
+
+        r = run_certify(str(COUNTER_MODULE), "-o", tmpdir, "-p", "Encodings")
+        assert r.returncode == 0, r.stderr
+        for name in ("System", "Rel", "Scalar", "ScalarRel"):
+            assert (project / "System" / f"{name}.lean").exists(), name
+        assert not (project / "System" / "Circ.lean").exists()
+        assert "Circ" not in (project / "System.lean").read_text()
+
+
 def test_certify_with_property():
     """A property without --infer writes prp as sorry (string not compiled to Terms)."""
     with tempfile.TemporaryDirectory() as tmpdir:

@@ -16,6 +16,7 @@ from reactor import Module
 
 from ..codegen.context import LeanContext
 from ..codegen.encodings import ModuleToLean4
+from ..core.encodings import ENCODING_NAMES, FUNCTIONAL
 from ..core.errors import Refused
 from .names import LINTERS_OFF, SYSTEM_LAYOUT, Layout
 from .templates import render
@@ -43,15 +44,17 @@ if TYPE_CHECKING:
 # left behind. Rows are coupled by Lean names -- `ScalarRel` rewrites by
 # `Scalar`'s `init_scalar_eq`, every row quotes the base's `init`/`update`
 # -- and `Encoding.needs`, which becomes each file's imports, records that.
+#
+# A run writes the rows `--encodings` selects (`selected_encodings`): the
+# functional one always, and every row a selected one needs.
 # ══════════════════════════════════════════════════════════════════════════
-
-
 
 
 @dataclass(frozen=True)
 class Encoding:
     """One Lean file: what names it, what it says, what it needs, who prints it."""
 
+    name: str                   # what `--encodings` calls it (`core.encodings`)
     suffix: str                 # appended to the layout's base; "" is the base
     title: str                  # header comment, "<title> of reactive module `X`"
     core: str                   # the `Relational` module it is written against
@@ -69,17 +72,39 @@ ENCODINGS: tuple[Encoding, ...] = (
     # `--cert-file` route gets its own copy inlined into the standalone
     # certificate by `generate_standalone_cert_lean`, so it is not written
     # again there; `Circ` has no consumer on that route at all.
-    Encoding("", "Functional encoding", "Relational.Circ", (),
+    Encoding(FUNCTIONAL, "", "Functional encoding", "Relational.Circ", (),
              ModuleToLean4.to_lean_functional, cert_file=False),
-    Encoding("Circ", "Circuit encoding", "Relational.Circ", ("",),
+    Encoding("circuit", "Circ", "Circuit encoding", "Relational.Circ", ("",),
              ModuleToLean4.to_lean_circ, cert_file=False, optional=True),
-    Encoding("Rel", "Matrix-domain relational encoding", "Relational.Basic", ("",),
-             ModuleToLean4.to_lean_mat_rel),
-    Encoding("Scalar", "Scalar encoding", "Relational.Basic", ("",),
+    Encoding("relational", "Rel", "Matrix-domain relational encoding",
+             "Relational.Basic", ("",), ModuleToLean4.to_lean_mat_rel),
+    Encoding("scalar", "Scalar", "Scalar encoding", "Relational.Basic", ("",),
              ModuleToLean4.to_lean_scalar),
-    Encoding("ScalarRel", "Scalar-relational encoding", "Relational.Basic",
-             ("Scalar",), ModuleToLean4.to_lean_rel),
+    Encoding("scalar-relational", "ScalarRel", "Scalar-relational encoding",
+             "Relational.Basic", ("Scalar",), ModuleToLean4.to_lean_rel),
 )
+
+
+def selected_encodings(names: Iterable[str] = ENCODING_NAMES) -> tuple[Encoding, ...]:
+    """The rows `names` selects, in table order: with the functional one,
+    which the certificate and every other row are stated over, and each row
+    a selected one imports."""
+    names = tuple(names)
+    by_name = {e.name: e for e in ENCODINGS}
+    by_suffix = {e.suffix: e for e in ENCODINGS}
+    unknown = [n for n in names if n not in by_name]
+    if unknown:
+        raise Refused(
+            f"no encoding {', '.join(map(repr, unknown))}: the encodings are "
+            f"{', '.join(ENCODING_NAMES)}", flag="--encodings")
+    want: set[str] = set()
+    todo = [FUNCTIONAL, *names]
+    while todo:
+        name = todo.pop()
+        if name not in want:
+            want.add(name)
+            todo += [by_suffix[s].name for s in by_name[name].needs]
+    return tuple(e for e in ENCODINGS if e.name in want)
 
 
 def write_encoding(
@@ -104,15 +129,16 @@ def write_encoding(
     return path
 
 
-def generate_root() -> str:
-    """Root module file that imports the `System.*` encodings.
+def generate_root(encodings: Iterable[Encoding] = ENCODINGS) -> str:
+    """Root module file that imports the `System.*` encodings the project
+    has, `encodings`.
 
     The import list is the encoding table, so a row added there reaches the
     root without a second edit.
     """
     return render(
         "project/Root.lean.j2",
-        imports=[SYSTEM_LAYOUT.lean_module(e.suffix) for e in ENCODINGS],
+        imports=[SYSTEM_LAYOUT.lean_module(e.suffix) for e in encodings],
     )
 
 
@@ -158,6 +184,7 @@ def create_project(
     lakefile: LakefileParts | None = None,
     remove: Iterable[str] = (),
     ctx: "LeanContext | None" = None,
+    encodings: Iterable[str] = ENCODING_NAMES,
 ) -> Path:
     """
     Create a full Lean4 project.
@@ -179,7 +206,11 @@ def create_project(
         `ctx`:             A `LeanContext` this run already built, so the
                            discovery pass runs once rather than once here
                            and again for every file rewritten later.
+        `encodings`:       The names of the encodings the project carries
+                           (`selected_encodings`).
     """
+    rows = selected_encodings(encodings)
+
     project_dir = output_dir / project_name
     src_dir = project_dir / "System"
     dbg_dir = project_dir / "dbg"
@@ -226,13 +257,18 @@ def create_project(
     m2l = ModuleToLean4(ctx)
 
     root_lean = project_dir / "System.lean"
-    root_lean.write_text(generate_root())
+    root_lean.write_text(generate_root(rows))
     print(f"Wrote root module {root_lean}")
 
-    # Every encoding the project carries, in table order.
+    # Every encoding the project carries, in table order. One it does not
+    # carry is removed: a copy an earlier run in the same `-o` wrote is of
+    # another module, or of this one when nothing reads it any more.
     layout = replace(SYSTEM_LAYOUT, directory=src_dir)
     for enc in ENCODINGS:
-        print(f"++ Generated {write_encoding(enc, m2l, layout, project_name)} ++")
+        if enc in rows:
+            print(f"++ Generated {write_encoding(enc, m2l, layout, project_name)} ++")
+        else:
+            layout.path(enc.suffix).unlink(missing_ok=True)
 
     # The certificate: its definitions, and the proofs it was handed.
     write_files(project_dir, certificate)

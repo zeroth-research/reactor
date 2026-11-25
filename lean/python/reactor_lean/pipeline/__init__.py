@@ -114,7 +114,8 @@ def main():
         raise SystemExit(f"error: {e}") from e
 
     if settings.cert_file:
-        standalone(settings.cert_file, ctx, lean_cert)
+        standalone(settings.cert_file, ctx, lean_cert,
+                   encodings=settings.encodings)
         return
 
     project_dir = generate(settings, module, ctx, lean_cert, problem.source)

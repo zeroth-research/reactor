@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 
 from ..artifacts import ARTIFACTS_DIR
+from ..core.encodings import ENCODING_NAMES, FUNCTIONAL
 from ..inputs import ADAPTERS
 from ..parse import PARSERS
 
@@ -60,8 +61,44 @@ def build_parser() -> argparse.ArgumentParser:
     add_input(parser)
     add_claim(parser)
     add_outputs(parser)
+    add_encodings(parser)
     add_parser_choice(parser)
     return parser
+
+
+def encoding_list(text: str) -> tuple[str, ...]:
+    """`--encodings`' value, `NAME[,NAME...]`, as the names it gives in
+    the table's order."""
+    names = [n.strip() for n in text.split(",") if n.strip()]
+    if not names:
+        raise argparse.ArgumentTypeError(
+            f"names no encoding: give one or more of {', '.join(ENCODING_NAMES)}")
+    unknown = [n for n in names if n not in ENCODING_NAMES]
+    if unknown:
+        raise argparse.ArgumentTypeError(
+            f"no encoding {', '.join(map(repr, unknown))}: one of "
+            f"{', '.join(ENCODING_NAMES)}")
+    return tuple(n for n in ENCODING_NAMES if n in names)
+
+
+def add_encodings(parser: argparse.ArgumentParser) -> None:
+    """Which of the module's encodings the run writes."""
+    parser.add_argument(
+        "--encodings",
+        default=ENCODING_NAMES,
+        type=encoding_list,
+        metavar="NAME[,NAME...]",
+        help=(
+            "The encodings of the module the run writes, comma-separated, "
+            f"of {', '.join(ENCODING_NAMES)} (default: all of them). The "
+            f"{FUNCTIONAL} one is always written: the certificate and every "
+            "other encoding are stated over it, and an encoding brings the "
+            "ones it imports with it (scalar-relational, scalar). With "
+            f"--cert-file the "
+            f"{FUNCTIONAL} encoding is inlined in the certificate and there "
+            "is no circuit one."
+        ),
+    )
 
 
 def add_parser_choice(parser: argparse.ArgumentParser) -> None:
@@ -206,7 +243,7 @@ def add_outputs(parser: argparse.ArgumentParser) -> None:
             "instead of creating a full project.  The file inlines init/update, "
             "the definitions and the obligations' proofs.  The other encodings of the "
             "same module are written beside it under the same stem (Rel, Scalar, "
-            "ScalarRel), as they are in a project."
+            "ScalarRel, those --encodings selects), as they are in a project."
         ),
     )
     parser.add_argument(

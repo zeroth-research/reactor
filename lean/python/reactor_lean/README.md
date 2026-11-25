@@ -59,6 +59,7 @@ NAME/
                                 circuit, relational, scalar and
                                 scalar-relational, each tied to the
                                 functional one by equivalence theorems
+                                (`--encodings` selects which)
   Certificate/Data.lean         the certificate: init_pre, update_pre, P,
                                 inv, ranking
   Certificate/Module.lean       RM and lts, the module as a ReactiveModule and
@@ -190,7 +191,7 @@ layer.
 
 | Package | What it holds |
 |------|------|
-| `core/` | The vocabulary every layer is written in, importing nothing of `reactor_lean`: `certificate` (`Claim`, `Certificate` as SMT-LIB, `LeanAnswer` for an answer that is Lean only), `errors` (`Refused`, the error a run is refused with), `options` (`Opt`, an option an input format declares) |
+| `core/` | The vocabulary every layer is written in, importing nothing of `reactor_lean`: `certificate` (`Claim`, `Certificate` as SMT-LIB, `LeanAnswer` for an answer that is Lean only), `errors` (`Refused`, the error a run is refused with), `options` (`Opt`, an option an input format declares), `encodings` (the encodings' names, as `--encodings` takes them) |
 | `lowering/` | What every backend reads of a module besides its terms: `sorts` (sorts and shapes of wires, and the Lean types they print as), `elements` (tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares), `values` (a constant as the exact number every backend states), `ops` (the op table: one row per theory variant, one column per backend) |
 | `artifacts/` | The project's `artifacts/`, what a run leaves for the next: `store` (`ArtifactStore`, `Artifact`) |
 | `codegen/` | The module as Lean text, never importing cvc5: `context` (`LeanContext`, what every encoding of one module shares), `literals` (constants as Lean text, `ConstantRegistry`), `terms` (term lists → functional `let`-binding bodies, and `lean_gaps`), `boxes` (term lists → `Box` circuit layers), `encodings/` (`ModuleToLean4` and one module per encoding: `functional`, `circuit`, `scalar`, `relational`; `skeleton`, the shape every relational encoding has, and `common`, what the scalar ones share) |
@@ -384,8 +385,11 @@ block -- `atom_to_lean_functional`, `atom_to_lean_circuit`,
 `atom_to_lean_scalar`, `atom_to_lean_mat_rel`, `atom_to_lean_rel` -- each
 taking the `LeanContext`.
 
-The project writes one file per row of `project.scaffold.ENCODINGS`, each
-printed by the row's `producer`, a `ModuleToLean4.to_lean_*` method.
+The project writes one file per row of `project.scaffold.ENCODINGS` that
+`--encodings` selects (`selected_encodings`: the functional row always, and
+every row a selected one imports), each printed by the row's `producer`, a
+`ModuleToLean4.to_lean_*` method. A row's `name` is what `--encodings` calls
+it (`core.encodings`).
 
 ---
 
@@ -599,6 +603,8 @@ path/NameScalar.lean         # scalar encoding + equivalence theorems
 path/NameScalarRel.lean      # scalar-relational encoding + equivalence theorems
 ```
 
+(the last three only those `--encodings` selects)
+
 ### Safety or Büchi
 
 The property comes in under one of two flags, and the choice is not a label:
@@ -634,6 +640,7 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--invariant` | — | SMT-LIB 2 Bool invariant |
 | `--ranking` | — | SMT-LIB 2 Int ranking (`--buchi` only) |
 | `--cert-file` | — | Write standalone `.lean` file instead of full project |
+| `--encodings` | all | The encodings written, comma-separated, of `functional`, `circuit`, `relational`, `scalar`, `scalar-relational`; the functional one is always written |
 | `--artifacts` | `use` | What to do with the project's `artifacts/`: `use` lets the run read what an earlier run left, `ignore` reads nothing back but still records, `reset` empties it first |
 
 ### Writing a claim on the command line

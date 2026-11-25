@@ -5,16 +5,19 @@ certificate (`standalone`, `--cert-file`). Both prove the obligations by
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 
 from ..cli import Settings
 from ..codegen.context import LeanContext
 from ..codegen.encodings import ModuleToLean4
+from ..core.encodings import ENCODING_NAMES
 from ..core.errors import Refused
 from .. import inputs
 from ..project.lakefile import LakefileParts
 from ..project.names import CERT_LIB
-from ..project.scaffold import ENCODINGS, Layout, create_project, write_encoding
+from ..project.scaffold import (Layout, create_project, selected_encodings,
+                                write_encoding)
 from ..proof.render import (
     SORRY,
     LeanCertificate,
@@ -25,13 +28,16 @@ from ..proof.render import (
 
 
 def standalone(cert_file: str, ctx: LeanContext, lean_cert,
-               proofs: ProofScripts = SORRY) -> None:
-    """`--cert-file`: a self-contained certificate and its sibling encodings.
+               proofs: ProofScripts = SORRY, *,
+               encodings: "Iterable[str]" = ENCODING_NAMES) -> None:
+    """`--cert-file`: a self-contained certificate, and beside it those of
+    `encodings` this route writes (`Encoding.cert_file`).
 
     No project: the predicates are the ones supplied.
     """
     out = Path(cert_file)
     try:
+        rows = selected_encodings(encodings)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(generate_standalone_cert_lean(ctx, lean_cert, proofs))
     except (Refused, OSError) as e:
@@ -43,7 +49,7 @@ def standalone(cert_file: str, ctx: LeanContext, lean_cert,
     # certificate above, which is the base they import.
     m2l = ModuleToLean4(ctx)
     layout = Layout(base=out.stem, flat=True, directory=out.parent)
-    for enc in ENCODINGS:
+    for enc in rows:
         if not enc.cert_file:
             continue
         print(f"Wrote {enc.title.lower()}: {write_encoding(enc, m2l, layout, out.stem)}")
@@ -74,6 +80,7 @@ def generate(settings: Settings, module, ctx: LeanContext,
             remove=stale_certificate_files(
                 settings.output_dir / settings.project_name, certificate),
             ctx=ctx,
+            encodings=settings.encodings,
         )
     except (Refused, OSError) as e:
         raise SystemExit(f"error: {e}") from e

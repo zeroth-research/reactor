@@ -23,6 +23,7 @@ from reactor_lean.cli.checks import (
     input_adapter,
 )
 from reactor_lean.cli.parser import add_claim, add_input, add_outputs
+from reactor_lean.core.encodings import ENCODING_NAMES
 from verith.common.limits import SmtBudget
 from verith import InferRoute
 from verith.flags import (
@@ -99,12 +100,22 @@ examples:
 """
 
 
+# The encodings a `certify` project carries: every one but the circuit
+# encoding, which neither the certificate nor any route reads (`reads` on a
+# route's row; fbk-proveit's bridge imports the scalar one). `reactor`'s
+# `--encodings`, fixed: `certify` has no such flag.
+CERTIFY_ENCODINGS: tuple[str, ...] = tuple(
+    n for n in ENCODING_NAMES if n != "circuit")
+
+
 @dataclass
 class Settings(ReactorSettings):
-    """`reactor`'s settings; the inference route: which one (`route`), its
-    options (`route_opts`) and what it resolved at parse time
-    (`route_config`); and what cvc5 is asked about the certificate, under
-    what budget, and whether it is built."""
+    """`reactor`'s settings, with the encodings `CERTIFY_ENCODINGS`; the
+    inference route: which one (`route`), its options (`route_opts`) and
+    what it resolved at parse time (`route_config`); and what cvc5 is asked
+    about the certificate, under what budget, and whether it is built."""
+
+    encodings: tuple[str, ...] = CERTIFY_ENCODINGS
 
     route: InferRoute | None = None
     route_opts: dict = field(default_factory=dict)

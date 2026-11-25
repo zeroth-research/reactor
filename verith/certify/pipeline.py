@@ -123,7 +123,8 @@ def main(argv: "list[str] | None" = None) -> None:
         raise SystemExit(f"error: {e}") from e
 
     if settings.cert_file:
-        standalone(settings.cert_file, ctx, lean_cert, proofs)
+        standalone(settings.cert_file, ctx, lean_cert, proofs,
+                   encodings=settings.encodings)
         return
 
     project_dir = generate(
