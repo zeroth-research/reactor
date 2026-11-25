@@ -834,11 +834,14 @@ The net runs in three phases, which may overlap.
     moves a process in the bad state~$q$ to~$P_{\mathit{Err}}$.
 \end{enumerate}
 
-\paragraph{No inhibitor arcs.}
-Ideally, $T_{\mathit{own}}$ and~$T_{\mathit{follow}}$ would fire only once
-$P_{\mathit{init}}$ is empty, and the transitions $T_{\mathit{Pass}[\dots]}$
-would fire only once $P_{\mathit{counted}}$ is empty. Since \DCPN{0} has no inhibitor arcs, we
+\paragraph{Avoiding inhibitor arcs.}
+
+If we had inhibitor arcs like in DCPNs, then $T_{\mathit{own}}$
+and~$T_{\mathit{follow}}$ would fire only once $P_{\mathit{init}}$ is empty,
+and the transitions $T_{\mathit{Pass}[\dots]}$ would fire only once
+$P_{\mathit{counted}}$ is empty. Since \DCPN{0} has no inhibitor arcs, we
 cannot test these conditions, but neither is needed:
+
 \begin{itemize}
   \item \emph{Emptiness of~$P_{\mathit{init}}$.} The phase token replaces
     this test. If $T_{\mathit{EndCount}}$ fires while $P_{\mathit{init}}$ is
@@ -853,19 +856,23 @@ cannot test these conditions, but neither is needed:
     requires the process token of the receiver.
 \end{itemize}
 
-We say that $P_{\mathit{Err}}$ is \emph{markable} from~$\mathcal{I}_n$ if
-some execution that starts with the initial marking defined
-by~$\mathcal{I}_n$ contains a marking with a token in~$P_{\mathit{Err}}$.
+Let $\mathcal{I}$ be an initialisation function of a \DCPN{0}. A marking
+is \emph{reachable} from~$\mathcal{I}$ if some execution that starts with the
+initial marking defined by~$\mathcal{I}$ contains it. A place~$P$ is
+\emph{coverable} from~$\mathcal{I}$ if some marking reachable
+from~$\mathcal{I}$ has a token in~$P$. In Petri net terms, this is
+coverability of the marking with a single token in~$P$, whose colour is not
+fixed, rather than reachability of a specific marking.
 
 \begin{theorem}\label{thm:undecidable}
-  For every $n \in \NatZero$, the place $P_{\mathit{Err}}$ is markable
+  For every $n \in \NatZero$, the place $P_{\mathit{Err}}$ is coverable
   from~$\mathcal{I}_n$ iff there are $N$ with $2 \le N \le n$ and a
   reachable global state~$s$ of the ring of size~$N$ with
   $s(i) \in \mathit{Bad}$ for some~$i$. Consequently, the following problem
   is undecidable: given a \DCPN{0} with places $P_{\mathit{init}}$
   and~$P_{\mathit{Err}}$ and a family of initialisation
   functions~$\mathcal{I}_n$ that differ only in the number~$n$ of tokens
-  in~$P_{\mathit{init}}$, is $P_{\mathit{Err}}$ markable
+  in~$P_{\mathit{init}}$, is $P_{\mathit{Err}}$ coverable
   from~$\mathcal{I}_n$ for some~$n$?
 \end{theorem}
 
@@ -873,7 +880,7 @@ by~$\mathcal{I}_n$ contains a marking with a token in~$P_{\mathit{Err}}$.
   Since $\mathcal{V}_P(c) = \bar{0}$ for every place~$P$, a tick of every
   duration~$h > 0$ is possible and leaves the marking unchanged. Since every
   marking has a successor round, every finite sequence of rounds extends to
-  an execution. Hence, $P_{\mathit{Err}}$ is markable from~$\mathcal{I}_n$
+  an execution. Hence, $P_{\mathit{Err}}$ is coverable from~$\mathcal{I}_n$
   iff there are rounds $\bfm_0 \Rightarrow \bfm_1 \Rightarrow \dots
   \Rightarrow \bfm_\ell$, where $\bfm_0$ is the initial marking and
   $\bfm_\ell$ has a token in~$P_{\mathit{Err}}$.
@@ -964,8 +971,8 @@ by~$\mathcal{I}_n$ contains a marking with a token in~$P_{\mathit{Err}}$.
 \begin{corollary}[No computable cutoff]\label{cor:cutoff}
   There is no computable function~$f$ that maps every \DCPN{0} with places
   $P_{\mathit{init}}$ and~$P_{\mathit{Err}}$ to a number such that the
-  following holds: if $P_{\mathit{Err}}$ is markable from~$\mathcal{I}_n$
-  for some~$n$, then it is markable from~$\mathcal{I}_n$ for some
+  following holds: if $P_{\mathit{Err}}$ is coverable from~$\mathcal{I}_n$
+  for some~$n$, then it is coverable from~$\mathcal{I}_n$ for some
   $n \le f(\mathcal{N})$.
 \end{corollary}
 
