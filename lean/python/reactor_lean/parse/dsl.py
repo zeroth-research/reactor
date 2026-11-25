@@ -1,4 +1,4 @@
-"""The Python predicate syntax, read without `eval` and without a solver.
+"""The Python predicate syntax, read without `eval`.
 
 `s0 > 0 and s1 == s4`, `Ite(e0 < 3, s0, -s0)`, `s0[1][2] >= 0`: a
 predicate written as a Python expression over the module's state and

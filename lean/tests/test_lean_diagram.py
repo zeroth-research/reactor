@@ -137,7 +137,7 @@ def test_matrix_module_uses_matvecaffine():
     lean = all_encodings(m)
 
     # Linear is emitted in the reflected form over list literals: matVecAffine
-    # on the native path, Box.linear on the circuit path — neither uses the
+    # in the functional encoding, Box.linear in the circuit one — neither uses the
     # (unreduced) affineLinear/MatMul the prover would have to expand.
     assert "affineLinear" not in lean
     assert "matVecAffine" in lean

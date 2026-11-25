@@ -1,4 +1,4 @@
-"""`parse.smtlib`: SMT-LIB predicates read into reactor's terms, no solver.
+"""`parse.smtlib`: SMT-LIB predicates read into reactor's terms.
 
 Each of `READ` is read; what it does not read is refused with why.
 """
@@ -14,7 +14,7 @@ from reactor_lean.errors import Unreadable
 from reactor_lean.lowering.sorts import itype_name, theory_of
 from reactor_lean.parse.formula import family
 from reactor_lean.lowering.elements import ModuleWires
-from reactor_lean.parse.native import parse_predicate, scope_of
+from reactor_lean.parse.predicates import parse_predicate, scope_of
 from reactor_lean.parse.smtlib import Scope, read_smtlib
 
 

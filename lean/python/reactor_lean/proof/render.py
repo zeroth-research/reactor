@@ -15,8 +15,8 @@ from reactor_lean.codegen.encodings import ModuleToLean4
 from reactor_lean.codegen.terms import extl_native_type, product_type
 from reactor_lean.errors import PredicateRefused, Refused
 from reactor_lean.codegen.context import LeanContext
-from reactor_lean.parse.native import (
-    Certificate, Claim, NativePredicates, read_predicates,
+from reactor_lean.parse.predicates import (
+    Certificate, Claim, Predicates, read_predicates,
 )
 from reactor_lean.project.names import (
     CERTIFICATE, DATA, MODULE, PROOFS, cert_file,
@@ -47,10 +47,10 @@ class LeanCertificate:
         return self.kind == "safety"
 
 
-def render_certificate(q: "NativePredicates") -> LeanCertificate:
+def render_certificate(q: "Predicates") -> LeanCertificate:
     """The one place certificate predicates are printed as Lean.
 
-    `q` is what the parser read (`parse.native.NativePredicates`), printed
+    `q` is what the parser read (`parse.predicates.Predicates`), printed
     by `from_ir` with repeated subterms `let`-bound, which Lean reads the
     same once `simp` has zeta-reduced the `let`s.
     """
@@ -104,7 +104,7 @@ def render_certificate(q: "NativePredicates") -> LeanCertificate:
 def lean_certificate(module, claim: "Claim | None",
                      cert: Certificate = Certificate()) -> "LeanCertificate | None":
     """The certificate as codegen takes it: the claim's and the
-    certificate's predicates parsed once (`parse.native.read_predicates`)
+    certificate's predicates parsed once (`parse.predicates.read_predicates`)
     and printed as Lean. `None` without a claim: a bare run parses
     nothing."""
     if claim is None:

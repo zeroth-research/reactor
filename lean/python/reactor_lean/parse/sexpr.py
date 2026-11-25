@@ -1,5 +1,5 @@
-"""SMT-LIB text as s-expressions: the reading half of the native parser,
-with no notion of what a term means.
+"""SMT-LIB text as s-expressions: the reading half of `smtlib`, with no
+notion of what a term means.
 
 An expression is an `Atom` or a tuple of expressions. An atom keeps its
 token's kind -- a numeral, a decimal, a bit-vector literal, a symbol or a

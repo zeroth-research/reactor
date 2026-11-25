@@ -1,4 +1,4 @@
-"""SMT-LIB predicates read into reactor's terms, with no solver.
+"""SMT-LIB predicates read into reactor's terms.
 
 `read_smtlib(scope, src)` reads one SMT-LIB term over the module's state
 and inputs -- `s0..`, `e0..` and `el0..`, as a `Scope` binds them -- into a
@@ -98,7 +98,7 @@ def read_smtlib(scope: Scope, src: str) -> Formula:
 
 
 class Elaborator:
-    """SMT-LIB's terms, and the Python syntax's operators (`parse.native`),
+    """SMT-LIB's terms, and the Python syntax's operators (`parse.predicates`),
     built as reactor's terms: each method takes values -- wires, `Lit`s,
     `Matrix`es -- and gives the wire of what it builds."""
 

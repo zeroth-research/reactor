@@ -189,7 +189,7 @@ def linear_list_literals(term: Term) -> "tuple[int, str, str, str]":
 
     Returns ``(out_rows, A_literal, b_literal, elem_ty)`` where ``A_literal`` is a
     ``List (List t)`` and ``b_literal`` a ``List t`` (empty bias → zeros), both
-    type-ascribed. Shared by the native (`matVecAffine`) and circuit (`Box.linear`)
+    type-ascribed. Shared by the functional (`matVecAffine`) and circuit (`Box.linear`)
     emitters so the reflected form is generated in one place.
     """
     out_wire = term.write[0]

@@ -1,5 +1,5 @@
 """Tests for the predicate printer, `reactor_lean.proof.from_ir`, which
-prints what the native parser read.
+prints what `parse.predicates` read.
 
 Covers the `min`/`max` peephole and the sharing pass. There is no `max` kind to translate
 from, so a ReLU unit reaches the translator as `(ite (>= e 0) e 0)`. Left as
@@ -16,7 +16,7 @@ from reactor import Module, Term, Var, X, Int, Real, tensor
 from reactor_lean.proof.render import LeanCertificate
 from reactor_lean.parse import Certificate, Claim
 from reactor_lean.errors import PredicateRefused
-from reactor_lean.parse.native import read_predicates
+from reactor_lean.parse.predicates import read_predicates
 from reactor_lean.proof.render import lean_certificate
 from reactor_lean.proof.from_ir import ir_to_lean_nat
 from testdata import dense, relu

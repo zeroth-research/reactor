@@ -1,6 +1,6 @@
 """Reactor's terms (a `parse.formula.Formula`) -> a Lean 4 expression.
 
-The printer of what the native parser reads (`parse.native`): one
+The printer of the predicates `parse.predicates` reads: one
 parameter `s`, a left-nested tuple whose components are reached by `.1`,
 `.2.1`, ... with a scalar taken out of its 1×1 `Matrix` by `0 0`; an `ite`
 that is a `min` or a `max` printed as one; an arithmetic subterm read more

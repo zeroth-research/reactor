@@ -53,7 +53,7 @@ def _tree(path: Path) -> ast.Module:
 
 
 def _module(path: Path) -> str:
-    """`path` as a dotted module name: `reactor_lean.parse.native`."""
+    """`path` as a dotted module name: `reactor_lean.parse.predicates`."""
     parts = path.relative_to(LEAN.parent).with_suffix("").parts
     if parts[-1] == "__init__":
         parts = parts[:-1]
@@ -78,8 +78,8 @@ class Import(NamedTuple):
 
     @property
     def target(self) -> str:
-        """The module this import loads: `from reactor_lean.parse import native`
-        loads `reactor_lean.parse.native`, and so does `from reactor_lean.parse.native
+        """The module this import loads: `from reactor_lean.parse import predicates`
+        loads `reactor_lean.parse.predicates`, and so does `from reactor_lean.parse.predicates
         import Claim`."""
         if self.name and f"{self.module}.{self.name}" in MODULES:
             return f"{self.module}.{self.name}"

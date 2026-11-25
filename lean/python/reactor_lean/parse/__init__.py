@@ -5,14 +5,14 @@ it, into reactor's terms.
 read from, and the names a claim may call its variables by. A claim is
 written in those names; `names` rewrites it to the internal ones every
 later stage reads (`to_internal`).
-`native` then reads a predicate's text into reactor's terms, the IR a
+`predicates` then reads a predicate's text into reactor's terms, the IR a
 module is written in, which `proof.from_ir` prints: the Python predicate
 syntax first (`dsl`), and SMT-LIB for text that is no Python (`sexpr` and
 `smtlib`).
 """
 
 from .module import InputError, Named, Problem, load, load_module
-from .native import Certificate, Claim
+from .predicates import Certificate, Claim
 from .names import ClaimError, Names, to_internal
 
 __all__ = [

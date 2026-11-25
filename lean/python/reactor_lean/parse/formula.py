@@ -1,6 +1,6 @@
 """A predicate in reactor's terms: the IR a module is written in.
 
-`Formula` is what the native parser makes of a predicate: the terms that
+`Formula` is what `parse.predicates` makes of a predicate: the terms that
 compute it, in the order they were built, over the module's own wires --
 the state after the round (`X` of each controlled variable) and the inputs
 awaited in it and latched before it -- and the wire its value is on.

@@ -1,5 +1,4 @@
-"""The native parser: a run's predicates read into reactor's terms, with no
-solver.
+"""A run's predicates, read into reactor's terms.
 
 A predicate is read in two dialects -- the Python predicate syntax first
 (`dsl`), SMT-LIB (`smtlib`) for text that is no Python -- against the
@@ -234,8 +233,8 @@ def parse_predicate(wires: ModuleWires, src: str) -> Formula:
 
 
 @dataclass(frozen=True)
-class NativePredicates:
-    """A claim and a certificate read by the native parser: what
+class Predicates:
+    """A claim and a certificate, read: what
     `proof.render.render_certificate` prints. A predicate left out is
     `None`."""
 
@@ -249,7 +248,7 @@ class NativePredicates:
 
 
 def read_predicates(module, claim: Claim,
-                    cert: "Certificate | None" = None) -> NativePredicates:
+                    cert: "Certificate | None" = None) -> Predicates:
     """`claim` and `cert` read against `module`. A predicate that is no
     predicate of the module, or not of the sort its field is declared as,
     is refused by its role (`PredicateRefused`)."""
@@ -278,6 +277,6 @@ def read_predicates(module, claim: Claim,
     # `--pre` is both, and is read once.
     update_pre = (init_pre if claim.update_pre == claim.init_pre
                   else read(claim.update_pre, "pre"))
-    return NativePredicates(kind=claim.kind, wires=wires, prp=prp, inv=inv,
+    return Predicates(kind=claim.kind, wires=wires, prp=prp, inv=inv,
                             ranking=ranking, init_pre=init_pre,
                             update_pre=update_pre)

@@ -1,5 +1,5 @@
-"""`parse.native`: the Python predicate syntax read into reactor's terms,
-and a run's predicates read by the native parser.
+"""`parse.predicates`: the Python predicate syntax read into reactor's
+terms, and a run's predicates read.
 
 A predicate in the syntax builds the terms its SMT-LIB form builds, and one
 wrong in it is refused in its own terms.
@@ -15,7 +15,7 @@ from reactor_lean.parse import load_module
 from reactor_lean.lowering.sorts import itype_name, theory_of
 from reactor_lean.parse import dsl
 from reactor_lean.parse.formula import Builder
-from reactor_lean.parse.native import (
+from reactor_lean.parse.predicates import (
     Certificate, Claim, namespace, parse_predicate, read_predicates, scope_of,
 )
 from reactor_lean.parse.smtlib import Elaborator
@@ -136,12 +136,12 @@ def test_python_the_syntax_does_not_read_is_refused_in_its_terms(src, why):
 @pytest.mark.parametrize("bug", [AttributeError, ValueError])
 def test_a_fault_in_the_syntax_itself_is_not_a_parse_error(monkeypatch, bug):
     """A `ValueError` too: `Unreadable` is one, and so is a bug."""
-    import reactor_lean.parse.native as native
+    import reactor_lean.parse.predicates as predicates
 
     def broken(src, ns):
         raise bug("a bug")
 
-    monkeypatch.setattr(native.dsl, "evaluate", broken)
+    monkeypatch.setattr(predicates.dsl, "evaluate", broken)
     with pytest.raises(bug, match="a bug") as raised:
         read_predicates(load_module(MODS / "m_countdown.py"),
                         Claim(prp="s0[0][0] == 0"))
