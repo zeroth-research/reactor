@@ -80,19 +80,6 @@ class RelBlock:
     ref_args: str
 
 
-def _decl(name: str, *binders: str) -> str:
-    """`def name binders… : Prop :=`, skipping the binder groups that are
-    empty: an encoding with no external inputs has declarations one binder
-    group short of the others'."""
-    parts = ["def", name, *[b for b in binders if b]]
-    return f"{' '.join(parts)} : Prop :="
-
-
-def _apply(head: str, *args: str) -> str:
-    """`head args…`, skipping the argument groups that are empty."""
-    return " ".join([head, *[a for a in args if a]])
-
-
 def _eq_theorem(syn: RelSyntax, blk: RelBlock, i: int) -> "list[str]":
     """`body_i … = (ref …)[slot i]`, the theorem that ties one slot to its source.
 
@@ -139,16 +126,19 @@ def emit_rel_block(
     for i in slots:
         lines.extend(_eq_theorem(syn, blk, i))
 
+    # Every relation binds the state(s) and the inputs, even a module's
+    # with none: an empty group is `(extl_n : Unit)`, not left out.
     for i in slots:
-        lines.append(_decl(f"{blk.rel_name}_{i}", blk.state_binders,
-                           blk.extl_binders))
+        lines.append(f"def {blk.rel_name}_{i} {blk.state_binders} "
+                     f"{blk.extl_binders} : Prop :=")
         lines.append(f"  {syn.project(blk.target, i)} = "
                      f"{blk.body_name}_{i}{blk.args}")
         lines.append("")
 
-    calls = [_apply(f"{blk.rel_name}_{i}", blk.state_args, blk.extl_args)
+    calls = [f"{blk.rel_name}_{i} {blk.state_args} {blk.extl_args}"
              for i in slots]
-    lines.append(_decl(blk.conj_name, blk.state_binders, blk.extl_binders))
+    lines.append(f"def {blk.conj_name} {blk.state_binders} "
+                 f"{blk.extl_binders} : Prop :=")
     # A module with no state has nothing to conjoin.
     lines.append("  " + (" ∧\n  ".join(calls) if calls else "True"))
     lines.append("")
@@ -389,14 +379,8 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
         eq_simp=("Fin.cons_zero", "Fin.cons_succ"),
     )
 
-    update_recon, update_bindings, update_flat = scalar_bindings_with_recon(
-        ctx.update_groups
-    )
-    init_recon, init_bindings, init_flat = scalar_bindings_with_recon(
-        ctx.init_groups
-    )
-
-    def _bodies(terms, recon, bindings, flat) -> "list[str]":
+    def _bodies(terms, groups) -> "list[str]":
+        recon, bindings, flat = scalar_bindings_with_recon(groups)
         return [
             prepend_recon(
                 recon,
@@ -416,58 +400,17 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
     # The matrix domain of the same module: what the two bridging theorems
     # quantify over, since they state the scalar relation in matrix terms.
     mat = _domain(ctx, product_type)
+    new_unpack = _unpack("ctrl", ctx.ctrl_next, "ctrl'")
 
-    has_update = has_block(ctx, "update")
-    has_init = has_block(ctx, "init")
-
-    # Described up front because its two closing theorems are emitted after
-    # the init block, not with the block itself.
-    update_blk = _update_block(dom, "Scalar.update")
-
-    if has_update:
-        lines += emit_rel_block(
-            syn,
-            update_blk,
-            _bodies(ctx.atom.update, update_recon, update_bindings, update_flat),
-        )
-
-    if has_init:
-        init_blk = _init_block(dom, "Scalar.init")
-        lines += emit_rel_block(
-            syn,
-            init_blk,
-            _bodies(ctx.atom.init, init_recon, init_bindings, init_flat),
-        )
+    if has_block(ctx, "update"):
+        blk = _update_block(dom, "Scalar.update")
+        lines += emit_rel_block(syn, blk, _bodies(ctx.atom.update, ctx.update_groups))
         lines += _conj_eq_theorem(
-            "InitCond_scalar_eq", init_blk, n_ctrl, "s = Scalar.init extl_n"
-        )
-
-        new_unpack = _unpack("ctrl", ctx.ctrl_next, "ctrl'")
-        extl_n_unpack = _unpack("extl_n", ctx.extl_next)
-
-        lines += _pack_bridge_theorem(
-            "InitCond_func_eq",
-            f"(ctrl' : {mat.state_ty}) {mat.extl_n_binder}",
-            "ctrl' extl_n",
-            f"InitCond {new_unpack} {extl_n_unpack}",
-            "ctrl' = init extl_n",
-            ["InitCond_scalar_eq", scalar_eq_name("init")],
-        )
-
-    if has_update:
-        lines += _conj_eq_theorem(
-            "TransRel_scalar_eq",
-            update_blk,
-            n_ctrl,
+            "TransRel_scalar_eq", blk, n_ctrl,
             f"new = Scalar.update old {dom.extl_args}",
         )
-
-        extl_groups = ctx.update_groups[1:]
-
         old_unpack = _unpack("ctrl", ctx.ctrl_latched)
-        new_unpack = _unpack("ctrl", ctx.ctrl_next, "ctrl'")
-        extl_unpacks = " ".join(_unpack(p, w) for p, w in extl_groups)
-
+        extl_unpacks = " ".join(_unpack(p, w) for p, w in ctx.update_groups[1:])
         lines += _pack_bridge_theorem(
             "TransRel_func_eq",
             f"(ctrl ctrl' : {product_type(ctx.ctrl_latched)}) {mat.extl_binders}",
@@ -475,6 +418,22 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
             f"TransRel {old_unpack} {new_unpack} {extl_unpacks}",
             f"ctrl' = update ctrl {mat.extl_args}",
             ["TransRel_scalar_eq", scalar_eq_name("update")],
+        )
+
+    if has_block(ctx, "init"):
+        blk = _init_block(dom, "Scalar.init")
+        lines += emit_rel_block(syn, blk, _bodies(ctx.atom.init, ctx.init_groups))
+        lines += _conj_eq_theorem(
+            "InitCond_scalar_eq", blk, n_ctrl, "s = Scalar.init extl_n"
+        )
+        extl_n_unpack = _unpack("extl_n", ctx.extl_next)
+        lines += _pack_bridge_theorem(
+            "InitCond_func_eq",
+            f"(ctrl' : {mat.state_ty}) {mat.extl_n_binder}",
+            "ctrl' extl_n",
+            f"InitCond {new_unpack} {extl_n_unpack}",
+            "ctrl' = init extl_n",
+            ["InitCond_scalar_eq", scalar_eq_name("init")],
         )
 
     lines.append("end ScalarRel")
