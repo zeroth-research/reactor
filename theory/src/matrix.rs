@@ -1,7 +1,7 @@
 /*!
-# Tensors
+# Matrices
 
-The tensor operations of each theory, one type per operation, in a module per
+The matrix operations of each theory, one type per operation, in a module per
 theory: [`real`] and [`int`] for arithmetic, [`bool`](mod@bool) for
 propositional logic, and [`word`] for fixed-size bit-vectors. Each
 operation reads and writes the sorts of [`sort`], and computes its
@@ -26,7 +26,7 @@ arithmetic to its linear operations where the logic is linear:
 | [`BV`] | [`word::BV`], [`bool::Prop`] | `QF_BV` |
 
 The operations that carry data, the constants and the coefficients of the
-affine maps, hold it in matrices of a type `T` implementing [`Tensor`], over
+affine maps, hold it in matrices of a type `T` implementing [`Matrix`], over
 which every operation, theory enum and logic is generic. With the `torch`
 feature, `tch::Tensor` implements it, converting to and from Python
 `torch.Tensor` objects (see the `torch` module).
@@ -48,14 +48,15 @@ use subenum::subenum;
 
 /// A matrix of values, as held by the operations that carry data: the
 /// constants, and the coefficients of `Affine`. The operations are generic
-/// over it, so that any tensor representation can back them.
-pub trait Tensor {
+/// over it, so that any representation of matrices, such as torch tensors, can
+/// back them.
+pub trait Matrix {
     /// The `[rows, cols]` shape of the matrix.
     fn shape(&self) -> [usize; 2];
 }
 
 /// The operations of all theories: a value of `Any` is an operation of one
-/// of them, on the sorts in [`sort::Any`], with its data held in tensors of
+/// of them, on the sorts in [`sort::Any`], with its data held in matrices of
 /// type `T`; or one of the structural operations [`Havoc`], [`Skip`] and
 /// [`Zero`](crate::zero::Zero), which belong to no theory and so to no logic.
 ///
@@ -67,9 +68,9 @@ pub trait Tensor {
 /// linear operations, which `subenum` cannot express, so they are defined
 /// on their own, with the same casts.
 ///
-/// `Any` is cloneable when the constants and affine maps of its tensor type
+/// `Any` is cloneable when the constants and affine maps of its matrix type
 /// are: `Clone` is implemented by hand rather than derived, as a derive would
-/// require `T: Clone`, which tensor types such as `tch::Tensor` are not.
+/// require `T: Clone`, which matrix types such as `tch::Tensor` are not.
 #[subenum(NRA, NIA, Prop, BV)]
 #[derive(Debug, From)]
 pub enum Any<T> {
@@ -107,7 +108,7 @@ pub enum LIA<T> {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix")
 )]
 pub struct Havoc {
     sort: sort::Any,
@@ -117,7 +118,7 @@ pub struct Havoc {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix")
 )]
 pub struct Skip {
     sort: sort::Any,
@@ -290,7 +291,7 @@ impl Havoc {
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::tensor::py_sorts(py, Boundary::cod(self))
+        crate::matrix::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -308,7 +309,7 @@ impl Skip {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: sort::Any, cod: Option<sort::Any>) -> Result<Self, crate::Error> {
-        crate::tensor::check_cod(Self::with_dom([dom]), cod)
+        crate::matrix::check_cod(Self::with_dom([dom]), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -323,14 +324,14 @@ impl Skip {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::tensor::py_sorts(py, Boundary::dom(self))
+        crate::matrix::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::tensor::py_sorts(py, Boundary::cod(self))
+        crate::matrix::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -478,7 +479,7 @@ impl<T: fmt::Display> fmt::Display for Any<T> {
     }
 }
 
-impl<T: Tensor> Boundary<sort::Any> for Any<T> {
+impl<T: Matrix> Boundary<sort::Any> for Any<T> {
     fn dom(&self) -> Poly<sort::Any> {
         match self {
             Any::Real(op) => op.dom().map(sort::Any::from),

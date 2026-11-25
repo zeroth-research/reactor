@@ -10,11 +10,11 @@ and every word result is reduced modulo `2^w`. Division by zero follows SMT-LIB2
 
 import torch
 
-from .tensor import Havoc, Skip
+from .matrix import Havoc, Skip
 from .reactor import Zero
-from .tensor.sort import Real, Int, Bool, Word
+from .matrix.sort import Real, Int, Bool, Word
 
-from .reactor import tensor
+from .reactor import matrix
 
 
 def _wrap(t, w):
@@ -118,148 +118,148 @@ def eval_itype(itype, read, out_sort=None):
             # the singleton sort is the rate of change of discrete values, which are
             # never integrated: nothing evaluates it
             raise RuntimeError("Zero writes the singleton sort, which is never evaluated")
-        case tensor.real.Zero(Real(shape)):
+        case matrix.real.Zero(Real(shape)):
             # the zero matrix, of any degree: the zero rate of change
             return [torch.zeros(shape, dtype=torch.float32)]
 
         # --- constants, linear and affine maps (tensors carried by the op) ---
-        case tensor.real.Const(t):
+        case matrix.real.Const(t):
             # a real constant may hold integers, kept as given; its value is a real, of
             # floating point, so that it neither wraps around nor mixes with integers
             return [t.clone() if t.is_floating_point() else t.to(torch.get_default_dtype())]
-        case tensor.int.Const(t) | tensor.bool.Const(t) | tensor.word.Const(t):
+        case matrix.int.Const(t) | matrix.bool.Const(t) | matrix.word.Const(t):
             return [t.clone()]
-        case tensor.real.Linear(a) | tensor.int.Linear(a):
+        case matrix.real.Linear(a) | matrix.int.Linear(a):
             return [a @ r[0]]
-        case tensor.real.Affine(a, b) | tensor.int.Affine(a, b):
+        case matrix.real.Affine(a, b) | matrix.int.Affine(a, b):
             return [a @ r[0] + b]
-        case tensor.real.Scale(c) | tensor.int.Scale(c):
+        case matrix.real.Scale(c) | matrix.int.Scale(c):
             return [c * r[0]]
 
         # --- choice ---
-        case tensor.real.Ite() | tensor.int.Ite() | tensor.bool.Ite() | tensor.word.Ite():
+        case matrix.real.Ite() | matrix.int.Ite() | matrix.bool.Ite() | matrix.word.Ite():
             return [torch.where(r[0], r[1], r[2])]
 
         # --- real and integer arithmetic (exact) ---
-        case tensor.real.Add() | tensor.int.Add():
+        case matrix.real.Add() | matrix.int.Add():
             return [r[0] + r[1]]
-        case tensor.real.Sub() | tensor.int.Sub():
+        case matrix.real.Sub() | matrix.int.Sub():
             return [r[0] - r[1]]
-        case tensor.real.Mul() | tensor.int.Mul():
+        case matrix.real.Mul() | matrix.int.Mul():
             return [r[0] * r[1]]
-        case tensor.real.Div():
+        case matrix.real.Div():
             return [r[0] / r[1]]
-        case tensor.int.Div():
+        case matrix.int.Div():
             return [_euclid(r[0], r[1])[0]]
-        case tensor.int.Mod():
+        case matrix.int.Mod():
             return [_euclid(r[0], r[1])[1]]
-        case tensor.real.Neg() | tensor.int.Neg():
+        case matrix.real.Neg() | matrix.int.Neg():
             return [-r[0]]
-        case tensor.real.Abs() | tensor.int.Abs():
+        case matrix.real.Abs() | matrix.int.Abs():
             return [r[0].abs()]
-        case tensor.real.ReLU() | tensor.int.ReLU():
+        case matrix.real.ReLU() | matrix.int.ReLU():
             return [r[0].relu()]
-        case tensor.real.Min() | tensor.int.Min():
+        case matrix.real.Min() | matrix.int.Min():
             return [torch.minimum(r[0], r[1])]
-        case tensor.real.Max() | tensor.int.Max():
+        case matrix.real.Max() | matrix.int.Max():
             return [torch.maximum(r[0], r[1])]
-        case tensor.real.Argmax() | tensor.int.Argmax():
+        case matrix.real.Argmax() | matrix.int.Argmax():
             return [r[0].argmax().reshape(1, 1).to(r[0].dtype)]
-        case tensor.real.Transpose() | tensor.int.Transpose():
+        case matrix.real.Transpose() | matrix.int.Transpose():
             return [r[0].transpose(0, 1)]
-        case tensor.real.MatMul() | tensor.int.MatMul():
+        case matrix.real.MatMul() | matrix.int.MatMul():
             return [r[0] @ r[1]]
 
         # --- comparisons: write booleans ---
-        case tensor.real.Eq() | tensor.int.Eq() | tensor.bool.Eq() | tensor.word.Eq():
+        case matrix.real.Eq() | matrix.int.Eq() | matrix.bool.Eq() | matrix.word.Eq():
             return [r[0].eq(r[1])]
-        case tensor.real.Ne() | tensor.int.Ne() | tensor.bool.Ne() | tensor.word.Ne():
+        case matrix.real.Ne() | matrix.int.Ne() | matrix.bool.Ne() | matrix.word.Ne():
             return [r[0].ne(r[1])]
-        case tensor.real.Lt() | tensor.int.Lt() | tensor.word.unsigned.Lt():
+        case matrix.real.Lt() | matrix.int.Lt() | matrix.word.unsigned.Lt():
             return [r[0].lt(r[1])]
-        case tensor.real.Le() | tensor.int.Le() | tensor.word.unsigned.Le():
+        case matrix.real.Le() | matrix.int.Le() | matrix.word.unsigned.Le():
             return [r[0].le(r[1])]
-        case tensor.real.Gt() | tensor.int.Gt() | tensor.word.unsigned.Gt():
+        case matrix.real.Gt() | matrix.int.Gt() | matrix.word.unsigned.Gt():
             return [r[0].gt(r[1])]
-        case tensor.real.Ge() | tensor.int.Ge() | tensor.word.unsigned.Ge():
+        case matrix.real.Ge() | matrix.int.Ge() | matrix.word.unsigned.Ge():
             return [r[0].ge(r[1])]
-        case tensor.word.signed.Lt([Word(w), Word(u)]):
+        case matrix.word.signed.Lt([Word(w), Word(u)]):
             return [_signed(r[0], w).lt(_signed(r[1], u))]
-        case tensor.word.signed.Le([Word(w), Word(u)]):
+        case matrix.word.signed.Le([Word(w), Word(u)]):
             return [_signed(r[0], w).le(_signed(r[1], w))]
-        case tensor.word.signed.Gt([Word(w), Word(u)]):
+        case matrix.word.signed.Gt([Word(w), Word(u)]):
             return [_signed(r[0], w).gt(_signed(r[1], w))]
-        case tensor.word.signed.Ge([Word(w), Word(u)]):
+        case matrix.word.signed.Ge([Word(w), Word(u)]):
             return [_signed(r[0], w).ge(_signed(r[1], w))]
 
         # --- propositional logic ---
-        case tensor.bool.And():
+        case matrix.bool.And():
             return [r[0].logical_and(r[1])]
-        case tensor.bool.Or():
+        case matrix.bool.Or():
             return [r[0].logical_or(r[1])]
-        case tensor.bool.Xor():
+        case matrix.bool.Xor():
             return [r[0].logical_xor(r[1])]
-        case tensor.bool.Not():
+        case matrix.bool.Not():
             return [r[0].logical_not()]
 
         # --- words: arithmetic modulo 2^w ---
-        case tensor.word.Add(_, Word(w)):
+        case matrix.word.Add(_, Word(w)):
             return [_wrap(r[0] + r[1], w)]
-        case tensor.word.Sub(_, Word(w)):
+        case matrix.word.Sub(_, Word(w)):
             return [_wrap(r[0] - r[1], w)]
-        case tensor.word.Mul(_, Word(w)):
+        case matrix.word.Mul(_, Word(w)):
             return [_wrap(r[0] * r[1], w)]
-        case tensor.word.Neg(_, Word(w)):
+        case matrix.word.Neg(_, Word(w)):
             return [_wrap(-r[0], w)]
-        case tensor.word.signed.Abs(_, Word(w)):
+        case matrix.word.signed.Abs(_, Word(w)):
             return [_wrap(_signed(r[0], w).abs(), w)]
-        case tensor.word.unsigned.Div(_, Word(w)):
+        case matrix.word.unsigned.Div(_, Word(w)):
             return [_udiv(r[0], r[1], w)]
-        case tensor.word.unsigned.Rem():
+        case matrix.word.unsigned.Rem():
             return [_urem(r[0], r[1])]
-        case tensor.word.signed.Div(_, Word(w)):
+        case matrix.word.signed.Div(_, Word(w)):
             return [_sdiv(r[0], r[1], w)]
-        case tensor.word.signed.Rem(_, Word(w)):
+        case matrix.word.signed.Rem(_, Word(w)):
             return [_srem(r[0], r[1], w)]
-        case tensor.word.signed.Mod(_, Word(w)):
+        case matrix.word.signed.Mod(_, Word(w)):
             return [_smod(r[0], r[1], w)]
 
         # --- words: bitwise ---
-        case tensor.word.And():
+        case matrix.word.And():
             return [r[0] & r[1]]
-        case tensor.word.Or():
+        case matrix.word.Or():
             return [r[0] | r[1]]
-        case tensor.word.Xor():
+        case matrix.word.Xor():
             return [r[0] ^ r[1]]
-        case tensor.word.Not(_, Word(w)):
+        case matrix.word.Not(_, Word(w)):
             return [_wrap(~r[0], w)]
-        case tensor.word.Nand(_, Word(w)):
+        case matrix.word.Nand(_, Word(w)):
             return [_wrap(~(r[0] & r[1]), w)]
-        case tensor.word.Nor(_, Word(w)):
+        case matrix.word.Nor(_, Word(w)):
             return [_wrap(~(r[0] | r[1]), w)]
-        case tensor.word.Xnor(_, Word(w)):
+        case matrix.word.Xnor(_, Word(w)):
             return [_wrap(~(r[0] ^ r[1]), w)]
 
         # --- words: shifts, rotations and resizing ---
-        case tensor.word.Shl(_, Word(w)):
+        case matrix.word.Shl(_, Word(w)):
             return [_shl(r[0], r[1], w)]
-        case tensor.word.unsigned.Shr(_, Word(w)):
+        case matrix.word.unsigned.Shr(_, Word(w)):
             return [_lshr(r[0], r[1], w)]
-        case tensor.word.signed.Shr(_, Word(w)):
+        case matrix.word.signed.Shr(_, Word(w)):
             return [_ashr(r[0], r[1], w)]
-        case tensor.word.RotateLeft(i, _, Word(w)):
+        case matrix.word.RotateLeft(i, _, Word(w)):
             return [_rotl(r[0], i, w)]
-        case tensor.word.RotateRight(i, _, Word(w)):
+        case matrix.word.RotateRight(i, _, Word(w)):
             return [_rotl(r[0], w - i % w, w)]
-        case tensor.word.Concat([Word(u), Word(v)]):
+        case matrix.word.Concat([Word(u), Word(v)]):
             return [(r[0] << v) | r[1]]
-        case tensor.word.Extract(i, j, _, Word(v)):
+        case matrix.word.Extract(i, j, _, Word(v)):
             return [(r[0] >> j) & ((1 << v) - 1)]
-        case tensor.word.Repeat(i, Word(w)):
+        case matrix.word.Repeat(i, Word(w)):
             return [_repeat(r[0], i, w)]
-        case tensor.word.unsigned.Extend():
+        case matrix.word.unsigned.Extend():
             return [r[0].clone()]
-        case tensor.word.signed.Extend(i, Word(w), Word(v)):
+        case matrix.word.signed.Extend(i, Word(w), Word(v)):
             return [_wrap(_signed(r[0], w), v)]
 
     raise RuntimeError(f"cannot evaluate op: {itype}")

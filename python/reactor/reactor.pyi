@@ -8,14 +8,14 @@ The extension holds the structural layer `Wire` / `Var` / `Term` / `Atom` / `Mod
 the operation `Zero` writing the only value of the singleton sort `sort.ZeroSort`, a
 special case at the top level; and the namespaces of the other operations and of the sorts, mirroring the
 `theory` crate: `sort` holds the sorts shared by all theories, the singleton `ZeroSort`;
-`tensor` holds the structural operations `Havoc` and `Skip`, and the namespaces
-`tensor.real`, `.int`, `.bool`, `.word` (with `.signed` and `.unsigned`) hold the
+`matrix` holds the structural operations `Havoc` and `Skip`, and the namespaces
+`matrix.real`, `.int`, `.bool`, `.word` (with `.signed` and `.unsigned`) hold the
 operations of each theory, each built from the parameters its sorts do not determine,
 then its domain, a single sort bare and several as a list, and optionally its codomain,
-which must agree (`tensor.real.Add([x, y])`, `tensor.word.Extract(i, j, x)`); an
-operation that reads nothing is built from its codomain (`tensor.real.Zero(x)`), except
+which must agree (`matrix.real.Add([x, y])`, `matrix.word.Extract(i, j, x)`); an
+operation that reads nothing is built from its codomain (`matrix.real.Zero(x)`), except
 `Zero()`, whose codomain, the singleton sort, carries no information. And
-`tensor.sort` the sorts (`Real([rows, cols])`, `Word(width, [rows, cols])`). Those are
+`matrix.sort` the sorts (`Real([rows, cols])`, `Word(width, [rows, cols])`). Those are
 typed loosely here, as `Sort` and `Op`: a stub file cannot describe the nested
 namespaces of a single extension module. A `Var` bundles the latched, next (`X(v)`),
 and derivative (`d(v)`) wires of a state variable and stands for its latched wire
@@ -29,14 +29,14 @@ from typing import Any, Callable, Iterable, Mapping, Sequence, override
 # variables, or any iterable of them (preferably a set); None hides nothing.
 type Hide = Callable[[Var], bool] | Iterable[Var] | None
 
-# A sort of `sort` or of `tensor.sort`, and an operation, `Zero` or one of `tensor` or of
+# A sort of `sort` or of `matrix.sort`, and an operation, `Zero` or one of `matrix` or of
 # one of its namespaces.
 type Sort = Any
 type Op = Any
 
 # The namespaces of the operations and sorts.
 sort: ModuleType
-tensor: ModuleType
+matrix: ModuleType
 
 
 class Wire:

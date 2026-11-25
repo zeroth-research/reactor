@@ -14,7 +14,7 @@ information to compute its [`Boundary`]:
 */
 
 use super::sort::Bool;
-use crate::Tensor;
+use crate::Matrix;
 use base::boundary::{Boundary, Poly};
 use base::mono;
 use derive_more::From;
@@ -28,13 +28,13 @@ pub struct Const<T> {
     tensor: T,
 }
 
-impl<T: Tensor> Const<T> {
+impl<T: Matrix> Const<T> {
     /// The constant held in `tensor`, writing the boolean matrix of `cod`; fails
     /// unless `tensor` is of its shape.
     pub fn with_cod(tensor: T, cod: [Bool; 1]) -> Result<Self, crate::Error> {
         let [x] = cod;
         if tensor.shape() != x.shape() {
-            return Err(crate::tensor::unexpected_cod(
+            return Err(crate::matrix::unexpected_cod(
                 &format!("1 sort of the shape {:?} of the constant", tensor.shape()),
                 &cod,
             ));
@@ -54,7 +54,7 @@ impl<T> Const<T> {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.bool")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.bool")
 )]
 pub struct And {
     shape: [usize; 2],
@@ -64,7 +64,7 @@ pub struct And {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.bool")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.bool")
 )]
 pub struct Or {
     shape: [usize; 2],
@@ -74,7 +74,7 @@ pub struct Or {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.bool")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.bool")
 )]
 pub struct Xor {
     shape: [usize; 2],
@@ -84,7 +84,7 @@ pub struct Xor {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.bool")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.bool")
 )]
 pub struct Not {
     shape: [usize; 2],
@@ -97,7 +97,7 @@ pub struct Not {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.bool")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.bool")
 )]
 pub struct Eq {
     shape: [usize; 2],
@@ -110,7 +110,7 @@ pub struct Eq {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.bool")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.bool")
 )]
 pub struct Ne {
     shape: [usize; 2],
@@ -123,7 +123,7 @@ pub struct Ne {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.bool")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.bool")
 )]
 pub struct Ite {
     shape: [usize; 2],
@@ -176,7 +176,7 @@ impl<T: fmt::Display> fmt::Display for Prop<T> {
     }
 }
 
-impl<T: Tensor> Boundary<Bool> for Prop<T> {
+impl<T: Matrix> Boundary<Bool> for Prop<T> {
     fn dom(&self) -> Poly<Bool> {
         match self {
             Prop::Const(op) => op.dom(),
@@ -204,7 +204,7 @@ impl<T: Tensor> Boundary<Bool> for Prop<T> {
     }
 }
 
-impl<T: Tensor> Boundary<Bool> for Const<T> {
+impl<T: Matrix> Boundary<Bool> for Const<T> {
     fn dom(&self) -> Poly<Bool> {
         Poly::unit()
     }
@@ -380,7 +380,7 @@ where
 impl And {
     /// The operation reading the boolean matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Bool; 2]) -> Result<Self, crate::Error> {
-        let s = crate::tensor::same_sort(dom)?;
+        let s = crate::matrix::same_sort(dom)?;
         Ok(And { shape: s.shape() })
     }
 
@@ -402,7 +402,7 @@ impl And {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Bool; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
-        crate::tensor::check_cod(Self::with_dom(dom), cod)
+        crate::matrix::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -417,14 +417,14 @@ impl And {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::tensor::py_sorts(py, Boundary::dom(self))
+        crate::matrix::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::tensor::py_sorts(py, Boundary::cod(self))
+        crate::matrix::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -436,7 +436,7 @@ impl And {
 impl Or {
     /// The operation reading the boolean matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Bool; 2]) -> Result<Self, crate::Error> {
-        let s = crate::tensor::same_sort(dom)?;
+        let s = crate::matrix::same_sort(dom)?;
         Ok(Or { shape: s.shape() })
     }
 
@@ -456,7 +456,7 @@ impl Or {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Bool; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
-        crate::tensor::check_cod(Self::with_dom(dom), cod)
+        crate::matrix::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -471,14 +471,14 @@ impl Or {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::tensor::py_sorts(py, Boundary::dom(self))
+        crate::matrix::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::tensor::py_sorts(py, Boundary::cod(self))
+        crate::matrix::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -490,7 +490,7 @@ impl Or {
 impl Xor {
     /// The operation reading the boolean matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Bool; 2]) -> Result<Self, crate::Error> {
-        let s = crate::tensor::same_sort(dom)?;
+        let s = crate::matrix::same_sort(dom)?;
         Ok(Xor { shape: s.shape() })
     }
 
@@ -510,7 +510,7 @@ impl Xor {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Bool; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
-        crate::tensor::check_cod(Self::with_dom(dom), cod)
+        crate::matrix::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -525,14 +525,14 @@ impl Xor {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::tensor::py_sorts(py, Boundary::dom(self))
+        crate::matrix::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::tensor::py_sorts(py, Boundary::cod(self))
+        crate::matrix::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -544,7 +544,7 @@ impl Xor {
 impl Not {
     /// The operation reading the boolean matrix of `dom`.
     pub fn with_dom(dom: [Bool; 1]) -> Result<Self, crate::Error> {
-        let s = crate::tensor::same_sort(dom)?;
+        let s = crate::matrix::same_sort(dom)?;
         Ok(Not { shape: s.shape() })
     }
 
@@ -564,7 +564,7 @@ impl Not {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: Bool, cod: Option<Bool>) -> Result<Self, crate::Error> {
-        crate::tensor::check_cod(Self::with_dom([dom]), cod)
+        crate::matrix::check_cod(Self::with_dom([dom]), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -579,14 +579,14 @@ impl Not {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::tensor::py_sorts(py, Boundary::dom(self))
+        crate::matrix::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::tensor::py_sorts(py, Boundary::cod(self))
+        crate::matrix::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -598,7 +598,7 @@ impl Not {
 impl Eq {
     /// The operation reading the boolean matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Bool; 2]) -> Result<Self, crate::Error> {
-        let s = crate::tensor::same_sort(dom)?;
+        let s = crate::matrix::same_sort(dom)?;
         Ok(Eq { shape: s.shape() })
     }
 
@@ -618,7 +618,7 @@ impl Eq {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Bool; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
-        crate::tensor::check_cod(Self::with_dom(dom), cod)
+        crate::matrix::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -633,14 +633,14 @@ impl Eq {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::tensor::py_sorts(py, Boundary::dom(self))
+        crate::matrix::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::tensor::py_sorts(py, Boundary::cod(self))
+        crate::matrix::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -652,7 +652,7 @@ impl Eq {
 impl Ne {
     /// The operation reading the boolean matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Bool; 2]) -> Result<Self, crate::Error> {
-        let s = crate::tensor::same_sort(dom)?;
+        let s = crate::matrix::same_sort(dom)?;
         Ok(Ne { shape: s.shape() })
     }
 
@@ -672,7 +672,7 @@ impl Ne {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Bool; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
-        crate::tensor::check_cod(Self::with_dom(dom), cod)
+        crate::matrix::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -687,14 +687,14 @@ impl Ne {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::tensor::py_sorts(py, Boundary::dom(self))
+        crate::matrix::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::tensor::py_sorts(py, Boundary::cod(self))
+        crate::matrix::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -706,7 +706,7 @@ impl Ne {
 impl Ite {
     /// The operation reading the boolean matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Bool; 3]) -> Result<Self, crate::Error> {
-        let s = crate::tensor::same_sort(dom)?;
+        let s = crate::matrix::same_sort(dom)?;
         Ok(Ite { shape: s.shape() })
     }
 
@@ -726,7 +726,7 @@ impl Ite {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Bool; 3], cod: Option<Bool>) -> Result<Self, crate::Error> {
-        crate::tensor::check_cod(Self::with_dom(dom), cod)
+        crate::matrix::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -741,14 +741,14 @@ impl Ite {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::tensor::py_sorts(py, Boundary::dom(self))
+        crate::matrix::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::tensor::py_sorts(py, Boundary::cod(self))
+        crate::matrix::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]

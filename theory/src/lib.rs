@@ -1,10 +1,10 @@
+pub mod matrix;
 pub mod sort;
-pub mod tensor;
 #[cfg(feature = "torch")]
 pub mod torch;
 pub mod zero;
 
-pub use tensor::Tensor;
+pub use matrix::Matrix;
 
 /// The failure of a partial constructor, with its message: raised in Python
 /// as a `ValueError`.

@@ -7,12 +7,12 @@ their width, whose operations follow SMT-LIB2, as those of `reactor.eval` do.
 
 import z3 as _z3
 import torch
-from ..tensor import Havoc, Skip
-from ..tensor.sort import Real, Int, Bool, Word
+from ..matrix import Havoc, Skip
+from ..matrix.sort import Real, Int, Bool, Word
 import numpy as _np
 import operator
 
-from ..reactor import tensor, Zero
+from ..reactor import matrix, Zero
 
 
 def fresh(dtype, prefix):
@@ -70,169 +70,169 @@ def interpret(itype):
             # the singleton sort is the rate of change of discrete values, which are
             # never integrated: nothing encodes it
             raise RuntimeError("Zero writes the singleton sort, which is never encoded")
-        case tensor.real.Zero(Real(shape)):
+        case matrix.real.Zero(Real(shape)):
             return lambda: _zeros(Real(shape))
 
         # constants
-        case tensor.bool.Const(t):
+        case matrix.bool.Const(t):
             return lambda: _np.vectorize(_z3.BoolVal, otypes=[object])(t.detach().numpy())
-        case tensor.real.Const(t):
+        case matrix.real.Const(t):
             return lambda: _np.vectorize(_z3.RealVal, otypes=[object])(t.detach().numpy())
-        case tensor.int.Const(t):
+        case matrix.int.Const(t):
             return lambda: _np.vectorize(_z3.IntVal, otypes=[object])(t.detach().numpy())
-        case tensor.word.Const(t, Word(w)):
+        case matrix.word.Const(t, Word(w)):
             return lambda: _np.vectorize(lambda v: _z3.BitVecVal(int(v), w), otypes=[object])(t.detach().numpy())
 
         # arithmetic
-        case tensor.real.Sub() | tensor.int.Sub():
+        case matrix.real.Sub() | matrix.int.Sub():
             return _np.frompyfunc(operator.sub, 2, 1)
-        case tensor.real.Add() | tensor.int.Add():
+        case matrix.real.Add() | matrix.int.Add():
             return _np.frompyfunc(operator.add, 2, 1)
-        case tensor.real.Mul() | tensor.int.Mul():
+        case matrix.real.Mul() | matrix.int.Mul():
             return _np.frompyfunc(operator.mul, 2, 1)
-        case tensor.real.Div() | tensor.int.Div():
+        case matrix.real.Div() | matrix.int.Div():
             return _np.frompyfunc(operator.truediv, 2, 1)
-        case tensor.int.Mod():
+        case matrix.int.Mod():
             return _np.frompyfunc(operator.mod, 2, 1)
-        case tensor.real.MatMul() | tensor.int.MatMul():
+        case matrix.real.MatMul() | matrix.int.MatMul():
             return lambda x, y: x @ y
-        case tensor.real.Linear(a) | tensor.int.Linear(a):
+        case matrix.real.Linear(a) | matrix.int.Linear(a):
             return lambda x: a.detach().numpy() @ x
-        case tensor.real.Affine(weight, bias) | tensor.int.Affine(weight, bias):
+        case matrix.real.Affine(weight, bias) | matrix.int.Affine(weight, bias):
             return lambda x: weight.detach().numpy() @ x + bias.detach().numpy()
-        case tensor.real.Scale(c) | tensor.int.Scale(c):
+        case matrix.real.Scale(c) | matrix.int.Scale(c):
             return lambda x: c.detach().numpy() * x
 
         # comparisons (produce Bool)
-        case tensor.real.Eq() | tensor.int.Eq() | tensor.bool.Eq():
+        case matrix.real.Eq() | matrix.int.Eq() | matrix.bool.Eq():
             return _np.frompyfunc(operator.eq, 2, 1)
-        case tensor.real.Ne() | tensor.int.Ne() | tensor.bool.Ne():
+        case matrix.real.Ne() | matrix.int.Ne() | matrix.bool.Ne():
             return _np.frompyfunc(operator.ne, 2, 1)
-        case tensor.real.Lt() | tensor.int.Lt():
+        case matrix.real.Lt() | matrix.int.Lt():
             return _np.frompyfunc(operator.lt, 2, 1)
-        case tensor.real.Le() | tensor.int.Le():
+        case matrix.real.Le() | matrix.int.Le():
             return _np.frompyfunc(operator.le, 2, 1)
-        case tensor.real.Gt() | tensor.int.Gt():
+        case matrix.real.Gt() | matrix.int.Gt():
             return _np.frompyfunc(operator.gt, 2, 1)
-        case tensor.real.Ge() | tensor.int.Ge():
+        case matrix.real.Ge() | matrix.int.Ge():
             return _np.frompyfunc(operator.ge, 2, 1)
 
         # logical
-        case tensor.bool.And():
+        case matrix.bool.And():
             return _np.frompyfunc(lambda x, y: _z3.And(x, y), 2, 1)
-        case tensor.bool.Or():
+        case matrix.bool.Or():
             return _np.frompyfunc(lambda x, y: _z3.Or(x, y), 2, 1)
-        case tensor.bool.Not():
+        case matrix.bool.Not():
             return _np.frompyfunc(lambda x: _z3.Not(x), 1, 1)
-        case tensor.bool.Xor():
+        case matrix.bool.Xor():
             return _np.frompyfunc(lambda x, y: _z3.Xor(x, y), 2, 1)
 
         # control flow
-        case tensor.real.Ite() | tensor.int.Ite() | tensor.bool.Ite() | tensor.word.Ite():
+        case matrix.real.Ite() | matrix.int.Ite() | matrix.bool.Ite() | matrix.word.Ite():
             return _np.frompyfunc(lambda c, tt, ff: _z3.If(c, tt, ff), 3, 1)
 
         # neural-ish / aggregate
-        case tensor.real.Neg() | tensor.int.Neg():
+        case matrix.real.Neg() | matrix.int.Neg():
             return _np.frompyfunc(lambda x: -x, 1, 1)
-        case tensor.real.Abs() | tensor.int.Abs():
+        case matrix.real.Abs() | matrix.int.Abs():
             return _np.frompyfunc(lambda x: _z3.If(x >= 0, x, -x), 1, 1)
-        case tensor.real.ReLU() | tensor.int.ReLU():
+        case matrix.real.ReLU() | matrix.int.ReLU():
             return _np.frompyfunc(lambda x: _z3.If(x > 0, x, 0), 1, 1)
-        case tensor.real.Min() | tensor.int.Min():
+        case matrix.real.Min() | matrix.int.Min():
             return _np.frompyfunc(lambda x, y: _z3.If(x <= y, x, y), 2, 1)
-        case tensor.real.Max() | tensor.int.Max():
+        case matrix.real.Max() | matrix.int.Max():
             return _np.frompyfunc(lambda x, y: _z3.If(x >= y, x, y), 2, 1)
 
-        case tensor.real.Transpose() | tensor.int.Transpose():
+        case matrix.real.Transpose() | matrix.int.Transpose():
             return _np.transpose
-        case tensor.real.Argmax():
+        case matrix.real.Argmax():
             return lambda x: _argmax(x, _z3.RealVal)
-        case tensor.int.Argmax():
+        case matrix.int.Argmax():
             return lambda x: _argmax(x, _z3.IntVal)
 
         # words: comparisons, unsigned by default, signed as Z3's own
-        case tensor.word.Eq():
+        case matrix.word.Eq():
             return _np.frompyfunc(operator.eq, 2, 1)
-        case tensor.word.Ne():
+        case matrix.word.Ne():
             return _np.frompyfunc(operator.ne, 2, 1)
-        case tensor.word.unsigned.Lt():
+        case matrix.word.unsigned.Lt():
             return _np.frompyfunc(_z3.ULT, 2, 1)
-        case tensor.word.unsigned.Le():
+        case matrix.word.unsigned.Le():
             return _np.frompyfunc(_z3.ULE, 2, 1)
-        case tensor.word.unsigned.Gt():
+        case matrix.word.unsigned.Gt():
             return _np.frompyfunc(_z3.UGT, 2, 1)
-        case tensor.word.unsigned.Ge():
+        case matrix.word.unsigned.Ge():
             return _np.frompyfunc(_z3.UGE, 2, 1)
-        case tensor.word.signed.Lt():
+        case matrix.word.signed.Lt():
             return _np.frompyfunc(operator.lt, 2, 1)
-        case tensor.word.signed.Le():
+        case matrix.word.signed.Le():
             return _np.frompyfunc(operator.le, 2, 1)
-        case tensor.word.signed.Gt():
+        case matrix.word.signed.Gt():
             return _np.frompyfunc(operator.gt, 2, 1)
-        case tensor.word.signed.Ge():
+        case matrix.word.signed.Ge():
             return _np.frompyfunc(operator.ge, 2, 1)
 
         # words: arithmetic modulo 2^w
-        case tensor.word.Add():
+        case matrix.word.Add():
             return _np.frompyfunc(operator.add, 2, 1)
-        case tensor.word.Sub():
+        case matrix.word.Sub():
             return _np.frompyfunc(operator.sub, 2, 1)
-        case tensor.word.Mul():
+        case matrix.word.Mul():
             return _np.frompyfunc(operator.mul, 2, 1)
-        case tensor.word.Neg():
+        case matrix.word.Neg():
             return _np.frompyfunc(operator.neg, 1, 1)
-        case tensor.word.signed.Abs():
+        case matrix.word.signed.Abs():
             return _np.frompyfunc(_abs, 1, 1)
-        case tensor.word.unsigned.Div():
+        case matrix.word.unsigned.Div():
             return _np.frompyfunc(_z3.UDiv, 2, 1)
-        case tensor.word.unsigned.Rem():
+        case matrix.word.unsigned.Rem():
             return _np.frompyfunc(_z3.URem, 2, 1)
-        case tensor.word.signed.Div():
+        case matrix.word.signed.Div():
             # Z3's `/` on bit-vectors is the signed division
             return _np.frompyfunc(operator.truediv, 2, 1)
-        case tensor.word.signed.Rem():
+        case matrix.word.signed.Rem():
             return _np.frompyfunc(_z3.SRem, 2, 1)
-        case tensor.word.signed.Mod():
+        case matrix.word.signed.Mod():
             # Z3's `%` on bit-vectors is the signed modulus
             return _np.frompyfunc(operator.mod, 2, 1)
 
         # words: bitwise
-        case tensor.word.And():
+        case matrix.word.And():
             return _np.frompyfunc(operator.and_, 2, 1)
-        case tensor.word.Or():
+        case matrix.word.Or():
             return _np.frompyfunc(operator.or_, 2, 1)
-        case tensor.word.Xor():
+        case matrix.word.Xor():
             return _np.frompyfunc(operator.xor, 2, 1)
-        case tensor.word.Not():
+        case matrix.word.Not():
             return _np.frompyfunc(operator.invert, 1, 1)
-        case tensor.word.Nand():
+        case matrix.word.Nand():
             return _np.frompyfunc(lambda x, y: ~(x & y), 2, 1)
-        case tensor.word.Nor():
+        case matrix.word.Nor():
             return _np.frompyfunc(lambda x, y: ~(x | y), 2, 1)
-        case tensor.word.Xnor():
+        case matrix.word.Xnor():
             return _np.frompyfunc(lambda x, y: ~(x ^ y), 2, 1)
 
         # words: shifts, rotations and resizing
-        case tensor.word.Shl():
+        case matrix.word.Shl():
             return _np.frompyfunc(operator.lshift, 2, 1)
-        case tensor.word.unsigned.Shr():
+        case matrix.word.unsigned.Shr():
             return _np.frompyfunc(_z3.LShR, 2, 1)
-        case tensor.word.signed.Shr():
+        case matrix.word.signed.Shr():
             # Z3's `>>` on bit-vectors is the arithmetic shift
             return _np.frompyfunc(operator.rshift, 2, 1)
-        case tensor.word.RotateLeft(i):
+        case matrix.word.RotateLeft(i):
             return _np.frompyfunc(lambda x: _z3.RotateLeft(x, i), 1, 1)
-        case tensor.word.RotateRight(i):
+        case matrix.word.RotateRight(i):
             return _np.frompyfunc(lambda x: _z3.RotateRight(x, i), 1, 1)
-        case tensor.word.Concat():
+        case matrix.word.Concat():
             return _np.frompyfunc(_z3.Concat, 2, 1)
-        case tensor.word.Extract(i, j):
+        case matrix.word.Extract(i, j):
             return _np.frompyfunc(lambda x: _z3.Extract(i, j, x), 1, 1)
-        case tensor.word.Repeat(i):
+        case matrix.word.Repeat(i):
             return _np.frompyfunc(lambda x: _z3.RepeatBitVec(i, x), 1, 1)
-        case tensor.word.unsigned.Extend(i):
+        case matrix.word.unsigned.Extend(i):
             return _np.frompyfunc(lambda x: _z3.ZeroExt(i, x), 1, 1)
-        case tensor.word.signed.Extend(i):
+        case matrix.word.signed.Extend(i):
             return _np.frompyfunc(lambda x: _z3.SignExt(i, x), 1, 1)
         case _:
             raise NotImplementedError(f"itype: {itype}")

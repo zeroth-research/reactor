@@ -7,8 +7,8 @@ from .train import train
 from reactor.gym import Env
 from reactor.torch import Module
 from reactor import Wire, Var, X
-from reactor.tensor.sort import Real
-from reactor import tensor
+from reactor.matrix.sort import Real
+from reactor import matrix
 from reactor.eval import eval_itype
 
 
@@ -48,7 +48,7 @@ def test_training():
     for atom in wrapped_nn.atoms:
         for term in atom.update:
             match term.itype:
-                case tensor.real.Affine(weight, _bias):
+                case matrix.real.Affine(weight, _bias):
                     assert any(
                         torch.equal(weight, w) for w in live_weights
                     ), "Linear op weight does not reflect the live trained tensor"

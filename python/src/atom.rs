@@ -7,7 +7,7 @@ use pyo3::exceptions::{PyException, PyIndexError};
 use pyo3::prelude::*;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use theory::tensor::sort;
+use theory::matrix::sort;
 
 #[pyclass(module = "reactor", frozen)]
 pub(crate) struct Atom {

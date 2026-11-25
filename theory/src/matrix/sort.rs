@@ -3,7 +3,7 @@
 
 The sorts of all theories, and the sorts of each theory.
 
-[`Any`] holds the sorts of all theories, just as [`crate::tensor::Any`] holds the
+[`Any`] holds the sorts of all theories, just as [`crate::matrix::Any`] holds the
 operations of all theories. `subenum` defines the sorts of each theory as a
 subset of them, and generates the casts between `Any` and each subset:
 `From` up to `Any`, and `TryFrom` down from it.
@@ -11,7 +11,7 @@ subset of them, and generates the casts between `Any` and each subset:
 ## Naming the subsets
 
 The subsets are named after the SMT-LIB2 *theories*, and not after the
-*logics*, such as [`crate::tensor::LRA`] or [`crate::tensor::BV`], which name subsets of the
+*logics*, such as [`crate::matrix::LRA`] or [`crate::matrix::BV`], which name subsets of the
 operations. A theory fixes the sorts, and each logic restricts its
 operations: the `L` of `LRA` stands for linear, a restriction on the
 operations, so `LRA` and a non-linear `NRA` would share the same sorts.
@@ -32,7 +32,7 @@ plural the sorts of a theory:
 [`Words`] follows our sort [`Word`] rather than SMT-LIB2's longer name.
 [`Prop`] is the exception to the plurals: the theory of booleans is
 SMT-LIB2's `Core`, a name too generic for its sorts, so it takes the name
-of propositional logic, whose operations are [`crate::tensor::Prop`].
+of propositional logic, whose operations are [`crate::matrix::Prop`].
 
 Every subset includes [`Bool`], because every SMT-LIB2 theory includes the
 Core theory, whose booleans are the sort that comparisons write; [`Prop`]
@@ -69,7 +69,7 @@ use pyo3::{exceptions::PyTypeError, prelude::*};
         eq,
         str,
         get_all,
-        module = "reactor.tensor.sort"
+        module = "reactor.matrix.sort"
     )
 )]
 pub struct Real {
@@ -156,7 +156,7 @@ impl Differentiable for Real {
         eq,
         str,
         get_all,
-        module = "reactor.tensor.sort"
+        module = "reactor.matrix.sort"
     )
 )]
 pub struct Int {
@@ -219,7 +219,7 @@ impl Differentiable for Int {
         eq,
         str,
         get_all,
-        module = "reactor.tensor.sort"
+        module = "reactor.matrix.sort"
     )
 )]
 pub struct Bool {
@@ -283,7 +283,7 @@ impl Differentiable for Bool {
         eq,
         str,
         get_all,
-        module = "reactor.tensor.sort"
+        module = "reactor.matrix.sort"
     )
 )]
 pub struct Word {

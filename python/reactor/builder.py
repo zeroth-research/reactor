@@ -1,10 +1,10 @@
 """Stateless Term factories, one per numeric sort family.
 
 ``TermBuilder`` is the abstract base: it builds the terms shared by every numeric sort, the
-structural ones and those on ``Bool`` values (``reactor.tensor.bool``), and raises
+structural ones and those on ``Bool`` values (``reactor.matrix.bool``), and raises
 ``TheoryError`` for the operations its numeric sort does not provide. Its subclasses,
 ``RealTermBuilder``, ``IntTermBuilder`` and ``WordTermBuilder``, provide the operations of
-``reactor.tensor.real``, ``.int`` and ``.word``, sized by their operands' sort. Constants
+``reactor.matrix.real``, ``.int`` and ``.word``, sized by their operands' sort. Constants
 are ``Bool`` for booleans, and otherwise of the builder's numeric sort, unless an output wire
 gives their sort. ``builder_for`` makes the builder of a numeric sort family.
 """
@@ -14,10 +14,10 @@ from functools import partial
 import torch
 
 from .reactor import Wire, Term, Var
-from .tensor import Skip, real, int as int_, bool as bool_, word
-from .tensor.word import signed, unsigned
+from .matrix import Skip, real, int as int_, bool as bool_, word
+from .matrix.word import signed, unsigned
 from .sort import ZeroSort
-from .tensor.sort import Real, Int, Bool, Word
+from .matrix.sort import Real, Int, Bool, Word
 
 
 def _wire(t) -> Wire:
@@ -255,7 +255,7 @@ class TermBuilder:
 
 
 class RealTermBuilder(TermBuilder):
-    """Real numbers, with the operations of `reactor.tensor.real`."""
+    """Real numbers, with the operations of `reactor.matrix.real`."""
 
     def number(self, shape: list) -> Real:
         return Real(shape)
@@ -356,7 +356,7 @@ class RealTermBuilder(TermBuilder):
 
 
 class IntTermBuilder(TermBuilder):
-    """Integers, with the operations of `reactor.tensor.int`."""
+    """Integers, with the operations of `reactor.matrix.int`."""
 
     def number(self, shape: list) -> Int:
         return Int(shape)
@@ -427,7 +427,7 @@ class IntTermBuilder(TermBuilder):
 
 
 class WordTermBuilder(TermBuilder):
-    """Words of `width` bits (32 by default), with the operations of `reactor.tensor.word`,
+    """Words of `width` bits (32 by default), with the operations of `reactor.matrix.word`,
     sized by the width of their operands too. Division and comparisons are unsigned,
     absolute values signed. On words, the logical operations are bitwise."""
 

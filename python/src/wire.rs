@@ -1,5 +1,5 @@
 use pyo3::prelude::*;
-use theory::tensor::sort;
+use theory::matrix::sort;
 
 #[pyclass(module = "reactor", frozen, eq, hash, ord)]
 #[derive(Debug, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]

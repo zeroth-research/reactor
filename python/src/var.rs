@@ -4,7 +4,7 @@ use pyo3::basic::CompareOp;
 use pyo3::prelude::*;
 use pyo3::types::PyNotImplemented;
 use std::hash::{DefaultHasher, Hash, Hasher};
-use theory::tensor::sort;
+use theory::matrix::sort;
 
 #[pyclass(module = "reactor", frozen, from_py_object)] // eq, hash, ord are implemented manually for compat with polymorphic __richcmp__
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]

@@ -68,6 +68,6 @@ impl Zero {
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::tensor::py_sorts(py, Boundary::cod(self))
+        crate::matrix::py_sorts(py, Boundary::cod(self))
     }
 }

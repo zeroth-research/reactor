@@ -1,4 +1,4 @@
-"""The operations of `reactor.tensor` are built from the parameters their sorts do not
+"""The operations of `reactor.matrix` are built from the parameters their sorts do not
 determine, then their domain, and optionally their codomain, which must agree; those that
 read nothing are built from their codomain. They match positionally the same way, their
 domain left out when they read nothing; a single sort comes bare, and several as a list."""
@@ -8,8 +8,8 @@ import torch
 import reactor
 from reactor import Zero
 from reactor.sort import ZeroSort
-from reactor.tensor import Havoc, Skip, real, int as int_, bool as bool_, word
-from reactor.tensor.sort import Real, Int, Bool, Word
+from reactor.matrix import Havoc, Skip, real, int as int_, bool as bool_, word
+from reactor.matrix.sort import Real, Int, Bool, Word
 from reactor import T
 
 
@@ -149,6 +149,6 @@ def test_the_singleton_sort_and_its_operation_belong_to_no_theory():
     assert Zero.__module__ == "reactor"
     assert not hasattr(reactor, "ZeroType") and not hasattr(reactor, "ZeroOp")
     assert not hasattr(reactor, "ZeroSort") and not hasattr(reactor, "zero")
-    assert not hasattr(reactor.tensor, "zero") and not hasattr(reactor.tensor.sort, "Zero")
+    assert not hasattr(reactor.matrix, "zero") and not hasattr(reactor.matrix.sort, "Zero")
     # the sorts are reached through their namespaces, not at the top level
     assert not any(hasattr(reactor, s) for s in ["Real", "Int", "Bool", "Word"])

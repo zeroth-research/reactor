@@ -10,15 +10,15 @@ import torch
 import numpy as np
 import z3
 
-from reactor.tensor.sort import Real, Int, Bool, Word
-from reactor import tensor
-from reactor.tensor import Skip
+from reactor.matrix.sort import Real, Int, Bool, Word
+from reactor import matrix
+from reactor.matrix import Skip
 from reactor.eval import eval_itype
 from reactor.smt import z3 as smt
 
 R, I, B, W = Real([2, 2]), Int([2, 2]), Bool([2, 2]), Word(8, [2, 2])
 
-real, int_, bool_, word = tensor.real, tensor.int, tensor.bool, tensor.word
+real, int_, bool_, word = matrix.real, matrix.int, matrix.bool, matrix.word
 signed, unsigned = word.signed, word.unsigned
 
 # operands: reals exact in binary, integers of both signs, booleans of all pairs, and
@@ -180,7 +180,7 @@ def _dom(op, args):
     return op.dom if isinstance(op.dom, list) else [op.dom]
 
 
-IDS = [f"{type(op).__module__.removeprefix('reactor.tensor.')}.{type(op).__name__}" for op, _ in CASES]
+IDS = [f"{type(op).__module__.removeprefix('reactor.matrix.')}.{type(op).__name__}" for op, _ in CASES]
 
 
 @pytest.mark.parametrize("op,args", CASES, ids=IDS)

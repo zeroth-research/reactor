@@ -6,7 +6,7 @@ variables — ``reactor.Var`` objects — and override any of ``init`` / ``updat
 module is built in the constructor:
 
     from reactor import Var
-    from reactor.tensor.sort import Int
+    from reactor.matrix.sort import Int
     from reactor.sugar import Module
 
     class Counter(Module):
@@ -56,7 +56,7 @@ import inspect
 
 from . import reactor
 from .reactor import Module as _Module, Term as _Term, Var
-from .reactor import tensor
+from .reactor import matrix
 from .reactor import T
 
 from .expr import expr, cast, ite, relu, argmax, collecting, Expr, X as expr_X, d as expr_d  # re-exported for authoring
@@ -96,7 +96,7 @@ def _build_init_block(cls, ctrl, extl) -> list:
             raise ValueError(f"init expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
             e = val if isinstance(val, Expr) else expr(val, sort=var.dtype)
-            terms.append(_Term(tensor.Skip(var.dtype), [reactor.X(var)], [e.wire]))
+            terms.append(_Term(matrix.Skip(var.dtype), [reactor.X(var)], [e.wire]))
         return terms
 
 
@@ -117,7 +117,7 @@ def _build_update_block(cls, ctrl, extl) -> list:
             raise ValueError(f"update expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
             e = val if isinstance(val, Expr) else expr(val, sort=var.dtype)
-            terms.append(_Term(tensor.Skip(var.dtype), [reactor.X(var)], [e.wire]))
+            terms.append(_Term(matrix.Skip(var.dtype), [reactor.X(var)], [e.wire]))
         return terms
 
 
@@ -138,7 +138,7 @@ def _build_delay_block(cls, ctrl, extl) -> list:
             raise ValueError(f"delay expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
             e = val if isinstance(val, Expr) else expr(val, sort=T(var.dtype))
-            terms.append(_Term(tensor.Skip(T(var.dtype)), [reactor.d(var)], [e.wire]))
+            terms.append(_Term(matrix.Skip(T(var.dtype)), [reactor.d(var)], [e.wire]))
         return terms
 
 

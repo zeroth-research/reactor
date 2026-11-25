@@ -12,8 +12,8 @@ from gymnasium import spaces
 
 from reactor.gym import Env
 from reactor import TheoryError
-from reactor.tensor.sort import Bool, Real, Int
-from reactor.tensor import Havoc
+from reactor.matrix.sort import Bool, Real, Int
+from reactor.matrix import Havoc
 
 
 # ── boilerplate ───────────────────────────────────────────────────

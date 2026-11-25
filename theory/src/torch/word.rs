@@ -1,12 +1,12 @@
 //! The Python class of the constants of fixed-size bit-vectors.
 
-use crate::tensor::sort::Word;
+use crate::matrix::sort::Word;
 use pyo3::prelude::*;
 use pyo3_tch::PyTensor;
 
 /// A constant matrix of bit-vectors of a width: a `torch.Tensor` of
 /// integer elements, each holding a bit-vector in its low bits.
-#[pyclass(frozen, name = "Const", module = "reactor.tensor.word")]
+#[pyclass(frozen, name = "Const", module = "reactor.matrix.word")]
 pub struct Const(tch::Tensor, usize);
 
 // SAFETY: the tensor is private to this module, which only reads its
@@ -29,7 +29,7 @@ impl Const {
                 tensor.kind()
             )));
         }
-        let op = crate::tensor::word::Const::with_cod(tensor.0, [cod])?;
+        let op = crate::matrix::word::Const::with_cod(tensor.0, [cod])?;
         Ok(Const(op.tensor().shallow_clone(), op.width()))
     }
 
@@ -53,19 +53,19 @@ impl Const {
     /// The sort it writes.
     #[getter]
     fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
-        let op: crate::tensor::word::Const<tch::Tensor> = slf.extract()?;
-        crate::tensor::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
+        let op: crate::matrix::word::Const<tch::Tensor> = slf.extract()?;
+        crate::matrix::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
     }
 }
 
-impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::word::Const<tch::Tensor> {
+impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::word::Const<tch::Tensor> {
     type Error = PyErr;
 
     /// Fails when `ob` is not a [`Const`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let constant = ob.cast::<Const>()?.get();
-        let cod = crate::tensor::sort::Word::new(constant.1, crate::Tensor::shape(&constant.0))?;
-        Ok(crate::tensor::word::Const::with_cod(
+        let cod = crate::matrix::sort::Word::new(constant.1, crate::Matrix::shape(&constant.0))?;
+        Ok(crate::matrix::word::Const::with_cod(
             constant.0.shallow_clone(),
             [cod],
         )?)
@@ -74,13 +74,13 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::tensor::word::Const<tch::Tensor> 
 
 /// A clone shares the tensor of the original: `tch::Tensor` is not `Clone`,
 /// so this takes a shallow clone of it, as libtorch counts its references.
-impl Clone for crate::tensor::word::Const<tch::Tensor> {
+impl Clone for crate::matrix::word::Const<tch::Tensor> {
     fn clone(&self) -> Self {
-        let cod = crate::tensor::sort::Word::new_unchecked(
+        let cod = crate::matrix::sort::Word::new_unchecked(
             self.width(),
-            crate::Tensor::shape(self.tensor()),
+            crate::Matrix::shape(self.tensor()),
         );
-        crate::tensor::word::Const::with_cod(self.tensor().shallow_clone(), [cod])
+        crate::matrix::word::Const::with_cod(self.tensor().shallow_clone(), [cod])
             .expect("a clone has the sort of the original")
     }
 }
@@ -88,13 +88,13 @@ impl Clone for crate::tensor::word::Const<tch::Tensor> {
 /// Converts an operation of the theory into its Python class: the
 /// operations carrying tensors into the classes of this module, holding the
 /// same tensors, and the others into their own classes.
-impl<'py> IntoPyObject<'py> for crate::tensor::word::BV<tch::Tensor> {
+impl<'py> IntoPyObject<'py> for crate::matrix::word::BV<tch::Tensor> {
     type Target = PyAny;
     type Output = Bound<'py, PyAny>;
     type Error = PyErr;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-        use crate::tensor::word::BV;
+        use crate::matrix::word::BV;
 
         match self {
             BV::Const(op) => Const(op.tensor().shallow_clone(), op.width())

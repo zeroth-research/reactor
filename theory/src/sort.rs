@@ -6,12 +6,12 @@ of no coordinates. It is the tangent of every discrete sort, of booleans,
 integers, words and enumerations, scalar or matrix alike: a discrete set is a
 manifold of dimension 0, whose tangent space at every point is `ℝ⁰`, whatever
 the shape of its values, as a matrix of discrete values is a discrete set
-too. So it has no shape, and the tensor theories and the scalar theories
+too. So it has no shape, and the matrix theories and the scalar theories
 share it. It is its own tangent.
 
 The zero rate of change of a real is not the value of [`Zero`], but the zero
 matrix of the degree of the rate of change, written by
-[`tensor::real::Zero`](crate::tensor::real::Zero).
+[`matrix::real::Zero`](crate::matrix::real::Zero).
 */
 
 use base::differentiable::Differentiable;

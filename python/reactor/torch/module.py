@@ -2,7 +2,7 @@ import inspect
 import torch.nn as nn
 
 from ..reactor import Module as _BaseModule, X
-from ..tensor.sort import Real, Int
+from ..matrix.sort import Real, Int
 from ..builder import builder_for, number_sort
 from ..analyzer import convert_method, resolve_wire
 

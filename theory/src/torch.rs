@@ -1,9 +1,9 @@
 /*!
 # Torch
 
-The torch backing of the operations of [`crate::tensor`]: [`tch::Tensor`]
-implements [`crate::Tensor`], so that the operations carrying tensors hold
-torch tensors directly, as `tensor::real::Const<tch::Tensor>`. The Python
+The torch backing of the operations of [`crate::matrix`]: [`tch::Tensor`]
+implements [`crate::Matrix`], so that the operations carrying tensors hold
+torch tensors directly, as `matrix::real::Const<tch::Tensor>`. The Python
 `torch.Tensor` objects convert to and from them through
 [`pyo3_tch::PyTensor`], sharing their storage.
 
@@ -14,7 +14,7 @@ private field, a [`tch::Tensor`] of the element kind of its theory, checked
 on construction, and [`word::Const`] its width too. A [`tch::Tensor`] is not
 `Sync`, which a Python class must be, so each class implements `Sync`
 itself, as only its own module touches the tensor. The constants of
-[`crate::tensor`] extract from the class of their theory, sharing its tensor.
+[`crate::matrix`] extract from the class of their theory, sharing its tensor.
 So do the pointwise products with a constant, [`real::Scale`] and
 [`int::Scale`], whose class holds the constant in the same way.
 
@@ -25,7 +25,7 @@ determine. So are the affine maps, [`real::Affine`] and
 [`int::Affine`], each holding, in private fields, the [`tch::Tensor`]s `A`
 and `B` of its theory, of shapes `[m, n]` and `[m, k]`, checked on
 construction, and implementing `Sync` in the same way. The linear and
-affine maps of [`crate::tensor::real`] and [`crate::tensor::int`] extract
+affine maps of [`crate::matrix::real`] and [`crate::matrix::int`] extract
 from the class of their theory, sharing its tensors.
 */
 
@@ -36,7 +36,7 @@ pub mod word;
 
 use pyo3::prelude::*;
 
-impl crate::Tensor for tch::Tensor {
+impl crate::Matrix for tch::Tensor {
     /// The `[rows, cols]` shape of the tensor, which must be a matrix.
     fn shape(&self) -> [usize; 2] {
         let size = self.size();
@@ -56,7 +56,7 @@ fn is_integer(kind: tch::Kind) -> bool {
 }
 
 /// Fails unless `tensor` is a matrix, a tensor of two dimensions: the
-/// constants are built from matrices only, so that [`crate::Tensor::shape`]
+/// constants are built from matrices only, so that [`crate::Matrix::shape`]
 /// never panics on their tensors.
 fn check_matrix(tensor: &tch::Tensor) -> Result<(), crate::Error> {
     if tensor.dim() != 2 {
@@ -88,19 +88,19 @@ fn check_affine(a: &tch::Tensor, b: &tch::Tensor) -> Result<(), crate::Error> {
         )));
     }
     let shape = |s: &[i64]| [s[0] as usize, s[1] as usize];
-    crate::tensor::check_affine(shape(&a), shape(&b))
+    crate::matrix::check_affine(shape(&a), shape(&b))
 }
 
 /// Converts an operation of any theory into its Python class, through the
 /// conversion of its theory; the structural operations are classes of their
 /// own.
-impl<'py> IntoPyObject<'py> for crate::tensor::Any<tch::Tensor> {
+impl<'py> IntoPyObject<'py> for crate::matrix::Any<tch::Tensor> {
     type Target = PyAny;
     type Output = Bound<'py, PyAny>;
     type Error = PyErr;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-        use crate::tensor::Any;
+        use crate::matrix::Any;
 
         match self {
             Any::Real(op) => op.into_pyobject(py),

@@ -1,7 +1,7 @@
-//! Tests for the operations of `tensor`, one module per module of `tensor`.
+//! Tests for the operations of `matrix`, one module per module of `matrix`.
 
 use base::differentiable::T;
-use theory::tensor::sort::Real;
+use theory::matrix::sort::Real;
 
 /// The tangent `T` applied `n` times to `s`: the real matrices of degree `n`
 /// above it.
@@ -9,36 +9,36 @@ fn tangent(n: u8, s: Real) -> Real {
     (0..n).fold(s, |s, _| T(s))
 }
 
-/// Tests for `tensor::Any` and the logics.
+/// Tests for `matrix::Any` and the logics.
 mod any {
     use super::tangent;
     use base::boundary::{Boundary, Poly};
     use base::differentiable::T;
-    use theory::tensor::*;
+    use theory::matrix::*;
 
     /// A tensor carrying its shape only, enough to compute boundaries.
     #[derive(Debug)]
     struct Mat([usize; 2]);
 
-    impl Tensor for Mat {
+    impl Matrix for Mat {
         fn shape(&self) -> [usize; 2] {
             self.0
         }
     }
 
     // The operations and logics, instantiated with `Mat`; these shadow the
-    // generic ones of `theory::tensor`.
-    type Any = theory::tensor::Any<Mat>;
+    // generic ones of `theory::matrix`.
+    type Any = theory::matrix::Any<Mat>;
     #[allow(clippy::upper_case_acronyms)]
-    type NRA = theory::tensor::NRA<Mat>;
+    type NRA = theory::matrix::NRA<Mat>;
     #[allow(clippy::upper_case_acronyms)]
-    type NIA = theory::tensor::NIA<Mat>;
+    type NIA = theory::matrix::NIA<Mat>;
     #[allow(clippy::upper_case_acronyms)]
-    type LRA = theory::tensor::LRA<Mat>;
+    type LRA = theory::matrix::LRA<Mat>;
     #[allow(clippy::upper_case_acronyms)]
-    type LIA = theory::tensor::LIA<Mat>;
-    type Prop = theory::tensor::Prop<Mat>;
-    type BV = theory::tensor::BV<Mat>;
+    type LIA = theory::matrix::LIA<Mat>;
+    type Prop = theory::matrix::Prop<Mat>;
+    type BV = theory::matrix::BV<Mat>;
 
     fn real(op: impl Into<real::NRA<Mat>>) -> Any {
         Any::Real(op.into())
@@ -631,12 +631,12 @@ mod any {
     }
 }
 
-/// Tests for `tensor::bool`.
+/// Tests for `matrix::bool`.
 mod bool {
     use base::boundary::{Boundary, Poly};
     use base::mono;
-    use theory::tensor::bool::*;
-    use theory::tensor::sort::Bool;
+    use theory::matrix::bool::*;
+    use theory::matrix::sort::Bool;
 
     fn one(s: Bool) -> Poly<Bool> {
         mono![s].into()
@@ -682,12 +682,12 @@ mod bool {
     }
 }
 
-/// Tests for `tensor::int`.
+/// Tests for `matrix::int`.
 mod int {
     use base::boundary::{Boundary, Poly};
     use base::mono;
-    use theory::tensor::int::*;
-    use theory::tensor::sort::{Bool, Int};
+    use theory::matrix::int::*;
+    use theory::matrix::sort::{Bool, Int};
 
     fn one(s: Int) -> Poly<Int> {
         mono![s].into()
@@ -825,14 +825,14 @@ mod int {
     }
 }
 
-/// Tests for `tensor::real`.
+/// Tests for `matrix::real`.
 mod real {
     use super::tangent;
     use base::boundary::{Boundary, Poly};
     use base::differentiable::T;
     use base::mono;
-    use theory::tensor::real::*;
-    use theory::tensor::sort::{Bool, Real};
+    use theory::matrix::real::*;
+    use theory::matrix::sort::{Bool, Real};
 
     fn one(s: Real) -> Poly<Real> {
         mono![s].into()
@@ -1025,11 +1025,11 @@ mod real {
     }
 }
 
-/// Tests for `tensor::sort`.
+/// Tests for `matrix::sort`.
 mod sort {
     use base::differentiable::T;
+    use theory::matrix::sort::*;
     use theory::sort::Zero;
-    use theory::tensor::sort::*;
 
     #[test]
     fn real_shape_and_display() {
@@ -1209,12 +1209,12 @@ mod sort {
     }
 }
 
-/// Tests for `tensor::word`.
+/// Tests for `matrix::word`.
 mod word {
     use base::boundary::{Boundary, Poly};
     use base::mono;
-    use theory::tensor::sort::{Bool, Word};
-    use theory::tensor::word::*;
+    use theory::matrix::sort::{Bool, Word};
+    use theory::matrix::word::*;
 
     fn w(width: usize, shape: [usize; 2]) -> Sort {
         Word::new(width, shape).unwrap().into()
@@ -1555,13 +1555,13 @@ mod word {
 mod with_dom {
     use base::boundary::{Boundary, Mono, Poly};
     use base::differentiable::T;
-    use theory::tensor::sort::{Bool, Int, Real, Word};
-    use theory::tensor::*;
+    use theory::matrix::sort::{Bool, Int, Real, Word};
+    use theory::matrix::*;
 
     #[derive(Debug)]
     struct Mat([usize; 2]);
 
-    impl Tensor for Mat {
+    impl Matrix for Mat {
         fn shape(&self) -> [usize; 2] {
             self.0
         }
@@ -1698,13 +1698,13 @@ mod with_dom {
 mod with_cod {
     use base::boundary::{Boundary, Mono, Poly};
     use base::differentiable::T;
-    use theory::tensor::sort::{Bool, Int, Real, Word};
-    use theory::tensor::*;
+    use theory::matrix::sort::{Bool, Int, Real, Word};
+    use theory::matrix::*;
 
     #[derive(Debug)]
     struct Mat([usize; 2]);
 
-    impl Tensor for Mat {
+    impl Matrix for Mat {
         fn shape(&self) -> [usize; 2] {
             self.0
         }

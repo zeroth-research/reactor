@@ -1,7 +1,7 @@
 use crate::wire::Wire;
 use crate::*;
 use pyo3::exceptions::{PyException, PyIndexError};
-use theory::tensor::sort;
+use theory::matrix::sort;
 
 #[pyclass(module = "reactor", frozen)]
 pub(crate) struct Term {

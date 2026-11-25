@@ -18,10 +18,10 @@ use crate::module::Module;
 use crate::term::Term;
 use crate::var::Var;
 use crate::wire::Wire;
-use theory::tensor::sort;
+use theory::matrix::sort;
 
 /// The operations of all theories, with their tensors held as `tch::Tensor`s.
-pub(crate) type Any = theory::tensor::Any<tch::Tensor>;
+pub(crate) type Any = theory::matrix::Any<tch::Tensor>;
 
 #[pymodule]
 fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -42,10 +42,10 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // The other operations and the sorts, in namespaces mirroring the
     // `theory` crate: `sort` holds the sorts shared by all theories, the
-    // singleton `ZeroSort`, which Rust calls `sort::Zero`; `tensor`
+    // singleton `ZeroSort`, which Rust calls `sort::Zero`; `matrix`
     // holds the structural operations, with a namespace per theory and for
     // the sorts. The operations carrying tensors come from `theory::torch`,
-    // the others from `theory::tensor`.
+    // the others from `theory::matrix`.
     let mut namespaces = Vec::new();
     {
         let sort = PyModule::new(py, "sort")?;
@@ -54,37 +54,37 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         namespaces.push(("sort", sort));
     }
     {
-        let tensor = PyModule::new(py, "tensor")?;
-        tensor.add_class::<theory::tensor::Havoc>()?;
-        tensor.add_class::<theory::tensor::Skip>()?;
+        let matrix = PyModule::new(py, "matrix")?;
+        matrix.add_class::<theory::matrix::Havoc>()?;
+        matrix.add_class::<theory::matrix::Skip>()?;
         {
             let real = PyModule::new(py, "real")?;
             real.add_class::<theory::torch::real::Const>()?;
             real.add_class::<theory::torch::real::Scale>()?;
             real.add_class::<theory::torch::real::Linear>()?;
             real.add_class::<theory::torch::real::Affine>()?;
-            real.add_class::<theory::tensor::real::Add>()?;
-            real.add_class::<theory::tensor::real::Sub>()?;
-            real.add_class::<theory::tensor::real::Mul>()?;
-            real.add_class::<theory::tensor::real::Div>()?;
-            real.add_class::<theory::tensor::real::ReLU>()?;
-            real.add_class::<theory::tensor::real::Abs>()?;
-            real.add_class::<theory::tensor::real::Neg>()?;
-            real.add_class::<theory::tensor::real::Zero>()?;
-            real.add_class::<theory::tensor::real::Argmax>()?;
-            real.add_class::<theory::tensor::real::Min>()?;
-            real.add_class::<theory::tensor::real::Max>()?;
-            real.add_class::<theory::tensor::real::Transpose>()?;
-            real.add_class::<theory::tensor::real::MatMul>()?;
-            real.add_class::<theory::tensor::real::Lt>()?;
-            real.add_class::<theory::tensor::real::Ite>()?;
-            real.add_class::<theory::tensor::real::Le>()?;
-            real.add_class::<theory::tensor::real::Gt>()?;
-            real.add_class::<theory::tensor::real::Ge>()?;
-            real.add_class::<theory::tensor::real::Eq>()?;
-            real.add_class::<theory::tensor::real::Ne>()?;
-            tensor.add("real", &real)?;
-            namespaces.push(("tensor.real", real));
+            real.add_class::<theory::matrix::real::Add>()?;
+            real.add_class::<theory::matrix::real::Sub>()?;
+            real.add_class::<theory::matrix::real::Mul>()?;
+            real.add_class::<theory::matrix::real::Div>()?;
+            real.add_class::<theory::matrix::real::ReLU>()?;
+            real.add_class::<theory::matrix::real::Abs>()?;
+            real.add_class::<theory::matrix::real::Neg>()?;
+            real.add_class::<theory::matrix::real::Zero>()?;
+            real.add_class::<theory::matrix::real::Argmax>()?;
+            real.add_class::<theory::matrix::real::Min>()?;
+            real.add_class::<theory::matrix::real::Max>()?;
+            real.add_class::<theory::matrix::real::Transpose>()?;
+            real.add_class::<theory::matrix::real::MatMul>()?;
+            real.add_class::<theory::matrix::real::Lt>()?;
+            real.add_class::<theory::matrix::real::Ite>()?;
+            real.add_class::<theory::matrix::real::Le>()?;
+            real.add_class::<theory::matrix::real::Gt>()?;
+            real.add_class::<theory::matrix::real::Ge>()?;
+            real.add_class::<theory::matrix::real::Eq>()?;
+            real.add_class::<theory::matrix::real::Ne>()?;
+            matrix.add("real", &real)?;
+            namespaces.push(("matrix.real", real));
         }
         {
             let int = PyModule::new(py, "int")?;
@@ -92,114 +92,114 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             int.add_class::<theory::torch::int::Scale>()?;
             int.add_class::<theory::torch::int::Linear>()?;
             int.add_class::<theory::torch::int::Affine>()?;
-            int.add_class::<theory::tensor::int::Add>()?;
-            int.add_class::<theory::tensor::int::Sub>()?;
-            int.add_class::<theory::tensor::int::Mul>()?;
-            int.add_class::<theory::tensor::int::Div>()?;
-            int.add_class::<theory::tensor::int::Mod>()?;
-            int.add_class::<theory::tensor::int::ReLU>()?;
-            int.add_class::<theory::tensor::int::Neg>()?;
-            int.add_class::<theory::tensor::int::Abs>()?;
-            int.add_class::<theory::tensor::int::Argmax>()?;
-            int.add_class::<theory::tensor::int::Min>()?;
-            int.add_class::<theory::tensor::int::Max>()?;
-            int.add_class::<theory::tensor::int::Transpose>()?;
-            int.add_class::<theory::tensor::int::MatMul>()?;
-            int.add_class::<theory::tensor::int::Lt>()?;
-            int.add_class::<theory::tensor::int::Ite>()?;
-            int.add_class::<theory::tensor::int::Le>()?;
-            int.add_class::<theory::tensor::int::Gt>()?;
-            int.add_class::<theory::tensor::int::Ge>()?;
-            int.add_class::<theory::tensor::int::Eq>()?;
-            int.add_class::<theory::tensor::int::Ne>()?;
-            tensor.add("int", &int)?;
-            namespaces.push(("tensor.int", int));
+            int.add_class::<theory::matrix::int::Add>()?;
+            int.add_class::<theory::matrix::int::Sub>()?;
+            int.add_class::<theory::matrix::int::Mul>()?;
+            int.add_class::<theory::matrix::int::Div>()?;
+            int.add_class::<theory::matrix::int::Mod>()?;
+            int.add_class::<theory::matrix::int::ReLU>()?;
+            int.add_class::<theory::matrix::int::Neg>()?;
+            int.add_class::<theory::matrix::int::Abs>()?;
+            int.add_class::<theory::matrix::int::Argmax>()?;
+            int.add_class::<theory::matrix::int::Min>()?;
+            int.add_class::<theory::matrix::int::Max>()?;
+            int.add_class::<theory::matrix::int::Transpose>()?;
+            int.add_class::<theory::matrix::int::MatMul>()?;
+            int.add_class::<theory::matrix::int::Lt>()?;
+            int.add_class::<theory::matrix::int::Ite>()?;
+            int.add_class::<theory::matrix::int::Le>()?;
+            int.add_class::<theory::matrix::int::Gt>()?;
+            int.add_class::<theory::matrix::int::Ge>()?;
+            int.add_class::<theory::matrix::int::Eq>()?;
+            int.add_class::<theory::matrix::int::Ne>()?;
+            matrix.add("int", &int)?;
+            namespaces.push(("matrix.int", int));
         }
         {
             let bool = PyModule::new(py, "bool")?;
             bool.add_class::<theory::torch::bool::Const>()?;
-            bool.add_class::<theory::tensor::bool::And>()?;
-            bool.add_class::<theory::tensor::bool::Or>()?;
-            bool.add_class::<theory::tensor::bool::Xor>()?;
-            bool.add_class::<theory::tensor::bool::Not>()?;
-            bool.add_class::<theory::tensor::bool::Eq>()?;
-            bool.add_class::<theory::tensor::bool::Ne>()?;
-            bool.add_class::<theory::tensor::bool::Ite>()?;
-            tensor.add("bool", &bool)?;
-            namespaces.push(("tensor.bool", bool));
+            bool.add_class::<theory::matrix::bool::And>()?;
+            bool.add_class::<theory::matrix::bool::Or>()?;
+            bool.add_class::<theory::matrix::bool::Xor>()?;
+            bool.add_class::<theory::matrix::bool::Not>()?;
+            bool.add_class::<theory::matrix::bool::Eq>()?;
+            bool.add_class::<theory::matrix::bool::Ne>()?;
+            bool.add_class::<theory::matrix::bool::Ite>()?;
+            matrix.add("bool", &bool)?;
+            namespaces.push(("matrix.bool", bool));
         }
         {
             let word = PyModule::new(py, "word")?;
             word.add_class::<theory::torch::word::Const>()?;
-            word.add_class::<theory::tensor::word::Concat>()?;
-            word.add_class::<theory::tensor::word::Extract>()?;
-            word.add_class::<theory::tensor::word::Repeat>()?;
-            word.add_class::<theory::tensor::word::Not>()?;
-            word.add_class::<theory::tensor::word::And>()?;
-            word.add_class::<theory::tensor::word::Or>()?;
-            word.add_class::<theory::tensor::word::Xor>()?;
-            word.add_class::<theory::tensor::word::Nand>()?;
-            word.add_class::<theory::tensor::word::Nor>()?;
-            word.add_class::<theory::tensor::word::Xnor>()?;
-            word.add_class::<theory::tensor::word::Neg>()?;
-            word.add_class::<theory::tensor::word::Ite>()?;
-            word.add_class::<theory::tensor::word::Add>()?;
-            word.add_class::<theory::tensor::word::Sub>()?;
-            word.add_class::<theory::tensor::word::Mul>()?;
-            word.add_class::<theory::tensor::word::Shl>()?;
-            word.add_class::<theory::tensor::word::RotateLeft>()?;
-            word.add_class::<theory::tensor::word::RotateRight>()?;
-            word.add_class::<theory::tensor::word::Eq>()?;
-            word.add_class::<theory::tensor::word::Ne>()?;
+            word.add_class::<theory::matrix::word::Concat>()?;
+            word.add_class::<theory::matrix::word::Extract>()?;
+            word.add_class::<theory::matrix::word::Repeat>()?;
+            word.add_class::<theory::matrix::word::Not>()?;
+            word.add_class::<theory::matrix::word::And>()?;
+            word.add_class::<theory::matrix::word::Or>()?;
+            word.add_class::<theory::matrix::word::Xor>()?;
+            word.add_class::<theory::matrix::word::Nand>()?;
+            word.add_class::<theory::matrix::word::Nor>()?;
+            word.add_class::<theory::matrix::word::Xnor>()?;
+            word.add_class::<theory::matrix::word::Neg>()?;
+            word.add_class::<theory::matrix::word::Ite>()?;
+            word.add_class::<theory::matrix::word::Add>()?;
+            word.add_class::<theory::matrix::word::Sub>()?;
+            word.add_class::<theory::matrix::word::Mul>()?;
+            word.add_class::<theory::matrix::word::Shl>()?;
+            word.add_class::<theory::matrix::word::RotateLeft>()?;
+            word.add_class::<theory::matrix::word::RotateRight>()?;
+            word.add_class::<theory::matrix::word::Eq>()?;
+            word.add_class::<theory::matrix::word::Ne>()?;
             {
                 let signed = PyModule::new(py, "signed")?;
-                signed.add_class::<theory::tensor::word::signed::Div>()?;
-                signed.add_class::<theory::tensor::word::signed::Abs>()?;
-                signed.add_class::<theory::tensor::word::signed::Rem>()?;
-                signed.add_class::<theory::tensor::word::signed::Mod>()?;
-                signed.add_class::<theory::tensor::word::signed::Shr>()?;
-                signed.add_class::<theory::tensor::word::signed::Extend>()?;
-                signed.add_class::<theory::tensor::word::signed::Lt>()?;
-                signed.add_class::<theory::tensor::word::signed::Le>()?;
-                signed.add_class::<theory::tensor::word::signed::Gt>()?;
-                signed.add_class::<theory::tensor::word::signed::Ge>()?;
+                signed.add_class::<theory::matrix::word::signed::Div>()?;
+                signed.add_class::<theory::matrix::word::signed::Abs>()?;
+                signed.add_class::<theory::matrix::word::signed::Rem>()?;
+                signed.add_class::<theory::matrix::word::signed::Mod>()?;
+                signed.add_class::<theory::matrix::word::signed::Shr>()?;
+                signed.add_class::<theory::matrix::word::signed::Extend>()?;
+                signed.add_class::<theory::matrix::word::signed::Lt>()?;
+                signed.add_class::<theory::matrix::word::signed::Le>()?;
+                signed.add_class::<theory::matrix::word::signed::Gt>()?;
+                signed.add_class::<theory::matrix::word::signed::Ge>()?;
                 word.add("signed", &signed)?;
-                namespaces.push(("tensor.word.signed", signed));
+                namespaces.push(("matrix.word.signed", signed));
             }
             {
                 let unsigned = PyModule::new(py, "unsigned")?;
-                unsigned.add_class::<theory::tensor::word::unsigned::Div>()?;
-                unsigned.add_class::<theory::tensor::word::unsigned::Rem>()?;
-                unsigned.add_class::<theory::tensor::word::unsigned::Shr>()?;
-                unsigned.add_class::<theory::tensor::word::unsigned::Extend>()?;
-                unsigned.add_class::<theory::tensor::word::unsigned::Lt>()?;
-                unsigned.add_class::<theory::tensor::word::unsigned::Le>()?;
-                unsigned.add_class::<theory::tensor::word::unsigned::Gt>()?;
-                unsigned.add_class::<theory::tensor::word::unsigned::Ge>()?;
+                unsigned.add_class::<theory::matrix::word::unsigned::Div>()?;
+                unsigned.add_class::<theory::matrix::word::unsigned::Rem>()?;
+                unsigned.add_class::<theory::matrix::word::unsigned::Shr>()?;
+                unsigned.add_class::<theory::matrix::word::unsigned::Extend>()?;
+                unsigned.add_class::<theory::matrix::word::unsigned::Lt>()?;
+                unsigned.add_class::<theory::matrix::word::unsigned::Le>()?;
+                unsigned.add_class::<theory::matrix::word::unsigned::Gt>()?;
+                unsigned.add_class::<theory::matrix::word::unsigned::Ge>()?;
                 word.add("unsigned", &unsigned)?;
-                namespaces.push(("tensor.word.unsigned", unsigned));
+                namespaces.push(("matrix.word.unsigned", unsigned));
             }
-            tensor.add("word", &word)?;
-            namespaces.push(("tensor.word", word));
+            matrix.add("word", &word)?;
+            namespaces.push(("matrix.word", word));
         }
         {
             let sort = PyModule::new(py, "sort")?;
-            sort.add_class::<theory::tensor::sort::Real>()?;
-            sort.add_class::<theory::tensor::sort::Int>()?;
-            sort.add_class::<theory::tensor::sort::Bool>()?;
-            sort.add_class::<theory::tensor::sort::Word>()?;
-            tensor.add("sort", &sort)?;
-            namespaces.push(("tensor.sort", sort));
+            sort.add_class::<theory::matrix::sort::Real>()?;
+            sort.add_class::<theory::matrix::sort::Int>()?;
+            sort.add_class::<theory::matrix::sort::Bool>()?;
+            sort.add_class::<theory::matrix::sort::Word>()?;
+            matrix.add("sort", &sort)?;
+            namespaces.push(("matrix.sort", sort));
         }
-        m.add("tensor", &tensor)?;
-        namespaces.push(("tensor", tensor));
+        m.add("matrix", &matrix)?;
+        namespaces.push(("matrix", matrix));
     }
 
     // Each namespace takes its dotted name in the package that holds this
-    // extension, `reactor.tensor.real` for the extension `reactor.reactor`,
+    // extension, `reactor.matrix.real` for the extension `reactor.reactor`,
     // the name its classes give as their module, and is entered in
     // `sys.modules` under it, so that it can be imported by it, as
-    // `import reactor.tensor.real`, not only reached as an attribute.
+    // `import reactor.matrix.real`, not only reached as an attribute.
     let name = m.name()?.to_string();
     let package = name.rsplit_once('.').map_or(name.as_str(), |(p, _)| p);
     let modules = py.import("sys")?.getattr("modules")?;

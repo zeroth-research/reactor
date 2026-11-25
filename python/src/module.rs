@@ -4,7 +4,7 @@ use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
 use pyo3::types::{PyDict, PyTuple};
 use std::borrow::Cow;
 use std::collections::HashMap;
-use theory::tensor::sort;
+use theory::matrix::sort;
 
 #[pyclass(module = "reactor", subclass, frozen)]
 pub(crate) struct Module {

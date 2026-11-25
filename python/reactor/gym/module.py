@@ -5,7 +5,7 @@ import gymnasium as gym
 
 from ..reactor import Module, Wire, X, Var
 from ..sort import ZeroSort
-from ..tensor.sort import Real, Int, Bool, Word
+from ..matrix.sort import Real, Int, Bool, Word
 from ..builder import builder_for, number_sort
 from ..analyzer import (
     convert_method,

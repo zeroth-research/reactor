@@ -10,9 +10,9 @@ import pytest
 
 import reactor
 from reactor import Module, Wire, sugar, Var, T, TheoryError
-from reactor.tensor.sort import Int, Real
+from reactor.matrix.sort import Int, Real
 from reactor.sugar import ite, d, X, Zero
-from reactor.tensor import Skip
+from reactor.matrix import Skip
 from reactor.sort import ZeroSort
 from reactor.eval import eval_itype
 

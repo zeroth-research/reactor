@@ -9,8 +9,8 @@ import pytest
 
 import reactor
 from reactor import Wire, T, Var, TheoryError
-from reactor.tensor.sort import Bool, Int, Real, Word
-from reactor import tensor
+from reactor.matrix.sort import Bool, Int, Real, Word
+from reactor import matrix
 from reactor.eval import eval_itype
 from reactor.expr import expr, cast, ite, collecting, IExpr, RExpr, BExpr, SExpr, UExpr, X
 
@@ -78,7 +78,7 @@ def test_numeric_literal_needs_explicit_sort():
 
 def tensor_of_term(term):
     match term.itype:
-        case tensor.real.Const(t) | tensor.int.Const(t) | tensor.bool.Const(t) | tensor.word.Const(t):
+        case matrix.real.Const(t) | matrix.int.Const(t) | matrix.bool.Const(t) | matrix.word.Const(t):
             return t
         case _:
             return None
@@ -170,11 +170,11 @@ def test_ops_are_built_from_the_operands():
     x, y = _varexpr(Real([2, 3])), _varexpr(Real([2, 3]))
     with collecting() as terms:
         x + y
-    assert terms[-1].itype == tensor.real.Add([Real([2, 3]), Real([2, 3])])
+    assert terms[-1].itype == matrix.real.Add([Real([2, 3]), Real([2, 3])])
     w, v = _varexpr(Word(8, [1, 2])), _varexpr(Word(8, [1, 2]))
     with collecting() as terms:
         w + v
-    assert terms[-1].itype == tensor.word.Add([Word(8, [1, 2]), Word(8, [1, 2])])
+    assert terms[-1].itype == matrix.word.Add([Word(8, [1, 2]), Word(8, [1, 2])])
 
 
 # --- equality builds predicates; truth-testing is refused -------------------
@@ -184,23 +184,23 @@ def test_equality_operators_build_predicates():
     x, y = _varexpr(INT), _varexpr(INT)
     with collecting() as terms:
         e = x == y
-    assert isinstance(e, BExpr) and isinstance(terms[-1].itype, tensor.int.Eq)
+    assert isinstance(e, BExpr) and isinstance(terms[-1].itype, matrix.int.Eq)
     with collecting() as terms:
         e = x != y
-    assert isinstance(e, BExpr) and isinstance(terms[-1].itype, tensor.int.Ne)
+    assert isinstance(e, BExpr) and isinstance(terms[-1].itype, matrix.int.Ne)
 
 
 def test_boolean_equality():
     p, q = _varexpr(Bool([1, 1])), _varexpr(Bool([1, 1]))
     with collecting() as terms:
         e = p == q
-    assert [type(t.itype) for t in terms] == [tensor.bool.Eq]
+    assert [type(t.itype) for t in terms] == [matrix.bool.Eq]
     t, f = torch.tensor([[True]]), torch.tensor([[False]])
     assert _run(terms, {p.wire: t, q.wire: t})[e.wire].item() is True
     assert _run(terms, {p.wire: t, q.wire: f})[e.wire].item() is False
     with collecting() as terms:
         e = p != q
-    assert [type(t.itype) for t in terms] == [tensor.bool.Ne]
+    assert [type(t.itype) for t in terms] == [matrix.bool.Ne]
     assert _run(terms, {p.wire: t, q.wire: t})[e.wire].item() is False
     assert _run(terms, {p.wire: t, q.wire: f})[e.wire].item() is True
 
@@ -209,7 +209,7 @@ def test_equality_coerces_a_raw_operand():
     x = _varexpr(INT)
     with collecting() as terms:
         e = x == 3
-    assert isinstance(e, BExpr) and isinstance(terms[-1].itype, tensor.int.Eq)
+    assert isinstance(e, BExpr) and isinstance(terms[-1].itype, matrix.int.Eq)
 
 
 def test_truth_testing_raises():
@@ -258,12 +258,12 @@ def test_word_signedness_picks_op():
     xs, ys = _varexpr(BV32, signed=True), _varexpr(BV32, signed=True)
     with collecting() as terms:
         xs < ys
-    assert isinstance(terms[-1].itype, tensor.word.signed.Lt)
+    assert isinstance(terms[-1].itype, matrix.word.signed.Lt)
 
     xu, yu = _varexpr(BV32), _varexpr(BV32)
     with collecting() as terms:
         xu < yu
-    assert isinstance(terms[-1].itype, tensor.word.unsigned.Lt)
+    assert isinstance(terms[-1].itype, matrix.word.unsigned.Lt)
 
 
 def test_coercion_inherits_signedness_regardless_of_operand_order():
@@ -272,10 +272,10 @@ def test_coercion_inherits_signedness_regardless_of_operand_order():
     xs = _varexpr(BV32, signed=True)
     with collecting() as terms:
         (xs + 5) < 3
-    assert isinstance(terms[-1].itype, tensor.word.signed.Lt)
+    assert isinstance(terms[-1].itype, matrix.word.signed.Lt)
     with collecting() as terms:
         (5 + xs) < 3
-    assert isinstance(terms[-1].itype, tensor.word.signed.Lt)
+    assert isinstance(terms[-1].itype, matrix.word.signed.Lt)
 
 
 def test_mixing_signed_and_unsigned_words_raises():
@@ -293,7 +293,7 @@ def test_collecting_records_deps_first():
     with collecting() as terms:
         ite(x < y, x + 1, y)
     optypes = [type(t.itype) for t in terms]
-    assert optypes == [tensor.int.Lt, tensor.int.Const, tensor.int.Add, tensor.int.Ite]
+    assert optypes == [matrix.int.Lt, matrix.int.Const, matrix.int.Add, matrix.int.Ite]
 
 
 def test_shared_subexpression_recorded_once():
@@ -302,7 +302,7 @@ def test_shared_subexpression_recorded_once():
         g = x < y
         ite(g, x + 1, x)
         ite(g, y, y)
-    assert sum(isinstance(t.itype, tensor.int.Lt) for t in terms) == 1
+    assert sum(isinstance(t.itype, matrix.int.Lt) for t in terms) == 1
 
 
 # --- evaluation end-to-end --------------------------------------------------
@@ -328,7 +328,7 @@ def test_scaling_a_column_vector_by_a_constant(n):
     x = _varexpr(Int([n, 1]))
     with collecting() as terms:
         e = x * 3
-    assert isinstance(terms[-1].itype, tensor.int.Scale)
+    assert isinstance(terms[-1].itype, matrix.int.Scale)
     vals = torch.arange(1, n + 1, dtype=torch.int64).reshape(n, 1)
     got = _run(terms, {x.wire: vals})[e.wire]
     assert got.flatten().tolist() == [3 * v for v in range(1, n + 1)]
@@ -338,7 +338,7 @@ def test_mul_by_constant_folds_to_scale():
     x = _varexpr(INT)
     with collecting() as terms:
         e = x * 2
-    assert isinstance(terms[-1].itype, tensor.int.Scale)
+    assert isinstance(terms[-1].itype, matrix.int.Scale)
     assert _run(terms, {x.wire: _int(3)})[e.wire].item() == 6
 
 
@@ -350,7 +350,7 @@ def test_mul_by_a_full_tensor_is_a_pointwise_scale(left):
     with collecting() as terms:
         e = c * x if left else x * c
     assert len(terms) == 1
-    assert isinstance(terms[0].itype, tensor.real.Scale)
+    assert isinstance(terms[0].itype, matrix.real.Scale)
     assert terms[0].itype.tensor.data_ptr() == c.data_ptr()  # shared, not copied
     assert e.dtype == Real([2, 3])
     vals = torch.tensor([[10.0, 20.0, 30.0], [40.0, 50.0, 60.0]])
@@ -361,14 +361,14 @@ def test_neg_and_abs():
     x = _varexpr(INT)
     with collecting() as terms:
         n, a = -x, abs(x)
-    assert isinstance(terms[0].itype, tensor.int.Neg) and isinstance(terms[1].itype, tensor.int.Abs)
+    assert isinstance(terms[0].itype, matrix.int.Neg) and isinstance(terms[1].itype, matrix.int.Abs)
     state = _run(terms, {x.wire: _int(-3)})
     assert state[n.wire].item() == 3 and state[a.wire].item() == 3
 
     r = _varexpr(REAL)
     with collecting() as terms:
         m, b = -r, abs(r)
-    assert isinstance(terms[0].itype, tensor.real.Neg) and isinstance(terms[1].itype, tensor.real.Abs)
+    assert isinstance(terms[0].itype, matrix.real.Neg) and isinstance(terms[1].itype, matrix.real.Abs)
     state = _run(terms, {r.wire: torch.tensor([[-2.5]])})
     assert state[m.wire].item() == 2.5 and state[b.wire].item() == 2.5
 
@@ -417,7 +417,7 @@ def test_mul_of_two_variables():
     x, y = _varexpr(INT), _varexpr(INT)
     with collecting() as terms:
         e = x * y
-    assert isinstance(terms[-1].itype, tensor.int.Mul)
+    assert isinstance(terms[-1].itype, matrix.int.Mul)
     assert _run(terms, {x.wire: _int(3), y.wire: _int(4)})[e.wire].item() == 12
 
 
@@ -425,7 +425,7 @@ def test_matmul():
     a, b = _varexpr(Real([2, 3])), _varexpr(Real([3, 4]))
     with collecting() as terms:
         e = a @ b
-    assert terms[-1].itype == tensor.real.MatMul([Real([2, 3]), Real([3, 4])])
+    assert terms[-1].itype == matrix.real.MatMul([Real([2, 3]), Real([3, 4])])
     assert e.dtype == Real([2, 4])
     av, bv = torch.rand(2, 3), torch.rand(3, 4)
     assert torch.allclose(_run(terms, {a.wire: av, b.wire: bv})[e.wire], av @ bv)
