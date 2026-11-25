@@ -37,14 +37,6 @@ impl fmt::Display for Zero {
     }
 }
 
-impl Zero {
-    /// The operation writing the only value of the sort of `cod`.
-    pub fn with_cod(cod: [sort::Zero; 1]) -> Result<Self, crate::Error> {
-        let [sort::Zero] = cod;
-        Ok(Zero)
-    }
-}
-
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Zero {
     /// Python builds it from nothing: its codomain, the singleton sort, carries no

@@ -12,6 +12,9 @@ share it. It is its own tangent.
 The zero rate of change of a real is not the value of [`Zero`], but the zero
 matrix of the degree of the rate of change, written by
 [`matrix::real::Zero`](crate::matrix::real::Zero).
+
+[`Any`] holds the sorts of all theories, matrix and scalar, with [`Zero`],
+which both share, once.
 */
 
 use base::differentiable::Differentiable;
@@ -64,5 +67,64 @@ impl Differentiable for Zero {
 
     fn tangent(self) -> Zero {
         Zero
+    }
+}
+
+/// The sorts of all theories: a sort of the matrix theories, a sort of the
+/// scalar theories, or [`Zero`], which both share.
+///
+/// The conversion from the matrix sorts sends their `Zero` to [`Any::Zero`],
+/// so that, built through it, [`Any::Matrix`] holds no `Zero`; the scalar
+/// sorts hold none.
+#[derive(Clone, PartialEq, Debug, Eq)]
+pub enum Any {
+    Matrix(crate::matrix::sort::Any),
+    Scalar(crate::scalar::sort::Any),
+    Zero(Zero),
+}
+
+impl From<crate::matrix::sort::Any> for Any {
+    fn from(s: crate::matrix::sort::Any) -> Self {
+        match s {
+            crate::matrix::sort::Any::Zero(z) => Any::Zero(z),
+            s => Any::Matrix(s),
+        }
+    }
+}
+
+impl From<crate::scalar::sort::Any> for Any {
+    fn from(s: crate::scalar::sort::Any) -> Self {
+        Any::Scalar(s)
+    }
+}
+
+impl From<Zero> for Any {
+    fn from(z: Zero) -> Self {
+        Any::Zero(z)
+    }
+}
+
+impl fmt::Display for Any {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Any::Matrix(s) => s.fmt(f),
+            Any::Scalar(s) => s.fmt(f),
+            Any::Zero(z) => z.fmt(f),
+        }
+    }
+}
+
+/// Each sort's tangent: that of a matrix sort, taken within the matrix
+/// theories, a real of one degree higher or [`Zero`], and [`Zero`] for the
+/// scalar sorts, all discrete.
+impl Differentiable for Any {
+    type Tangent = Any;
+
+    fn tangent(self) -> Any {
+        match self {
+            Any::Matrix(s) => s.tangent().into(),
+            Any::Scalar(_) => Any::Zero(Zero),
+            Any::Zero(z) => z.tangent().into(),
+        }
     }
 }
