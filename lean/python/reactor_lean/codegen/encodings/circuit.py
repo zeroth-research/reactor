@@ -2,6 +2,7 @@
 
 from reactor_lean.codegen.terms import product_type
 from reactor_lean.codegen.boxes import (
+    BUILT_HERE,
     CircLayer,
     ty_list,
     native_to_vt,
@@ -9,13 +10,17 @@ from reactor_lean.codegen.boxes import (
     translate_terms_circ,
 )
 from reactor_lean.codegen.context import LeanContext
+from reactor_lean.lowering.ops import OPS
 
 # The heartbeat budget of `init_circ_eq` and `update_circ_eq`; see where they
 # are stated.
 _CIRC_HEARTBEATS = 4000000
 
-# Simp lemmas for reducing a single circuit layer
-_LAYER_SIMP = [
+# What `simp_circ` unfolds besides the layer it is given: how layers
+# compose and split their tuples, every Box a layer can hold -- the ones
+# `codegen.boxes` builds and the op table's `box` column -- and what is
+# left of a 1×1 matrix once they are unfolded.
+_LAYER_SIMP = list(dict.fromkeys([
     "Box.par",
     "ValTuple.split",
     "ValTuple.append",
@@ -31,47 +36,13 @@ _LAYER_SIMP = [
     "ValTuple.split_3_snd",
     "ValTuple.split_nil",
     "ValTuple.split_nil_snd",
-    "Box.id",
-    "Box.dup",
-    "Box.swap",
-    "Box.destr",
-    "Box.const",
-    "Box.not",
-    "Box.and",
-    "Box.or",
-    "Box.implies",
-    "Box.ite",
-    "Box.add",
-    "Box.sub",
-    "Box.mul",
-    "Box.neg",
-    "Box.hadamard",
-    "Box.div",
-    "Box.mod",
-    "Box.lt",
-    "Box.le",
-    "Box.gt",
-    "Box.ge",
-    "Box.eq",
-    "Box.neq",
-    "Box.min",
-    "Box.max",
-    "Box.nnLinear",
-    "Box.linear",
-    "Box.relu",
-    "Box.get",
-    "Box.intToReal",
-    "Box.realToInt",
-    "Box.bvToInt",
-    "Box.bitToBool",
-    "Box.boolToBit",
-    "Box.argmax_1d",
-    "Box.argmax",
+    *BUILT_HERE,
+    *(op.box for op in OPS if isinstance(op.box, str)),
     "ite_pair",
     "Matrix_1_1_lt_iff",
     "Matrix_1_1_le_iff",
     "↓Matrix.mk_apply",
-]
+]))
 
 
 def _emit_named_layers(

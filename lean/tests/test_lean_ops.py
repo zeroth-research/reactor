@@ -448,6 +448,27 @@ def test_word_module_emits_bitvec_boxes():
             )
 
 
+def test_simp_circ_unfolds_every_box_a_circuit_holds():
+    """Each Box in a layer is one `simp_circ` unfolds: every module of the
+    corpus, and the word one above, whose `bvNot` and `bvAnd` the list
+    once missed."""
+    import re
+    from agree import CORPUS
+    from reactor_lean.codegen.encodings.circuit import _LAYER_SIMP
+
+    builds = {**CORPUS, "word_bits": _word_bits_module}
+    seen = set()
+    for name, build in builds.items():
+        try:
+            lean = ModuleToLean4(LeanContext(build())).to_lean_circ()
+        except ValueError:
+            continue                    # no circuit: `lean_gaps`, `_box`
+        used = set(re.findall(r"Box\.\w+", lean)) - {"Box.seq"}
+        assert used <= set(_LAYER_SIMP), (name, used - set(_LAYER_SIMP))
+        seen |= used
+    assert {"Box.bvNot", "Box.bvAnd", "Box.get", "Box.linear"} <= seen
+
+
 @pytest.mark.parametrize(
     "op,box",
     [(tensor.word.unsigned.Rem(8, S), "Box.bvUMod"), (tensor.word.signed.Mod(8, S), "Box.bvSMod")],

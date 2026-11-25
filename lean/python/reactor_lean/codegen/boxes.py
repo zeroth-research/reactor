@@ -26,6 +26,23 @@ from dataclasses import dataclass
 from reactor import Wire, Term
 
 
+# The Boxes written here rather than looked up in the op table: a layer's
+# wiring, constants, and the rows the table marks `Inline` (`Get`,
+# `Linear` and `Scale`, `Argmax`). `simp_circ` unfolds these and the
+# table's own.
+BUILT_HERE = (
+    "Box.id",
+    "Box.dup",
+    "Box.swap",
+    "Box.destr",
+    "Box.const",
+    "Box.get",
+    "Box.linear",
+    "Box.argmax_1d",
+    "Box.argmax",
+)
+
+
 def ty_list(wires: list[Wire]) -> str:
     """The wires' types as a Lean list, a layer's interface:
     `[T₁ , T₂]`, and `[]` for no wires."""
