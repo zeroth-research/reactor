@@ -257,7 +257,8 @@ def _constant_expr_scalar(term, w: "Wire", constants: ConstantRegistry) -> str:
 
 
 def argmax_scalar_name(elem_ty: str, n: int) -> str:
-    """Name of the scalar axiom for 1-d argmax over n elements of `elem_ty`.
+    """Name of the scalar encoding's argmax over one row of n elements of
+    `elem_ty` (`encodings.scalar._argmax_scalar_def_lines`).
 
     The element type belongs in the name: variants are collected per
     `(elem_ty, n)`, so naming them by `n` alone made an Argmax over
@@ -283,9 +284,9 @@ def translate_terms_scalar(
 ) -> str:
     """Compile terms into a Lean body using scalar types for 1×1 wires.
 
-    ``flat_slots`` maps wire IDs to their flat scalar accessor strings.  When
-    provided, ``Argmax`` on a wire whose slots are known emits a call to the
-    scalar axiom ``argmax1d_scalar_n`` instead of reconstructing a matrix.
+    ``flat_slots`` maps wire IDs to their flat scalar accessor strings.  An
+    ``Argmax`` over one row whose slots are known is a call to
+    ``argmax1d_scalar_*`` on them, instead of a matrix rebuilt from them.
 
     Falls back to the op table's matrix column for non-scalar output wires
     and for the ops whose scalar cell is `ViaMat`.
@@ -302,13 +303,16 @@ def translate_terms_scalar(
         if name == "Const":
             expr = _constant_expr_scalar(term, write_wire, constants)
         elif name == "Argmax":
+            # Unrolled over one row only: `argmax1d_scalar_*_eq` is stated
+            # against `argmax_1d`, and nothing relates that to the `argmax`
+            # the functional encoding takes of more than one row.
             in_wire = term.read[0]
             slots = flat_slots.get(in_wire.id)
-            if slots is not None:
-                axiom_name = argmax_scalar_name(
+            if slots is not None and argmax_variant(term) == "argmax_1d":
+                helper = argmax_scalar_name(
                     lean_elem_type(in_wire.dtype), len(slots)
                 )
-                expr = f"({axiom_name} {' '.join(slots)})"
+                expr = f"({helper} {' '.join(slots)})"
             else:
                 expr = f"({_argmax_expr(term, wire_expr)} 0 0)"
         elif name in ("Linear", "Scale"):

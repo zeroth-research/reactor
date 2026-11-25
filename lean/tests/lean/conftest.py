@@ -195,9 +195,28 @@ def _make_dot_product() -> Module:
     return Module.sequential([v, d], init, update)
 
 
+def _make_argmax(m: int, n: int) -> Module:
+    """i = argmax s, over an m×n state that counts up from 0.
+
+    The scalar encoding unrolls a one-row Argmax over its entries and leaves
+    any other to the matrix form; a 2×2 one used to be unrolled too, and its
+    `update_scalar_eq` did not close.
+    """
+    s, i = Var(Int([m, n])), Var(Int([1, 1]))
+    init = [
+        Term(tensor.int.Const(torch.arange(m * n).reshape(m, n)), [X(s)]),
+        Term(tensor.int.Const(torch.tensor([[0]])), [X(i)]),
+    ]
+    update = [
+        Term(tensor.Skip(Int([m, n])), [X(s)], [s]),
+        Term(tensor.int.Argmax([m, n]), [X(i)], [s]),
+    ]
+    return Module.sequential([s, i], init, update)
+
+
 # Widths that exercise the scalar encoding's flattening: all-1x1, then
 # multi-element state, up to the 32 that stresses the index enumeration;
-# then an op whose 1×1 result is made of more than 1×1 operands.
+# then the ops whose 1×1 result is made of more than 1×1 operands.
 _SCALAR_ENC_SPECS = [
     ("Scalar", _make_countdown),
     ("Vec6", lambda: _make_countdown_vec(6)),
@@ -205,6 +224,7 @@ _SCALAR_ENC_SPECS = [
     ("Vec32", lambda: _make_countdown_vec(32)),
     ("RealHalf", _make_real_half),
     ("DotProduct", _make_dot_product),
+    ("Argmax2x2", lambda: _make_argmax(2, 2)),
 ]
 
 

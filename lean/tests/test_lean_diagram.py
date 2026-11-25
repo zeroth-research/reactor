@@ -535,7 +535,21 @@ def test_unbound_block_output_raises():
 # ──────────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("mod", ["m_countdown", "m_argmax"])
+def _argmax_row() -> Module:
+    """An Argmax over a 1×3 state: one the scalar encoding unrolls."""
+    s, i = Var(Int([1, 3])), Var(Int([1, 1]))
+    init = [
+        Term(tensor.int.Const(torch.tensor([[2, 0, 1]])), [X(s)]),
+        Term(tensor.int.Const(torch.tensor([[0]])), [X(i)]),
+    ]
+    update = [
+        Term(tensor.Skip(Int([1, 3])), [X(s)], [s]),
+        Term(tensor.int.Argmax([1, 3]), [X(i)], [s]),
+    ]
+    return Module.sequential([s, i], init, update)
+
+
+@pytest.mark.parametrize("mod", ["m_countdown", "argmax_row"])
 def test_an_equivalence_theorem_alone_is_the_one_its_encoding_prints(mod):
     """`to_lean_equiv_theorems` and `to_lean_scalar_equiv` read what their
     encoding computed (layer names, argmax variants). Called first, on a
@@ -545,7 +559,8 @@ def test_an_equivalence_theorem_alone_is_the_one_its_encoding_prints(mod):
     from reactor_lean.parse import load_module
     from testdata import MODS
 
-    module = load_module(MODS / f"{mod}.py")
+    module = (_argmax_row() if mod == "argmax_row"
+              else load_module(MODS / f"{mod}.py"))
 
     circ_alone = ModuleToLean4(LeanContext(module)).to_lean_equiv_theorems()
     assert "init_circ_eq" in circ_alone
@@ -553,5 +568,5 @@ def test_an_equivalence_theorem_alone_is_the_one_its_encoding_prints(mod):
 
     scalar_alone = ModuleToLean4(LeanContext(module)).to_lean_scalar_equiv()
     assert ModuleToLean4(LeanContext(module)).to_lean_scalar().endswith(scalar_alone)
-    if mod == "m_argmax":
-        assert "argmax1d_scalar" in scalar_alone
+    if mod == "argmax_row":
+        assert "argmax1d_scalar_int_3_eq" in scalar_alone

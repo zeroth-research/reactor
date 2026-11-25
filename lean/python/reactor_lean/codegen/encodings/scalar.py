@@ -1,6 +1,7 @@
 """Scalar encoding translation."""
 
 from reactor_lean.codegen.terms import (
+    argmax_variant,
     elem_ty_slug,
     product_type,
     product_type_scalar,
@@ -56,11 +57,13 @@ def _pack_body(var: str, wires: "list[Wire]") -> str:
 
 
 def _collect_argmax_variants(terms) -> "list[tuple[str, int]]":
-    """Return (elem_ty, n) pairs for each distinct Argmax input shape in terms."""
+    """(elem_ty, n) for each distinct one-row Argmax input in terms: the
+    ones `translate_terms_scalar` unrolls."""
     seen: set[tuple[str, int]] = set()
     result: list[tuple[str, int]] = []
     for term in terms:
-        if itype_name(term.itype) != "Argmax":
+        if (itype_name(term.itype) != "Argmax"
+                or argmax_variant(term) != "argmax_1d"):
             continue
         in_wire = term.read[0]
         n = wire_shape(in_wire).total

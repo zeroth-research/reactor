@@ -110,6 +110,16 @@ def test_multi_row_input_selects_the_general_variant():
     )
 
 
+def test_the_scalar_encoding_unrolls_only_a_one_row_argmax():
+    """`argmax1d_scalar_*_eq` is stated against `argmax_1d`, so unrolling
+    the `argmax` of several rows left `update_scalar_eq` unproved."""
+    one_row = ModuleToLean4(LeanContext(_argmax_module([1, 4], [1, 1]))).to_lean_scalar()
+    many_row = ModuleToLean4(LeanContext(_argmax_module([2, 2], [1, 1]))).to_lean_scalar()
+    assert "(argmax1d_scalar_int_4 " in one_row
+    assert "argmax1d_scalar" not in many_row
+    assert "((argmax _m0) i j : Int)) 0 0)" in many_row
+
+
 @pytest.mark.parametrize("out_shape", [[1, 4], [4, 1], [3, 4]])
 def test_theory_rejects_wider_argmax_output(out_shape):
     """Argmax yields one index, so the theory admits only a [1, 1] output.
