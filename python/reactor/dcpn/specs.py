@@ -11,9 +11,10 @@ The ``obj`` decorator optionally instantiates a declaration.
 Validation is performed via declaration hooks and constructors to check local
 structure; DCPN checks the theory, net connections, and symbolic method results.
 
-``DCPN.to_token_modules`` delegates bounded token construction to ``lowering``.
-It currently returns open modules with empty initial marking and resident
-place updates; transition coordination and firing selection are not yet lowered.
+``DCPN.to_modules`` delegates bounded construction to ``lowering``: it returns
+a ``DCPNReactiveModules`` named tuple of token modules with empty initial
+marking and a transition controller, which together form a closed system.
+``DCPN.to_token_modules`` returns only the open token modules.
 """
 
 from dataclasses import fields, make_dataclass
@@ -21,7 +22,9 @@ from dataclasses import fields, make_dataclass
 from ..reactor import LIA, Var
 from ..sort import Bool, Int
 from ..expr import collecting, expr
-from .lowering import TokenModule, _update, _value
+from .lowering import (
+    DCPNReactiveModules, TokenModule, TransitionControllerModule, _update, _value,
+)
 
 
 def obj(cls=None, **kwargs):
@@ -157,7 +160,8 @@ class GuardedTransition(_Transition):
 class DCPN:
     """An LIA net specification with empty initial marking.
 
-    ``to_token_modules`` lowers ``Place`` specifications to reactive modules, one per token.
+    ``to_modules`` lowers the net to reactive modules: one per token, plus a
+    transition controller. ``to_token_modules`` returns only the token modules.
     """
 
     def __init__(self, *, theory, places=(), transitions=()):
@@ -168,8 +172,9 @@ class DCPN:
         # validate the spec
         self._validate()
 
-        # map places to place ids, starting at 1 (0 denotes an absent token)
+        # map places to place ids and back, starting at 1 (0 denotes an absent token)
         self.place_ids = {place: i for i, place in enumerate(self.places, 1)}
+        self.places_by_id = {i: place for place, i in self.place_ids.items()}
 
     def _validate(self):
         # validate theory
@@ -234,9 +239,20 @@ class DCPN:
                         _value(getattr(produced_color, field.name), var.dtype)
 
     def to_token_modules(self, *, token_capacity) -> tuple[TokenModule, ...]:
-        """Return fresh open token modules; transition firing is not lowered yet."""
-        # TODO(thpani): implement lowering of transitions
+        """Return fresh open token modules sharing one ``transition_round`` input."""
         if type(token_capacity) is not int or token_capacity <= 0:
             raise ValueError("token_capacity must be a positive integer")
         transition_round = Var(Bool([1, 1]))
         return tuple(TokenModule(self, transition_round) for _ in range(token_capacity))
+
+    def to_modules(self, *, token_capacity) -> DCPNReactiveModules:
+        """Return the token modules and their transition controller.
+
+        ``Module(*tokens, controller)`` is a closed system. The
+        ``TransitionControllerModule`` fires at most one transition per round;
+        check ``controller.overflow`` to detect firings blocked by insufficient
+        ``token_capacity``.
+        """
+        tokens = self.to_token_modules(token_capacity=token_capacity)
+        controller = TransitionControllerModule(self, tokens)
+        return DCPNReactiveModules(tokens=tokens, controller=controller)

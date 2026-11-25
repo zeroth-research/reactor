@@ -1,8 +1,9 @@
-"""LIA dynamically-coloured Petri-net specifications and bounded token modules."""
+"""LIA dynamically-coloured Petri-net specifications and bounded reactive modules."""
 
 from .specs import DCPN, GuardedTransition, ImmediateTransition, Place, obj
-from .lowering import TokenModule
+from .lowering import DCPNReactiveModules, TokenModule, TransitionControllerModule
 
 __all__ = [
-    "DCPN", "GuardedTransition", "ImmediateTransition", "Place", "TokenModule", "obj",
+    "DCPN", "DCPNReactiveModules", "GuardedTransition", "ImmediateTransition", "Place",
+    "TokenModule", "TransitionControllerModule", "obj",
 ]

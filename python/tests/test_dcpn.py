@@ -6,6 +6,8 @@ Covers:
 - token modules: initial state, resident updates, and same-round jumps
   depending on the ``transition_round`` and ``in_transition`` flags;
 - the n-ary Boolean helpers ``_all`` and ``_any``;
+- the transition controller: firing order, urgency, binding and slot
+  allocation, and overflow, by executing the closed system round by round;
 - validation of net specifications.
 """
 
@@ -18,7 +20,10 @@ import pytest
 import torch
 
 from reactor import Bool, Int, LIA, LRA, Module, NonLinearError, Real, Var, X
-from reactor.dcpn import DCPN, GuardedTransition, ImmediateTransition, Place, TokenModule, obj
+from reactor.dcpn import (
+    DCPN, DCPNReactiveModules, GuardedTransition, ImmediateTransition, Place, TokenModule,
+    TransitionControllerModule, obj,
+)
 from reactor.dcpn.lowering import _all, _any
 from reactor.eval import execute_init, execute_update
 from reactor.expr import collecting, expr

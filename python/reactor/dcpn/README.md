@@ -70,8 +70,8 @@ net = DCPN(
 
 # parameterized verification mock
 for size in net.small_model_sizes():
-    modules = net.to_modules(token_capacity=size)
-    system = Module(*modules)
+    tokens, controller = net.to_modules(token_capacity=size)
+    system = Module(*tokens, controller)
     verify(system)
 ```
 
@@ -189,8 +189,10 @@ in principle we want all classes to be instantiated as singletons. The `@obj` he
 ## Translation
 
 `DCPN` describes the net for an arbitrary number of tokens.
-`to_modules(token_capacity=N)` lowers it to reactive modules, with **N token
-modules** plus **modules for transition coordination**.
+`to_modules(token_capacity=N)` lowers the net to a `DCPNReactiveModules` named
+tuple of **N token modules** (`tokens`) and one **transition controller**
+(`controller`); their composition is closed. `to_token_modules(token_capacity=N)`
+returns only the (open) token modules.
 
 ### Tokens and colours
 
@@ -208,25 +210,40 @@ transitions populate the net. Thus,
 
 - Initialize all slots at `⊥`, with zeroed or arbitrary colour vectors (will be overwritten by transition outputs).
 - `update`/`flow` dispatch by the token's resident place; inactive places have stuttering / zero flow behavior.
-- Transition events remove or produce tokens. Since the token modules have to await these events, transitions
-  take precedence over a resident place update in that round.
+- Transition events remove or produce tokens. Transitions take precedence over resident updates *globally*:
+  in a round where any transition fires, no token runs `update` (participants jump, all others stutter).
 
 ### Transitions
 
-The transition module(s) read token state and control firing events. Only token
-modules write token state. Consumed token slots may be reused by produced
-tokens; additional outputs use absent slots and surplus consumed slots become
-absent.
+A single `TransitionControllerModule` reads the latched token state and
+controls the firing via the following variables: a shared `transition_round`
+bit, and per-token an `in_transition` bit with `new_place`/`new_colors`
+payloads. Both bits are level flags rather than reactive-module events
+(toggles), so the controller assigns them in every round. Only the token
+modules write token state.
 
-Each firing is atomic: its events and destination/colour payloads must affect
-all participating token modules in the same reactive-module round, without an
-additional round of communication latency.
+We follow the simplified semantics of Petrinaut's event-driven simulator: each
+round performs either a single transition firing or a single `update` step,
+never both. Firings are processed (in superdense time) one at a time, guards
+are re-evaluated after each firing, and time (`update`) advances only when no
+transition is enabled. Per round:
 
-#### Open design questions
+1. **Transitions first (urgency).** Guards and `produce` read the latched colours.
+   If some transition can fire, exactly one fires and no token runs `update`.
+2. **At most one firing.** Candidates are (transition, binding) pairs, where a binding
+   is an ordered tuple of distinct slots `(s_1, …, s_k)` residing in `inputs`, in order.
+   They are ordered by transition definition order, then lexicographically by slot; the
+   first enabled candidate that can fire, fires. (Nondeterministic choice is future work.)
+3. **Slot allocation.** With outputs `o_1, …, o_m`, output `o_j` with `j ≤ k` reuses
+   slot `s_j`; extra outputs `o_j` with `k < j ≤ m` take the lowest absent slots, in order;
+   consumed slots `s_j` with `m < j ≤ k` become absent.
+4. **Overflow.** An enabled candidate without enough absent slots for its extra outputs
+   cannot fire (later candidates are considered) and sets the sticky `overflow` flag.
+   Verification should check `¬overflow` alongside the property of interest.
 
-- One transition module for the whole Petri net, or one reactive module per transition (we can explore both options in the translation).
-- Can multiple independent firings share one reactive module round?
-- Triggering an error if produced tokens exceed available slots.
+Each firing is atomic: tokens await the controller's next-state outputs, while
+the controller reads only latched token state. Transitions may stay enabled
+forever (Zeno behaviour); this is a property of the net and is not detected.
 
 ## Implementation
 
