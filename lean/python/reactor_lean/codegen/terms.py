@@ -23,7 +23,6 @@ from reactor_lean.codegen.literals import (
     constant_expr,
     linear_list_literals,
     tensor_to_lean_scalar,
-    tensor_to_lean_inline,
 )
 from reactor_lean.lowering.ops import entrywise_shape, lean_gap, mat_emitter, scalar_emitter
 
@@ -248,15 +247,14 @@ def product_type_scalar(wires: list[Wire]) -> str:
 
 
 def _constant_expr_scalar(term, w: "Wire", constants: ConstantRegistry) -> str:
-    """Like constant_expr but returns bare scalar values (no matrix around them)."""
+    """A constant in the scalar encoding: a 1×1 one as its bare element,
+    any other by the name `ConstantRegistry` gave it, which it gives every
+    constant that is not 1×1."""
     if wire_shape(w).is_scalar:
-        # Element type (Bool/Int/Real) is taken from the wire's dtype.
         return tensor_to_lean_scalar(term.itype.tensor, w)
-    # Non-scalar tensor: fall back to matrix constant from registry
     name = constants.lookup(w.id)
-    if name is not None:
-        return name
-    return tensor_to_lean_inline(term.itype.tensor, w)
+    assert name is not None, f"constant on wire #{w.id} was not registered"
+    return name
 
 
 def argmax_scalar_name(elem_ty: str, n: int) -> str:

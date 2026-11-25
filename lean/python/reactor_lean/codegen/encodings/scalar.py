@@ -27,8 +27,7 @@ from reactor import Wire
 
 
 def _scalar_dom(param: str, wires: "list[Wire]") -> str:
-    ty = product_type_scalar(wires) if wires else "Unit"
-    return f"({param}: {ty})"
+    return f"({param}: {product_type_scalar(wires)})"
 
 
 def _unpack_body(param: str, wires: "list[Wire]") -> str:
@@ -56,12 +55,13 @@ def _pack_body(var: str, wires: "list[Wire]") -> str:
     return build_tuple(parts)
 
 
-def _collect_argmax_variants(terms) -> "list[tuple[str, int]]":
-    """(elem_ty, n) for each distinct one-row Argmax input in terms: the
-    ones `translate_terms_scalar` unrolls."""
+def _argmax_variants(ctx: LeanContext) -> "list[tuple[str, int]]":
+    """(elem_ty, n) for each distinct one-row Argmax input of the module:
+    the ones `translate_terms_scalar` unrolls, and an `_argmax_scalar_def_lines`
+    helper is emitted for."""
     seen: set[tuple[str, int]] = set()
     result: list[tuple[str, int]] = []
-    for term in terms:
+    for term in [*ctx.atom.init, *ctx.atom.update]:
         if (itype_name(term.itype) != "Argmax"
                 or argmax_variant(term) != "argmax_1d"):
             continue
@@ -158,22 +158,17 @@ def _argmax_scalar_def_lines(elem_ty: str, n: int) -> "list[str]":
     ]
 
 
-def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]":
-    """Generate the scalar encoding inside ``namespace Scalar``.
-
-    Returns (source_string, argmax_variants).
-    """
+def atom_to_lean_scalar(ctx: LeanContext) -> str:
+    """Generate the scalar encoding inside ``namespace Scalar``, and the
+    lemmas its theorems rewrite with ahead of it."""
     atom = ctx.atom
     noncomp = "noncomputable " if ctx.uses_real else ""
     cod = product_type_scalar(ctx.ctrl_next)
 
-    all_terms = list(atom.init) + list(atom.update)
-    argmax_variants = _collect_argmax_variants(all_terms)
-
     lines: list[str] = []
     for w in _recon_wires(ctx):
         lines.extend(_recon_lemma_lines(w))
-    for ety, n in argmax_variants:
+    for ety, n in _argmax_variants(ctx):
         lines.extend(_argmax_scalar_def_lines(ety, n))
 
     lines += ["namespace Scalar", ""]
@@ -234,34 +229,30 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
     lines.append("")
 
     lines.append("end Scalar")
-    return "\n".join(lines), argmax_variants
+    return "\n".join(lines)
 
 
-def to_lean_scalar_equiv(
-    ctx: LeanContext,
-    argmax_variants: "list[tuple[str, int]]",
-) -> str:
+def to_lean_scalar_equiv(ctx: LeanContext) -> str:
     """Generate theorems proving init/update = pack ∘ Scalar.init/update ∘ unpack."""
     lines: list[str] = []
-
-    def _var(binder: str) -> str:
-        return binder.split(" : ")[0].strip("( )")
 
     def _call_arg(param: str, wires) -> str:
         return f"(Scalar.unpack_{param} {param})" if wires else param
 
     argmax_eq_lemmas = [
         f"{argmax_scalar_name(ety, n)}_eq"
-        for ety, n in argmax_variants
+        for ety, n in _argmax_variants(ctx)
     ]
 
     def _proof(
-        binders: "list[str]",
+        groups: "list[tuple[str, list[Wire]]]",
         func_name: str,
-        scalar_args: "list[str]",
         simp_extras: "list[str]",
     ) -> "list[str]":
-        vars_ = [_var(b) for b in binders]
+        """`func_name` over `groups`, each a parameter and its wires."""
+        vars_ = [p for p, _ in groups]
+        binders = [f"({p} : {product_type(w)})" for p, w in groups]
+        scalar_args = [_call_arg(p, w) for p, w in groups]
         scalar_call = f"Scalar.{func_name} {' '.join(scalar_args)}"
         rhs = f"Scalar.pack ({scalar_call})"
         simp_names = (
@@ -304,21 +295,11 @@ def to_lean_scalar_equiv(
             "  all_goals try simp [← Matrix_1_1_eq]",
         ]
 
-    if has_block(ctx, "init"):
-        init_binder = f"(extl_n : {product_type(ctx.extl_next)})"
-        extl_n_arg = _call_arg("extl_n", ctx.extl_next)
-        extras = ["Scalar.unpack_extl_n"] if ctx.extl_next else []
-        lines.extend(_proof([init_binder], "init", [extl_n_arg], extras))
-        lines.append("")
-
-    if has_block(ctx, "update"):
-        binders = [
-            f"({p} : {product_type(w) if w else 'Unit'})"
-            for p, w in ctx.update_groups
-        ]
-        scalar_args = [_call_arg(p, w) for p, w in ctx.update_groups]
-        extras = [f"Scalar.unpack_{p}" for p, w in ctx.update_groups if w]
-        lines.extend(_proof(binders, "update", scalar_args, extras))
-        lines.append("")
+    for block, groups in (("init", ctx.init_groups),
+                          ("update", ctx.update_groups)):
+        if has_block(ctx, block):
+            extras = [f"Scalar.unpack_{p}" for p, w in groups if w]
+            lines.extend(_proof(groups, block, extras))
+            lines.append("")
 
     return "\n".join(lines)

@@ -29,9 +29,9 @@ class ModuleToLean4:
 
     Read-only consumer of a pre-populated LeanContext — does not mutate it.
 
-    Every method stands alone: what an equivalence theorem needs of its
-    encoding (the circuit's layer names, the scalar encoding's argmax
-    variants) is computed once, by whichever method asks first.
+    Every method stands alone: what the circuit's equivalence theorems
+    need of its encoding (its layer names) is computed once, by whichever
+    method asks first.
     """
 
     def __init__(self, ctx: LeanContext):
@@ -41,11 +41,6 @@ class ModuleToLean4:
     def _circuit(self) -> "tuple[str, list[str], list[str]]":
         """The circuit encoding, and its init and update layer names."""
         return _atom_to_lean_circuit(self.ctx)
-
-    @cached_property
-    def _scalar(self) -> "tuple[str, list[tuple[str, int]]]":
-        """The scalar encoding, and the argmax variants it defines."""
-        return _atom_to_lean_scalar(self.ctx)
 
     # ------------------------------------------------------------------
     # Functional encoding
@@ -79,13 +74,13 @@ class ModuleToLean4:
 
     def to_lean_scalar_equiv(self) -> str:
         """Generate theorems proving init/update = pack ∘ Scalar.init/update ∘ unpack."""
-        return _to_lean_scalar_equiv(self.ctx, self._scalar[1])
+        return _to_lean_scalar_equiv(self.ctx)
 
     def to_lean_scalar(self) -> str:
         """The scalar encoding inside ``namespace Scalar``, and its
         composition theorems."""
         return "{}\n\n{}".format(
-            self._scalar[0],
+            _atom_to_lean_scalar(self.ctx),
             self.to_lean_scalar_equiv(),
         )
 
