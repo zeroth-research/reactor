@@ -21,7 +21,7 @@ import pytest
 import torch
 
 from reactor import Int, Term, Module, Var, X, tensor
-from reactor_lean import ModuleToLean4
+from reactor_lean import LeanContext, ModuleToLean4
 
 
 # (row, expected) — expected is torch's answer, computed below to keep the
@@ -96,14 +96,14 @@ def _argmax_module(in_shape, out_shape):
 @pytest.mark.parametrize("encoding", _ENCODINGS)
 def test_argmax_emits_for_multi_row_input(encoding):
     """A genuinely 2-D input reaches Lean as the general `argmax`."""
-    lean = getattr(ModuleToLean4(_argmax_module([3, 4], [1, 1])), encoding)()
+    lean = getattr(ModuleToLean4(LeanContext(_argmax_module([3, 4], [1, 1]))), encoding)()
     assert "argmax" in lean
 
 
 def test_multi_row_input_selects_the_general_variant():
     """1-row input uses argmax_1d; more rows use argmax (a 1×1 `Matrix` either way)."""
-    one_row = ModuleToLean4(_argmax_module([1, 4], [1, 1])).to_lean_functional()
-    many_row = ModuleToLean4(_argmax_module([3, 4], [1, 1])).to_lean_functional()
+    one_row = ModuleToLean4(LeanContext(_argmax_module([1, 4], [1, 1]))).to_lean_functional()
+    many_row = ModuleToLean4(LeanContext(_argmax_module([3, 4], [1, 1]))).to_lean_functional()
     assert "argmax_1d" in one_row
     assert "(Matrix (Fin 1) (Fin 1) Int) := (Matrix.mk fun i j => ((argmax ctrl" in many_row, (
         "multi-row Argmax should use the general variant with a 1x1 result"

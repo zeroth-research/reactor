@@ -146,7 +146,7 @@ def _codegen(module: Module, claim: "Claim | None", cert: "Certificate | None") 
         "=== Certificate/Certificate.lean",
         generate_certificate_lean(ctx, lean),
         "=== standalone",
-        generate_standalone_cert_lean(module, lean),
+        generate_standalone_cert_lean(ctx, lean),
     ])
 
 

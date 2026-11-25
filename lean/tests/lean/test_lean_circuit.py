@@ -22,6 +22,8 @@ from pathlib import Path
 
 import pytest
 
+from reactor_lean.codegen.context import LeanContext
+
 from reactor_lean.codegen.encodings import ModuleToLean4
 from reactor_lean.project.names import LINTERS_OFF
 from agree import CORPUS
@@ -40,7 +42,7 @@ def _unproved(names: list[str], tmp_path: Path) -> "tuple[dict[str, str], int]":
     Lean's first error; and how many circuits were compiled."""
     files = []
     for k, name in enumerate(names):
-        m2l = ModuleToLean4(CORPUS[name]())
+        m2l = ModuleToLean4(LeanContext(CORPUS[name]()))
         try:
             body = f"{m2l.to_lean_functional()}\n\n{m2l.to_lean_circ()}"
         except ValueError as e:

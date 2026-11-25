@@ -115,7 +115,7 @@ def main():
         standalone(settings.cert_file, ctx, lean_cert)
         return
 
-    project_dir = generate(settings, module, ctx, lean_cert, problem.source)
+    project_dir = generate(settings, ctx, lean_cert, problem.source)
     print(f"\nProject ready at: {project_dir}")
 
 
@@ -183,9 +183,8 @@ def standalone(cert_file: str, ctx: LeanContext, lean_cert) -> None:
         raise SystemExit(f"error: --cert-file: {e}") from e
 
 
-def generate(settings: Settings, module, ctx: LeanContext,
-             lean_cert: "LeanCertificate | None",
-             source: str) -> Path:
+def generate(settings: Settings, ctx: LeanContext,
+             lean_cert: "LeanCertificate | None", source: str) -> Path:
     """The Lean project, with the certificate as it stands; `source` is
     the input's text, which the project keeps in `dbg/`."""
     print(".. Generating lean code")
@@ -193,12 +192,11 @@ def generate(settings: Settings, module, ctx: LeanContext,
     try:
         return create_project(
             output_dir=settings.output_dir,
-            module=module,
+            ctx=ctx,
             project_name=settings.project_name,
             executable=settings.executable,
             certificate=certificate,
             source=source,
-            ctx=ctx,
         )
     except (Refused, OSError) as e:
         raise SystemExit(f"error: {e}") from e

@@ -111,7 +111,7 @@ def test_bool_matrix_constant_is_interned_not_inlined():
     """A Bool matrix constant must become a top-level def, not `.item()`."""
     import torch
     from reactor import Term, Module, Bool, Var, X
-    from reactor_lean import ModuleToLean4
+    from reactor_lean import LeanContext, ModuleToLean4
 
     flags = Var(Bool([2, 3]))
     data = torch.tensor([[True, False, True], [False, True, False]])
@@ -120,7 +120,7 @@ def test_bool_matrix_constant_is_interned_not_inlined():
         [Term(tensor.bool.Const(data), [X(flags)])],
         [Term(tensor.Skip(Bool([2, 3])), [X(flags)], [flags])],
     )
-    lean = ModuleToLean4(module).to_lean_functional()
+    lean = ModuleToLean4(LeanContext(module)).to_lean_functional()
     assert "Matrix (Fin 2) (Fin 3) Bool" in lean, "the Bool matrix constant was not emitted"
 
 
@@ -134,7 +134,7 @@ def test_a_real_constant_is_noncomputable(shape, data):
     `BUILD-FAIL`. `Certs.ScalarEncRealHalf` builds one under `just test-lean`."""
     import torch
     from reactor import Term, Module, Var, X
-    from reactor_lean import ModuleToLean4
+    from reactor_lean import LeanContext, ModuleToLean4
 
     x = Var(Real(shape))
     module = Module.sequential(
@@ -142,7 +142,7 @@ def test_a_real_constant_is_noncomputable(shape, data):
         [Term(tensor.real.Const(torch.tensor(data)), [X(x)])],
         [Term(tensor.Skip(Real(shape)), [X(x)], [x])],
     )
-    lean = ModuleToLean4(module).to_lean_functional()
+    lean = ModuleToLean4(LeanContext(module)).to_lean_functional()
     defs = [l for l in lean.splitlines() if " def c" in l]
     assert defs and all("noncomputable def" in l for l in defs), defs
 
@@ -173,7 +173,7 @@ def test_non_negative_bitvec_constant_still_emits():
     """The reachable case must be unchanged by the switch to `ofInt`."""
     import torch
     from reactor import Term, Module, Word, Var, X
-    from reactor_lean import ModuleToLean4
+    from reactor_lean import LeanContext, ModuleToLean4
 
     v = Var(Word(8, [1, 1]))
     module = Module.sequential(
@@ -181,7 +181,7 @@ def test_non_negative_bitvec_constant_still_emits():
         [Term(tensor.word.Const(torch.tensor([[5]]), 8), [X(v)])],
         [Term(tensor.Skip(Word(8, [1, 1])), [X(v)], [v])],
     )
-    lean = ModuleToLean4(module).to_lean_functional()
+    lean = ModuleToLean4(LeanContext(module)).to_lean_functional()
     assert "BitVec.ofInt 8 (5)" in lean
     assert "BitVec.ofNat" not in lean
 

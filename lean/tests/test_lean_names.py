@@ -19,9 +19,9 @@ def _own_imports(text: str) -> list[str]:
 
 
 def test_every_project_module_imported_is_a_file_the_project_has(tmp_path):
-    module = load_module(FIXTURES / "counter.py")
-    project = create_project(tmp_path, module, "Rea",
-                             certificate=certificate_files(LeanContext(module)))
+    ctx = LeanContext(load_module(FIXTURES / "counter.py"))
+    project = create_project(tmp_path, ctx, "Rea",
+                             certificate=certificate_files(ctx))
     texts = {
         stem: (project / CERT_LIB / f"{stem}.lean").read_text()
         for stem in ("Module", "Proofs", "Certificate")
@@ -36,9 +36,9 @@ def test_every_project_module_imported_is_a_file_the_project_has(tmp_path):
 
 
 def test_the_lakefile_builds_the_certificate_library(tmp_path):
-    module = load_module(FIXTURES / "counter.py")
-    project = create_project(tmp_path, module, "Rea",
-                             certificate=certificate_files(LeanContext(module)))
+    ctx = LeanContext(load_module(FIXTURES / "counter.py"))
+    project = create_project(tmp_path, ctx, "Rea",
+                             certificate=certificate_files(ctx))
     lakefile = (project / "lakefile.toml").read_text()
     assert f'name = "{CERT_LIB}"' in lakefile
     assert re.search(rf'defaultTargets = \[[^\]]*"{CERT_LIB}"', lakefile)

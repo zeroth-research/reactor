@@ -10,7 +10,6 @@ each one again and proves it by `sorry`, for a prover to replace.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 from reactor_lean.codegen.encodings import ModuleToLean4
 from reactor_lean.codegen.terms import extl_native_type, product_type
@@ -24,8 +23,6 @@ from reactor_lean.project.names import (
 )
 from reactor_lean.project.templates import render
 
-if TYPE_CHECKING:
-    from reactor import Module
 
 # ══════════════════════════════════════════════════════════════════════════
 # The certificate as Lean
@@ -241,7 +238,7 @@ def certificate_files(
 
 
 def generate_standalone_cert_lean(
-    src: "LeanContext | Module",
+    ctx: LeanContext,
     lean_cert: LeanCertificate | None = None,
 ) -> str:
     """Generate a self-contained certificate Lean file with init/update inlined.
@@ -251,9 +248,7 @@ def generate_standalone_cert_lean(
     definitions and the proofs.
 
     Suitable for placing a single .lean file inside an existing lake project
-    such as ``tests/lean/Certs/``. `src` is the run's `LeanContext`, or a
-    module to build one for.
+    such as ``tests/lean/Certs/``.
     """
-    ctx = src if isinstance(src, LeanContext) else LeanContext(src)
     module_code = ModuleToLean4(ctx).to_lean_functional()
     return generate_certificate_lean(ctx, lean_cert, module_inline=module_code)

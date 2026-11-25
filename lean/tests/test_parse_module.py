@@ -38,8 +38,7 @@ def test_the_project_keeps_the_input(tmp_path):
     from reactor_lean.proof.render import certificate_files
 
     problem = parse.load(FIXTURES / "counter.py")
-    project = create_project(tmp_path, problem.module, "Rea",
-                             source=problem.source,
-                             certificate=certificate_files(
-                                 LeanContext(problem.module)))
+    ctx = LeanContext(problem.module)
+    project = create_project(tmp_path, ctx, "Rea", source=problem.source,
+                             certificate=certificate_files(ctx))
     assert (project / "dbg" / "system.py").read_text() == problem.source

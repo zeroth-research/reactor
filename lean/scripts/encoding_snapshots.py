@@ -67,7 +67,7 @@ def snapshot(path: Path, out: Path) -> None:
         _write(out, name, lambda enc=enc: enc.producer(shared))
         _write(out / "alone", name,
                lambda enc=enc: enc.producer(ModuleToLean4(LeanContext(module))))
-    _write(out, "Cert.lean", lambda: generate_standalone_cert_lean(module))
+    _write(out, "Cert.lean", lambda: generate_standalone_cert_lean(LeanContext(module)))
 
 
 def main() -> None:

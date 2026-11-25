@@ -238,7 +238,7 @@ def _word_ult_module() -> Module:
 def test_a_missing_lean_form_is_refused_with_the_recorded_reason(encoding):
     """The cell says whether the op was forgotten, is unimplementable, or is
     handled somewhere else, and that reason is what reaches the caller."""
-    m2l = ModuleToLean4(_word_ult_module())
+    m2l = ModuleToLean4(LeanContext(_word_ult_module()))
     with pytest.raises(ValueError) as excinfo:
         getattr(m2l, encoding)()
     message = str(excinfo.value)
@@ -350,17 +350,17 @@ def _make_ne_module():
 
 
 def test_ne_emits_in_functional_encoding():
-    lean = ModuleToLean4(_make_ne_module()).to_lean_functional()
+    lean = ModuleToLean4(LeanContext(_make_ne_module())).to_lean_functional()
     assert "≠" in lean, "Ne did not reach the functional encoding"
 
 
 def test_ne_emits_in_scalar_encoding():
-    lean = ModuleToLean4(_make_ne_module()).to_lean_scalar()
+    lean = ModuleToLean4(LeanContext(_make_ne_module())).to_lean_scalar()
     assert "≠" in lean, "Ne did not reach the scalar encoding"
 
 
 def test_ne_emits_in_circuit_encoding():
-    lean = ModuleToLean4(_make_ne_module()).to_lean_circ()
+    lean = ModuleToLean4(LeanContext(_make_ne_module())).to_lean_circ()
     assert "Box.neq" in lean, "Ne did not reach the circuit (Box) encoding"
 
 
@@ -416,7 +416,7 @@ def _word_bits_module():
 
 def test_word_module_emits_bitvec_operators_not_boolean_ones():
     """`!`/`&&`/`||` do not elaborate on `BitVec 1`."""
-    lean = ModuleToLean4(_word_bits_module()).to_lean_functional()
+    lean = ModuleToLean4(LeanContext(_word_bits_module())).to_lean_functional()
     assert "~~~" in lean, "word Not did not use BitVec complement"
     assert "&&&" in lean, "word And did not use BitVec conjunction"
     for boolean in (" && ", " || ", "=> !("):
@@ -424,7 +424,7 @@ def test_word_module_emits_bitvec_operators_not_boolean_ones():
 
 
 def test_word_module_emits_bitvec_boxes():
-    lean = ModuleToLean4(_word_bits_module()).to_lean_circ()
+    lean = ModuleToLean4(LeanContext(_word_bits_module())).to_lean_circ()
     assert "Box.bvNot" in lean and "Box.bvAnd" in lean
     # Only the composed layers matter: `_LAYER_SIMP` lists every Box name as a
     # simp lemma regardless of which ones this module uses.
@@ -492,7 +492,7 @@ def _word_mod_module(op):
     [(tensor.word.unsigned.Rem(8, S), "BitVec.umod"), (tensor.word.signed.Mod(8, S), "BitVec.smod")],
 )
 def test_word_modulo_emits_the_right_lean(op, expected):
-    lean = ModuleToLean4(_word_mod_module(op)).to_lean_functional()
+    lean = ModuleToLean4(LeanContext(_word_mod_module(op))).to_lean_functional()
     assert expected in lean
 
 
@@ -540,7 +540,7 @@ def _ite_module(n: int, *, by_all: bool = False):
 def test_an_ite_picks_whole_matrices_by_a_1x1_condition(n):
     """The form, and the `Box`, of an `Ite`, whatever the shape of its
     branches."""
-    m2l = ModuleToLean4(_ite_module(n))
+    m2l = ModuleToLean4(LeanContext(_ite_module(n)))
     assert " 0 0 then " in m2l.to_lean_functional()
     assert "Box.ite" in m2l.to_lean_circ()
 
@@ -548,7 +548,7 @@ def test_an_ite_picks_whole_matrices_by_a_1x1_condition(n):
 def test_all_reduces_a_comparison_of_vectors_to_the_condition_of_an_ite():
     """The comparison is written entry by entry, and `All` decides that
     every entry holds."""
-    lean = ModuleToLean4(_ite_module(2, by_all=True)).to_lean_functional()
+    lean = ModuleToLean4(LeanContext(_ite_module(2, by_all=True))).to_lean_functional()
     assert "(decide (" in lean and " i j) < (" in lean
     assert "decide (∀ p : _ × _, " in lean
     assert " 0 0 then " in lean
@@ -563,7 +563,7 @@ def test_all_has_no_box():
         Term(Skip(Bool([2, 1])), [X(b)], [b]),
         Term(tensor.bool.All([2, 1]), [X(holds)], [b]),
     ]
-    m2l = ModuleToLean4(Module.sequential([b, holds], init, update))
+    m2l = ModuleToLean4(LeanContext(Module.sequential([b, holds], init, update)))
     assert "decide (∀ p : _ × _, " in m2l.to_lean_functional()
     with pytest.raises(ValueError, match=r"All \(Box\) — no `Box` in `Relational.Circ`"):
         m2l.to_lean_circ()
@@ -580,7 +580,7 @@ def test_a_comparison_wider_than_1x1_compares_every_entry():
         Term(Skip(Int([3, 1])), [X(b)], [b]),
         Term(tensor.int.Eq([3, 1]), [X(e)], [a, b]),
     ]
-    lean = ModuleToLean4(Module.sequential([a, b, e], init, update)).to_lean_functional()
+    lean = ModuleToLean4(LeanContext(Module.sequential([a, b, e], init, update))).to_lean_functional()
     assert "Matrix.mk fun i j => (decide (" in lean and " i j) = (" in lean
     assert " 0 0 = " not in lean
 
@@ -599,4 +599,4 @@ def test_scale_by_rows_of_two_numbers_has_no_lean_form():
     init = [Term(tensor.int.Const(torch.ones(1, 2, dtype=torch.int64)), [X(x)])]
     update = [Term(tensor.int.Scale(torch.tensor([[2, 3]])), [X(x)], [x])]
     with pytest.raises(ValueError, match="no `diag"):
-        ModuleToLean4(Module.sequential([x], init, update)).to_lean_functional()
+        ModuleToLean4(LeanContext(Module.sequential([x], init, update))).to_lean_functional()

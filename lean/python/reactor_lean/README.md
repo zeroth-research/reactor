@@ -350,7 +350,8 @@ and the equivalence theorems.
 
 ## `ModuleToLean4` (`codegen/encodings/__init__.py`)
 
-The main entry point.  Accepts a `Module` or a pre-built `LeanContext`.
+The main entry point.  Takes the module's `LeanContext`: `lean_context(module)`,
+which refuses a module with no Lean form, or `LeanContext(module)` unchecked.
 
 | Method | Returns |
 |--------|---------|

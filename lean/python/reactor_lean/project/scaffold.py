@@ -11,8 +11,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from reactor import Module
-
 from ..codegen.context import LeanContext
 from ..codegen.encodings import ModuleToLean4
 from ..errors import Refused
@@ -144,28 +142,26 @@ def write_lakefile(project_dir: Path, project_name: str, *,
 
 def create_project(
     output_dir: Path,
-    module: Module,
+    ctx: LeanContext,
     project_name: str = "Certificate",
     executable: bool = False,
     *,
     certificate: Mapping[str, str],
     source: str | None = None,
-    ctx: "LeanContext | None" = None,
 ) -> Path:
     """
     Create a full Lean4 project.
 
     Args:
         `output_dir`:      Where to create the project folder.
+        `ctx`:             The module's `LeanContext`, as
+                           `codegen.context.lean_context` checks it.
         `project_name`:    Optional name of the Lean package / library.
         `executable`:      If True, generate Main.lean and add [[lean_exe]] to lakefile.
         `certificate`:     The certificate's files by project-relative path,
                            as `proof.render.certificate_files` renders them.
         `source`:          The text of the input the module was read from,
                            written to `dbg/system.py` as a debug artifact.
-        `ctx`:             A `LeanContext` this run already built, so the
-                           discovery pass runs once rather than once here
-                           and again for every file rewritten later.
     """
     project_dir = output_dir / project_name
     src_dir = project_dir / "System"
@@ -177,7 +173,7 @@ def create_project(
 
     # Debug artifacts: module representation and the input it was read from
     dbg_dir.mkdir(parents=True, exist_ok=True)
-    (dbg_dir / "system.txt").write_text(str(module))
+    (dbg_dir / "system.txt").write_text(str(ctx.module))
     print("Wrote system.txt")
     if source is not None:
         (dbg_dir / "system.py").write_text(source)
@@ -197,8 +193,6 @@ def create_project(
     # ----------------------------------------------------------
     # Generate reactive module (init and update)
     # ----------------------------------------------------------
-    if ctx is None:
-        ctx = LeanContext(module)
     m2l = ModuleToLean4(ctx)
 
     root_lean = project_dir / "System.lean"
@@ -218,7 +212,7 @@ def create_project(
     # ----------------------------------------------------------
     if executable:
         main_lean = project_dir / "Main.lean"
-        main_lean.write_text(generate_main_lean(module))
+        main_lean.write_text(generate_main_lean(ctx.module))
         print(f"Wrote {main_lean}")
 
     print()

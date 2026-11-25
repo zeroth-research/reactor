@@ -32,13 +32,13 @@ _SCRIPT = """
 import hashlib, importlib, json, sys
 cases, encodings = json.loads(sys.argv[1])
 sys.path[:0] = sorted({c[0] for c in cases})
-from reactor_lean import ModuleToLean4
+from reactor_lean import LeanContext, ModuleToLean4
 
 out = {}
 for pkg, name in cases:
     module = importlib.import_module(name).module()
     for enc in encodings:
-        lean = getattr(ModuleToLean4(module), enc)()
+        lean = getattr(ModuleToLean4(LeanContext(module)), enc)()
         out[name + ":" + enc] = hashlib.sha256(lean.encode()).hexdigest()
 print(json.dumps(out))
 """

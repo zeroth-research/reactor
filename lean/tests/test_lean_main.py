@@ -11,6 +11,7 @@ import pytest
 
 from reactor import Term, Module, Int, Bool, Word, Real, Var, X, tensor
 from reactor_lean.project.main_lean import generate_main_lean
+from reactor_lean.codegen.context import LeanContext
 from reactor_lean.codegen.encodings import ModuleToLean4
 
 
@@ -50,7 +51,7 @@ def _two_ctrl_module():
 def test_main_applies_update_curried(make):
     """`update` takes (ctrl) (extl_l) (extl_n) — three groups, not one tuple."""
     module = make()
-    functional = ModuleToLean4(module).to_lean_functional()
+    functional = ModuleToLean4(LeanContext(module)).to_lean_functional()
     assert "def update (ctrl:" in functional, "signature shape changed; update this test"
 
     main = generate_main_lean(module)

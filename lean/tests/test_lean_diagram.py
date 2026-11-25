@@ -297,7 +297,7 @@ def test_no_ctrl_module_does_not_crash_any_encoding(encoding):
     An encoder that indexed `ctrl_types[0]` unguarded raised IndexError
     where its siblings returned a comment.
     """
-    out = getattr(ModuleToLean4(_no_ctrl_module()), encoding)()
+    out = getattr(ModuleToLean4(LeanContext(_no_ctrl_module())), encoding)()
     assert isinstance(out, str)
 
 
@@ -314,7 +314,7 @@ def test_rel_encoding_emits_its_equivalence_theorems():
     `rel.py`; the proofs inline their own `simp only` sets, so dropping them
     left the output byte-identical.
     """
-    lean = ModuleToLean4(_make_twobitcounter()).to_lean_rel()
+    lean = ModuleToLean4(LeanContext(_make_twobitcounter())).to_lean_rel()
     for expected in (
         "namespace ScalarRel",
         "theorem InitCond_func_eq",
@@ -327,7 +327,7 @@ def test_rel_encoding_emits_its_equivalence_theorems():
 
 def test_rel_encoding_has_no_unused_simp_placeholders():
     """The removed lists were never interpolated; nothing should reference them."""
-    lean = ModuleToLean4(_make_twobitcounter()).to_lean_rel()
+    lean = ModuleToLean4(LeanContext(_make_twobitcounter())).to_lean_rel()
     assert "unpack_pack_simp" not in lean
 
 
@@ -354,7 +354,7 @@ def test_scalar_encoding_emits_a_scalar_relu():
         [Term(tensor.int.Const(torch.tensor([[0]])), [X(s)])],
         [Term(tensor.int.ReLU([1, 1]), [X(s)], [s])],
     )
-    lean = ModuleToLean4(module).to_lean_scalar()
+    lean = ModuleToLean4(LeanContext(module)).to_lean_scalar()
     relu = [l for l in lean.splitlines() if "Max.max" in l or "ReLu" in l]
     assert relu, f"no ReLU emitted:\n{lean}"
     for line in relu:
@@ -370,7 +370,7 @@ def test_scalar_encoding_extracts_a_scalar_from_linear():
         [Term(tensor.int.Const(torch.tensor([[0]])), [X(s)])],
         [Term(tensor.int.Linear(torch.tensor([[2]]), torch.tensor([[1]])), [X(s)], [s])],
     )
-    lean = ModuleToLean4(module).to_lean_scalar()
+    lean = ModuleToLean4(LeanContext(module)).to_lean_scalar()
     line = next(l for l in lean.splitlines() if "matVecAffine" in l)
     assert line.strip().endswith("0 0)"), f"result not extracted: {line.strip()}"
     # Ascribed, not a bare `Matrix.mk fun _ _ => ctrl`: `matVecAffine`'s batch
@@ -400,7 +400,7 @@ def test_scalar_encoding_lifts_a_scalar_ite_condition():
         Term(tensor.Skip(Bool([1, 1])), [X(c)], [c]),
         Term(tensor.int.Ite([1, 3]), [X(m3)], [c, m3, m3]),
     ]
-    lean = ModuleToLean4(Module.sequential([m3, c], init, update)).to_lean_scalar()
+    lean = ModuleToLean4(LeanContext(Module.sequential([m3, c], init, update))).to_lean_scalar()
     ite = [l for l in lean.splitlines() if "if " in l]
     assert ite, "no Ite emitted"
     for line in ite:
@@ -461,7 +461,7 @@ def test_effect_gets_only_the_reconstructions_it_uses():
     so an extra parameter means every call under-applies. `effect_0` here
     reads only `state`, but got the `extl_l` and `extl_n` reconstructions.
     """
-    lean = ModuleToLean4(_mixed_dependency_module()).to_lean_rel()
+    lean = ModuleToLean4(LeanContext(_mixed_dependency_module())).to_lean_rel()
     effects = _split_effects(lean)
     assert effects, f"no effects found in:\n{lean[:400]}"
     assert effects["0"] == [], (
@@ -506,14 +506,14 @@ def test_stateless_module_defines_init_and_update_as_unit():
     be defined -- and not as `sorry`: a build counts only the `sorry`s under
     `Certificate/` as unproved, so one in `System/` would pass.
     """
-    m2l = ModuleToLean4(Module.sequential([], [], []))
+    m2l = ModuleToLean4(LeanContext(Module.sequential([], [], [])))
     func = m2l.to_lean_functional()
     assert "def init (extl_n: Unit) : Unit :=\n  ()\n" in func
     assert (
         "def update (ctrl: Unit) (extl_l: Unit) (extl_n: Unit) : Unit :=\n  ()\n"
         in func
     )
-    assert "sorry" not in all_encodings(m2l.module) + m2l.to_lean_mat_rel()
+    assert "sorry" not in all_encodings(m2l.ctx.module) + m2l.to_lean_mat_rel()
 
 
 def test_unbound_block_output_raises():
@@ -547,11 +547,11 @@ def test_an_equivalence_theorem_alone_is_the_one_its_encoding_prints(mod):
 
     module = load_module(MODS / f"{mod}.py")
 
-    circ_alone = ModuleToLean4(module).to_lean_equiv_theorems()
+    circ_alone = ModuleToLean4(LeanContext(module)).to_lean_equiv_theorems()
     assert "init_circ_eq" in circ_alone
-    assert ModuleToLean4(module).to_lean_circ().endswith(circ_alone)
+    assert ModuleToLean4(LeanContext(module)).to_lean_circ().endswith(circ_alone)
 
-    scalar_alone = ModuleToLean4(module).to_lean_scalar_equiv()
-    assert ModuleToLean4(module).to_lean_scalar().endswith(scalar_alone)
+    scalar_alone = ModuleToLean4(LeanContext(module)).to_lean_scalar_equiv()
+    assert ModuleToLean4(LeanContext(module)).to_lean_scalar().endswith(scalar_alone)
     if mod == "m_argmax":
         assert "argmax1d_scalar" in scalar_alone

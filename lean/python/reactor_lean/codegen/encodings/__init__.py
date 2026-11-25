@@ -8,7 +8,6 @@ ones share.
 from functools import cached_property
 
 from reactor_lean.codegen.context import LeanContext
-from reactor import Module
 
 from reactor_lean.codegen.encodings.functional import atom_to_lean_functional, constants_block
 from reactor_lean.codegen.encodings.circuit import (
@@ -29,15 +28,14 @@ class ModuleToLean4:
     """Convert a Python Module into Lean4 wiring diagram code.
 
     Read-only consumer of a pre-populated LeanContext — does not mutate it.
-    Accepts a Module for convenience; in that case builds a fresh context.
 
     Every method stands alone: what an equivalence theorem needs of its
     encoding (the circuit's layer names, the scalar encoding's argmax
     variants) is computed once, by whichever method asks first.
     """
 
-    def __init__(self, src: "LeanContext | Module"):
-        self.ctx = src if isinstance(src, LeanContext) else LeanContext(src)
+    def __init__(self, ctx: LeanContext):
+        self.ctx = ctx
 
     @cached_property
     def _circuit(self) -> "tuple[str, list[str], list[str]]":
@@ -48,10 +46,6 @@ class ModuleToLean4:
     def _scalar(self) -> "tuple[str, list[tuple[str, int]]]":
         """The scalar encoding, and the argmax variants it defines."""
         return _atom_to_lean_scalar(self.ctx)
-
-    @property
-    def module(self):
-        return self.ctx.module
 
     # ------------------------------------------------------------------
     # Functional encoding

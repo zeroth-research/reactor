@@ -69,29 +69,30 @@ def _make_counter():
 
 
 def test_inf_counter_generates_lean():
-    m = _make_matrix_module()
+    ctx = LeanContext(_make_matrix_module())
 
     _ = create_project(
         output_dir=TESTS / "LeanTests",
-        module=m,
+        ctx=ctx,
         project_name="CounterInfCertificate",
         executable=True,
-        certificate=certificate_files(LeanContext(m)),
+        certificate=certificate_files(ctx),
     )
 
 
 def test_counter_generates_lean():
     m = _make_counter()
+    ctx = LeanContext(m)
 
     # Certificate predicates over the 3×1 vector state s0 (x=s0[0][0], y=s0[1][0],
     # z=s0[2][0]) and the 2×1 external input e0 (y0=e0[0][0], z0=e0[1][0]), written
     # in the Python-expression DSL with the `v[i][j]` matrix-indexing sugar.
     _ = create_project(
         output_dir=TESTS / "LeanTests",
-        module=m,
+        ctx=ctx,
         project_name="Counter",
         executable=True,
-        certificate=certificate_files(LeanContext(m), lean_certificate(
+        certificate=certificate_files(ctx, lean_certificate(
             m,
             Claim(
                 prp="s0[0][0] == 0",

@@ -236,10 +236,11 @@ def generate_lean_files() -> None:
     # System/Scalar.lean). The `_scalar_eq` theorems only elaborate if the
     # flattening lines up, and no certificate carries a Scalar section, so
     # this is the only thing that compiles them.
+    from reactor_lean.codegen.context import LeanContext
     from reactor_lean.codegen.encodings import ModuleToLean4
 
     for name, make_module in _SCALAR_ENC_SPECS:
-        t = ModuleToLean4(make_module())
+        t = ModuleToLean4(LeanContext(make_module()))
         (_CERTS_DIR / f"ScalarEnc{name}.lean").write_text(
             f"import Relational.Mat\nimport Relational.Circ\n\n{LINTERS_OFF}\n\n"
             + t.to_lean_functional()
@@ -263,7 +264,7 @@ def generate_lean_files() -> None:
     # project, and every generated project with a multi-element ctrl wire
     # failed to compile while this test passed.
     for name, make_module in _REL_ENC_SPECS:
-        t = ModuleToLean4(make_module())
+        t = ModuleToLean4(LeanContext(make_module()))
         layout = Layout(base="Base", prefix=f"Certs.RelEnc{name}.",
                         directory=_CERTS_DIR / f"RelEnc{name}")
         layout.directory.mkdir(exist_ok=True)

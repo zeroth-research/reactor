@@ -27,7 +27,7 @@ def _gen(name, module, prp, inv, ranking, pre=None):
     lean_cert = lean_certificate(module, claim, cert)
     return create_project(
         output_dir=OUTPUT_DIR,
-        module=module,
+        ctx=ctx,
         project_name=name,
         certificate=certificate_files(ctx, lean_cert),
     )

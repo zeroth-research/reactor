@@ -25,9 +25,9 @@ def fixture(name: str):
 def all_encodings(module) -> str:
     """The functional encoding, the circuit, the scalar and the
     scalar-relational one of `module`, as one text."""
-    from reactor_lean import ModuleToLean4
+    from reactor_lean import LeanContext, ModuleToLean4
 
-    m2l = ModuleToLean4(module)
+    m2l = ModuleToLean4(LeanContext(module))
     return "\n\n".join([m2l.to_lean_functional(), m2l.to_lean_circ(),
                         m2l.to_lean_scalar(), m2l.to_lean_rel()])
 

@@ -111,11 +111,11 @@ def test_generated_executable_builds_and_runs(
     if reactlib_checkout() is None:
         pytest.skip(f"no ReactLib checkout: set ${REACTLIB_ENV}")
 
-    module_def = testdata.fixture(fixture)
+    ctx = LeanContext(testdata.fixture(fixture))
     with tempfile.TemporaryDirectory() as tmp:
         project = create_project(
-            Path(tmp), module_def, "Rea", executable=True,
-            certificate=certificate_files(LeanContext(module_def)))
+            Path(tmp), ctx, "Rea", executable=True,
+            certificate=certificate_files(ctx))
 
         build = subprocess.run(
             ["lake", "build", "main"],
