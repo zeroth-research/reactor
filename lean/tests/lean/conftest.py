@@ -215,6 +215,31 @@ def _make_argmax(m: int, n: int) -> Module:
     return Module.sequential([s, i], init, update)
 
 
+def _make_abs() -> Module:
+    """x = |x - 3| on a 1×1 Int, v = |v - 1| on a 2×1 one and r = |r - 1/2|
+    on a Real: `Abs` on a bare scalar, entry by entry, and over each number."""
+    x, v, r = Var(Int([1, 1])), Var(Int([2, 1])), Var(Real([1, 1]))
+    three, one, half = Wire(Int([1, 1])), Wire(Int([2, 1])), Wire(Real([1, 1]))
+    dx, dv, dr = Wire(Int([1, 1])), Wire(Int([2, 1])), Wire(Real([1, 1]))
+    init = [
+        Term(tensor.int.Const(torch.tensor([[0]])), [X(x)]),
+        Term(tensor.int.Const(torch.tensor([[-2], [5]])), [X(v)]),
+        Term(tensor.real.Const(torch.tensor([[0.0]])), [X(r)]),
+    ]
+    update = [
+        Term(tensor.int.Const(torch.tensor([[3]])), [three]),
+        Term(tensor.int.Const(torch.tensor([[1], [1]])), [one]),
+        Term(tensor.real.Const(torch.tensor([[0.5]])), [half]),
+        Term(tensor.int.Sub([1, 1]), [dx], [x, three]),
+        Term(tensor.int.Sub([2, 1]), [dv], [v, one]),
+        Term(tensor.real.Sub([1, 1]), [dr], [r, half]),
+        Term(tensor.int.Abs([1, 1]), [X(x)], [dx]),
+        Term(tensor.int.Abs([2, 1]), [X(v)], [dv]),
+        Term(tensor.real.Abs([1, 1]), [X(r)], [dr]),
+    ]
+    return Module.sequential([x, v, r], init, update)
+
+
 def _make_three_wires() -> Module:
     """x, v, y = -x, -v, -y over a 1×1, a 2×1 and a 1×1 Int.
 
@@ -233,7 +258,7 @@ def _make_three_wires() -> Module:
 
 # Widths that exercise the scalar encoding's flattening: all-1x1, then
 # multi-element state, up to the 32 that stresses the index enumeration;
-# then the ops whose 1×1 result is made of more than 1×1 operands.
+# then the ops whose 1×1 result is made of more than 1×1 operands, and `Abs`.
 _SCALAR_ENC_SPECS = [
     ("Scalar", _make_countdown),
     ("Vec6", lambda: _make_countdown_vec(6)),
@@ -243,6 +268,7 @@ _SCALAR_ENC_SPECS = [
     ("DotProduct", _make_dot_product),
     ("Argmax2x2", lambda: _make_argmax(2, 2)),
     ("Argmax1x12", lambda: _make_argmax(1, 12)),
+    ("Abs", _make_abs),
 ]
 
 

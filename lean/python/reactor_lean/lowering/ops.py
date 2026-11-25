@@ -300,12 +300,13 @@ OPS: tuple[Op, ...] = (
         mat=lambda a: f"(-{a[0]})",
         scalar=lambda a: f"(-{a[0]})",
     ),
+    # Mathlib's `|x|`, entry by entry. Bracketed: `||x||` lexes as two
+    # `||`, and a bare `|x|` in a `match` arm reads as the next arm.
     Op(
         "Abs",
         NUM,
-        mat=Unsupported("no Lean form; nothing has asked for one. The "
-                        "matrix form would be `|a i j|`."),
-        scalar=_SEE_MAT,
+        mat=lambda a: mat_mk(f"|({a[0]} i j)|", "i", "j"),
+        scalar=lambda a: f"(|{a[0]}|)",
     ),
     Op(
         "Abs",

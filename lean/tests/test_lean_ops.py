@@ -166,9 +166,8 @@ _KNOWN_GAPS = {
     # Nondeterministic choice, and the zero rate of change: every encoding
     # here is a function of the read wires, in discrete time.
     *(("", name, column) for name in ("Havoc", "Zero") for column in COLUMNS),
-    # `Xor` and the pointwise `Abs` have no Lean emitter.
+    # `Xor` has no Lean emitter.
     *(("bool", "Xor", c) for c in COLUMNS),
-    *((t, "Abs", c) for t in ("int", "real") for c in COLUMNS),
     # Words with no Lean form.
     *(("word", name, c)
       for name in ("Concat", "Extract", "Nand", "Nor", "Repeat", "RotateLeft",
@@ -538,3 +537,32 @@ def test_scale_by_rows_of_two_numbers_has_no_lean_form():
     update = [Term(tensor.int.Scale(torch.tensor([[2, 3]])), [X(x)], [x])]
     with pytest.raises(ValueError, match="no `diag"):
         ModuleToLean4(LeanContext(Module.sequential([x], init, update))).to_lean_functional()
+
+
+
+# ──────────────────────────────────────────────────────────────
+# `Abs` is Mathlib's `|x|`
+# ──────────────────────────────────────────────────────────────
+
+
+def _abs_module(shape):
+    """x = |x - 1|, from -3."""
+    x = Var(Int(shape))
+    one, d = Wire(Int(shape)), Wire(Int(shape))
+    k = lambda v: tensor.int.Const(torch.full(shape, v, dtype=torch.int64))
+    init = [Term(k(-3), [X(x)])]
+    update = [
+        Term(k(1), [one]),
+        Term(tensor.int.Sub(shape), [d], [x, one]),
+        Term(tensor.int.Abs(shape), [X(x)], [d]),
+    ]
+    return Module.sequential([x], init, update)
+
+
+def test_abs_is_written_entry_by_entry_and_on_a_bare_scalar():
+    """Bracketed either way: `||x||` would lex as two `||`, and a bare
+    `|x|` in a `match` arm reads as the next arm."""
+    lean = ModuleToLean4(LeanContext(_abs_module([2, 1]))).to_lean_functional()
+    assert ":= (Matrix.mk fun i j => |(x1 i j)|)" in lean
+    scalar = ModuleToLean4(LeanContext(_abs_module([1, 1]))).to_lean_scalar()
+    assert "Int := (|x1|)" in scalar

@@ -212,7 +212,7 @@ def test_distinct_is_every_pair_distinct():
 def test_a_kind_with_no_lean_form_is_refused_by_the_flag_it_came_from():
     """A refusal, not a bare `ValueError`: `Refused` is what the pipeline
     turns into an `error:` line, and an answer with no Lean form is the
-    commonest way to reach it. Reactor's terms have no `abs`, so the parser
-    refuses it."""
+    commonest way to reach it. The predicate printer has no `abs`, so the
+    parser refuses it."""
     with pytest.raises(PredicateRefused, match="--invariant: .*`abs` is no function"):
         _inv(_int_module(), "(>= (abs s0) 0)")
