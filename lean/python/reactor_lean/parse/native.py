@@ -12,6 +12,7 @@ certificate's (`Claim`, `Certificate`), as `proof.render` prints them.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Literal
 
@@ -155,8 +156,10 @@ class _Var(_Term):
 
     def __getitem__(self, key):
         if isinstance(key, tuple):
-            i, j = key
-            return self._element(i, j)
+            if len(key) != 2:
+                raise IndexError(f"a matrix variable takes two indices, "
+                                 f"not {len(key)}")
+            return self._element(*key)
         return dsl.Row(self._element, key)
 
 
@@ -174,6 +177,8 @@ def lift(x: Elaborator, o, like=None) -> _Term:
             return _Term(x, x.b.bitvec(like.dtype.width, o))
         return _Term(x, Lit(o, decimal=False))
     if isinstance(o, float):
+        if not math.isfinite(o):
+            raise Unreadable(f"`{o}` is no number a predicate can hold")
         return _Term(x, Lit(decimal_fraction(o), decimal=True))
     raise TypeError(f"Cannot read {type(o).__name__} as a term")
 
@@ -217,15 +222,20 @@ def namespace(x: Elaborator, wires: ModuleWires) -> dict:
 
 def parse_predicate(wires: ModuleWires, src: str) -> Formula:
     """`src` as a `Formula`: the Python syntax first, SMT-LIB for text that
-    is no Python. Text that is the syntax and wrong in it is refused in the
-    syntax's terms; anything else raised is a bug, and is left to say so."""
+    is no Python. Python is refused in the syntax's terms, whether the
+    syntax does not read it (`dsl.NotPredicate`) or it is wrong in it: a
+    refusal of the terms it builds (`Unreadable`), an index out of range,
+    an operator Python cannot apply. Anything else raised is a bug, and is
+    left to say so."""
     b = Builder()
     x = Elaborator(scope_of(wires), b)
     try:
         result = dsl.evaluate(src, namespace(x, wires))
-    except (SyntaxError, dsl.NotPredicate):
+    except SyntaxError:
         result = None
-    except (TypeError, ValueError, IndexError) as e:
+    except dsl.NotPredicate as e:
+        raise Unreadable(str(e)) from e
+    except (Unreadable, TypeError, IndexError) as e:
         raise Unreadable(
             f"`{src.strip()}` is predicate syntax, and not a predicate of "
             f"this module: {e}"
@@ -234,7 +244,7 @@ def parse_predicate(wires: ModuleWires, src: str) -> Formula:
         result = lift(x, result)
     if isinstance(result, _Term) and not isinstance(result._v, (Lit, Matrix)):
         return b.formula(result._v, x.scope.names)
-    # Not the syntax, or a value no predicate is -- `5`, a whole matrix
+    # No Python, or a value no predicate is -- `5`, a whole matrix
     # variable: SMT-LIB reads the rest.
     return read_smtlib(x.scope, src)
 

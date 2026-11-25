@@ -111,4 +111,6 @@ def walk(node: ast.AST, ns: dict):
         if all(type(i) is int for i in index):
             target = recur(node.value)
             return target[tuple(index)] if len(index) > 1 else target[index[0]]
+    if isinstance(node, ast.Name):
+        raise NotPredicate(f"`{node.id}` is not declared")
     raise NotPredicate(f"`{ast.unparse(node)}` is not predicate syntax")

@@ -109,6 +109,8 @@ def test_a_bare_numeral_still_falls_through_to_smtlib():
         ("s1[0][0] + s0[0][0] > 0", "arithmetic"),
         ("s1[5][0] > 0", "out of bounds"),
         ("Ite(s0[0][0], 1)", "missing"),
+        ("s1[0, 0, 0] > 0", "two indices, not 3"),
+        ("s1[0][0] < 1e999", "no number"),
     ],
 )
 def test_the_syntax_says_what_is_wrong_with_a_predicate_in_it(src, why):
@@ -116,16 +118,34 @@ def test_the_syntax_says_what_is_wrong_with_a_predicate_in_it(src, why):
         parse_predicate(_wires("m_boolint"), src)
 
 
-def test_a_fault_in_the_syntax_itself_is_not_a_parse_error(monkeypatch):
+@pytest.mark.parametrize(
+    "src, why",
+    [
+        ("s0[0][0] / 2 > 0", "`s0\\[0\\]\\[0\\] / 2` is not predicate syntax"),
+        ("s0[0][0] ** 2 > 0", "`s0\\[0\\]\\[0\\] \\*\\* 2` is not predicate syntax"),
+        ("s9[0][0] > 0", "`s9` is not declared"),
+    ],
+)
+def test_python_the_syntax_does_not_read_is_refused_in_its_terms(src, why):
+    """Not handed on to the SMT-LIB reader, which refused `/` as "text
+    after the expression"."""
+    with pytest.raises(Unreadable, match=why):
+        parse_predicate(_wires("m_countdown"), src)
+
+
+@pytest.mark.parametrize("bug", [AttributeError, ValueError])
+def test_a_fault_in_the_syntax_itself_is_not_a_parse_error(monkeypatch, bug):
+    """A `ValueError` too: `Unreadable` is one, and so is a bug."""
     import reactor_lean.parse.native as native
 
     def broken(src, ns):
-        raise AttributeError("a bug")
+        raise bug("a bug")
 
     monkeypatch.setattr(native.dsl, "evaluate", broken)
-    with pytest.raises(AttributeError, match="a bug"):
+    with pytest.raises(bug, match="a bug") as raised:
         read_predicates(load_module(MODS / "m_countdown.py"),
                         Claim(prp="s0[0][0] == 0"))
+    assert type(raised.value) is bug    # not a refusal, which is a ValueError
 
 
 # ══════════════════════════════════════════════════════════════════════
