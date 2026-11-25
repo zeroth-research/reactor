@@ -25,7 +25,7 @@ LEAN_TOOLCHAIN = f"leanprover/lean4:{MATHLIB_REV}"
 REACTLIB_URL = "https://github.com/zeroth-research/ReactLib"
 # A commit rather than a branch, so a project cannot drift from the
 # generator that wrote it.
-REACTLIB_REV = "97144c6538db206fdefa10825d850219901c673b"
+REACTLIB_REV = "44e096befda564f88b05e123734eff1d03a46038"
 REACTLIB_PACKAGES = ("ReactLib",)
 # A ReactLib checkout to require by path instead of from git, to work on
 # the libraries and the generator together.
