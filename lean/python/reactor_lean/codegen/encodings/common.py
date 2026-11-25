@@ -1,5 +1,7 @@
 """Shared helpers used by multiple translate sub-modules."""
 
+import re
+
 from reactor_lean.lowering.sorts import dtype_to_lean_type, wire_shape
 from reactor_lean.lowering.elements import FlatLayout, product_accessor, mat_from_scalars, flat_layout
 from reactor_lean.codegen.terms import build_tuple, product_type_scalar
@@ -102,7 +104,8 @@ def _needed_recon(recon_lets: "list[str]", body: str) -> "list[str]":
     and Lean's `variable` auto-binding would then add that parameter to the
     declaration -- while the call sites are built from what the body
     consumes, so they would under-apply it. Iterated to a fixed point in
-    case one reconstruction ever refers to another.
+    case one reconstruction ever refers to another. A use is a whole word:
+    `_m10` is no use of `_m1`.
     """
     kept: list[str] = []
     text = body
@@ -112,7 +115,7 @@ def _needed_recon(recon_lets: "list[str]", body: str) -> "list[str]":
         for line in recon_lets:
             if line in kept:
                 continue
-            if _recon_var(line) in text:
+            if re.search(rf"\b{_recon_var(line)}\b", text):
                 kept.append(line)
                 text += "\n" + line
                 changed = True

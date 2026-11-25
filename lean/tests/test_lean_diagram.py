@@ -489,6 +489,9 @@ def test_recon_filter_keeps_order_and_transitive_uses():
     assert _needed_recon(lets, "  x := _m2") == [lets[0], lets[2]]
     assert _needed_recon(lets, "  x := 0") == []
     assert _needed_recon([], "  x := 0") == []
+    # a use is a whole word: `_m10` is no use of `_m1`
+    many = [f"  let _m{i} : T := f extl_l" for i in range(11)]
+    assert _needed_recon(many, "  x := _m10") == [many[10]]
 
 
 # ──────────────────────────────────────────────────────────────

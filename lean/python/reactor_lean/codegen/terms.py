@@ -40,18 +40,16 @@ def lean_gaps(ctx) -> list[str]:
 
     Asked before anything is generated, which is the whole point. The same
     module met during codegen raises about a missing table cell, half way
-    through a file, for a run that may never have wanted the functional
-    encoding. A module that generates has nothing to report here, because an operator
-    with no matrix form has no emitter in the other two Lean columns either
-    (:func:`lowering.ops.lean_gap`), so this cannot refuse anything that works.
+    through the project. Every term is asked about, read or not, because
+    the functional and scalar encodings translate a block's terms as they
+    are. A module that generates has nothing to report here, because an
+    operator with no matrix form has no emitter in the other two Lean
+    columns either (:func:`lowering.ops.lean_gap`), so this cannot refuse
+    anything that works.
     """
     out, seen = [], set()
     for block in ("init", "update"):
-        # Only what the next state is built from, which is what the encoders
-        # walk: a term nothing reads is pruned before it is ever emitted, and
-        # refusing a module over one would refuse a module that generates.
-        terms = reachable_terms(getattr(ctx.atom, block), ctx.ctrl_next)
-        for term in terms:
+        for term in getattr(ctx.atom, block):
             name = itype_name(term.itype)
             why = None if name in seen else lean_gap(term.itype)
             if why is None:

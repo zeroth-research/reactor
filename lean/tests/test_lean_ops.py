@@ -290,10 +290,14 @@ def test_a_module_that_generates_reports_no_gap():
     assert lean_gaps(LeanContext(_word_mod_module(tensor.word.unsigned.Rem(8, S)))) == []
 
 
-def test_an_unreachable_term_is_not_a_gap():
-    """Nothing reads `y`, so no encoder ever emits it and neither branch of
-    the tool should care that it has no Lean form."""
-    assert lean_gaps(LeanContext(_havoc_module(read_it=False))) == []
+def test_a_term_nothing_reads_is_a_gap_too():
+    """Nothing reads `y`, but the functional encoding translates every
+    term, so it is reported up front rather than met half way through."""
+    ctx = LeanContext(_havoc_module(read_it=False))
+    gaps = lean_gaps(ctx)
+    assert len(gaps) == 1 and "`Havoc`" in gaps[0]
+    with pytest.raises(ValueError, match="Havoc"):
+        ModuleToLean4(ctx).to_lean_functional()
 
 
 def _cells(mat, scalar, box) -> ops.Op:

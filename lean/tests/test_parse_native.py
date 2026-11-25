@@ -64,6 +64,9 @@ def _shape(formula, wires: ModuleWires):
         ("m_boolint", "not s0[0][0] and s1[0][0] == 0", "(and (not s0) (= s1 0))"),
         ("m_boolint", "s1[0][0] if s0[0][0] else 0", "(ite s0 s1 0)"),
         ("m_boolint", "s0[0][0] == True", "(= s0 true)"),
+        ("m_countdown", "True", "true"),
+        ("m_countdown", "False", "false"),
+        ("m_countdown", "s[0][0] > 0 or True", "(or (> s0 0) true)"),
         ("m_countdown", "-s[0][0] * 2 < 1", "(< (* (- s0) 2) 1)"),
     ],
 )

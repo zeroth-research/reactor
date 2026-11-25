@@ -210,8 +210,6 @@ def namespace(x: Elaborator, wires: ModuleWires) -> dict:
         "ToInt": lambda a: apply("to_int", a),
         "true": _Term(x, x.b.boolean(True)),
         "false": _Term(x, x.b.boolean(False)),
-        "True": _Term(x, x.b.boolean(True)),
-        "False": _Term(x, x.b.boolean(False)),
     }
     for prefix, ws in _prefixed(wires):
         for i, w in enumerate(ws):
@@ -244,6 +242,8 @@ def parse_predicate(wires: ModuleWires, src: str) -> Formula:
             f"`{src.strip()}` is predicate syntax, and not a predicate of "
             f"this module: {e}"
         ) from e
+    if isinstance(result, bool):    # `True` is Python's constant, not a name
+        result = lift(x, result)
     if isinstance(result, _Term) and not isinstance(result._v, (Lit, Matrix)):
         return b.formula(result._v, x.scope.names)
     # Not the syntax, or a value no predicate is -- `5`, a whole matrix
