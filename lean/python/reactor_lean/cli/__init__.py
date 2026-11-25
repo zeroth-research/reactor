@@ -79,6 +79,7 @@ from ..errors import Refused
 from ..parse import Certificate, Claim
 from ..project.lake_cache import lake_cache
 from ..project.lakefile import reactlib_checkout
+from ..project.main_lean import check_runnable
 from ..project.scaffold import ENCODINGS, Layout, create_project, write_encoding
 from ..proof.render import (
     LeanCertificate,
@@ -107,6 +108,8 @@ def main():
         print(module)
         claim, given = claim_from_flags(settings, problem.names)
         ctx = lean_context(module)
+        if settings.executable and not settings.cert_file:
+            check_runnable(ctx)
         lean_cert = lean_certificate(module, claim, given)
     except Refused as e:
         raise SystemExit(f"error: {e}") from e

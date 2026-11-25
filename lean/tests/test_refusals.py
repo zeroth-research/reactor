@@ -1,5 +1,7 @@
 """What is wrong with the input is one `error:` line, not a traceback."""
 
+import pytest
+
 from reactor_cli import reactor
 from testdata import FIXTURES
 
@@ -44,6 +46,42 @@ def test_an_op_with_no_lean_form_writes_nothing(tmp_path):
     )
     out = tmp_path / "out"
     assert "`Havoc`" in _refused(reactor(str(path), "-o", str(out)))
+    assert not out.exists()
+
+
+_REAL_STATE = """\
+import torch
+from reactor import Module, Real, Term, Var, X, tensor
+def module():
+    s = Var(Real([1, 1]))
+    init = [Term(tensor.real.Const(torch.tensor([[0.5]])), [X(s)])]
+    return Module.sequential([s], init, [Term(tensor.Skip(Real([1, 1])), [X(s)], [s])])
+"""
+
+_REAL_BETWEEN_INTS = """\
+import torch
+from reactor import Int, Module, Real, Term, Var, Wire, X, tensor
+def module():
+    s, r = Var(Int([1, 1])), Wire(Real([1, 1]))
+    init = [Term(tensor.int.Const(torch.tensor([[1]])), [X(s)])]
+    update = [Term(tensor.cast.ToReal([1, 1]), [r], [s]),
+              Term(tensor.cast.ToInt([1, 1]), [X(s)], [r])]
+    return Module.sequential([s], init, update)
+"""
+
+
+@pytest.mark.parametrize("src", [_REAL_STATE, _REAL_BETWEEN_INTS],
+                         ids=["state", "between_ints"])
+def test_an_executable_that_computes_with_reals_writes_nothing(tmp_path, src):
+    """`init` and `update` are `noncomputable` whenever a `Real` is in the
+    module, read or printed or not: the refusal used to come after the
+    project (Real state), or not at all (a Real between two Ints), and
+    `lake build main` failed."""
+    path = tmp_path / "reals.py"
+    path.write_text(src)
+    out = tmp_path / "out"
+    assert "--executable: the module computes with `Real`" in _refused(
+        reactor(str(path), "-x", "-o", str(out)))
     assert not out.exists()
 
 

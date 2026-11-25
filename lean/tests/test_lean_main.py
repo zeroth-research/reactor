@@ -10,7 +10,8 @@ import torch
 import pytest
 
 from reactor import Term, Module, Int, Bool, Word, Real, Var, X, tensor
-from reactor_lean.project.main_lean import generate_main_lean
+from reactor_lean.errors import Refused
+from reactor_lean.project.main_lean import check_runnable, generate_main_lean
 from reactor_lean.codegen.context import LeanContext
 from reactor_lean.codegen.encodings import ModuleToLean4
 
@@ -165,15 +166,18 @@ def test_bitvec_extl_is_parsed_as_bitvec():
 
 
 def test_real_io_is_refused_with_a_reason():
-    """Lean's `Real` is noncomputable: no parsing, no printing, so say so."""
+    """Lean's `Real` is noncomputable: no parsing, no printing, and no
+    `init` or `update` to run, so say so -- before `Main.lean` is
+    generated, which `cli.main` asks first."""
     r = Var(Real([1, 1]))
     module = Module.sequential(
         [r],
         [Term(tensor.real.Const(torch.tensor([[0.0]])), [X(r)])],
         [Term(tensor.Skip(Real([1, 1])), [X(r)], [r])],
     )
-    with pytest.raises(ValueError, match="noncomputable"):
-        generate_main_lean(module)
+    with pytest.raises(Refused, match="noncomputable"):
+        check_runnable(LeanContext(module))
+    check_runnable(LeanContext(_heterogeneous_module()))
 
 
 def test_show_mat_is_generic_over_its_element():
