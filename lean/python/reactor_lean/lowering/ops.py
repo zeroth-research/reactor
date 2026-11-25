@@ -18,7 +18,9 @@ every column. A cell is either an emitter or one of
   because the argument strings are not enough (constants need the registry,
   `Argmax`, `Linear` and `Scale` need shapes and the baked tensors);
 * `Unsupported(...)` — no emitter, and the reason it is missing rather than
-  forgotten. That reason is what the caller is told.
+  forgotten. That reason is what the caller is told;
+* `OfOp(...)` — an emitter made for the op at hand, from the parameters
+  the op carries (`Extract`'s bits, a rotation's amount).
 
 A row's two columns are both emitters or both refusals, so that a module
 no encoding can write is refused before any is generated
@@ -33,7 +35,7 @@ and a row no theory backs fails it too.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Union
+from typing import Any, Callable, Union
 
 from ..errors import Refused
 from .sorts import itype_name, mat_mk, theory_of
@@ -79,8 +81,18 @@ class ViaMat:
     note: str
 
 
-MatCell = Union[Callable[[list[str]], str], Inline, Unsupported]
-ScalarCell = Union[Callable[[list[str]], str], ViaMat, Inline, Unsupported]
+@dataclass(frozen=True)
+class OfOp:
+    """An emitter that reads the op's own parameters besides the argument
+    strings -- a rotation's amount, the bits an `Extract` keeps: `make(op)`
+    is the emitter for the op at hand."""
+
+    make: Callable[[Any], Callable[[list[str]], str]]
+
+
+Emitter = Callable[[list[str]], str]
+MatCell = Union[Emitter, OfOp, Inline, Unsupported]
+ScalarCell = Union[Emitter, OfOp, ViaMat, Inline, Unsupported]
 
 
 
@@ -106,15 +118,18 @@ class Op:
     scalar: ScalarCell
 
 
-def _entrywise(scalar: Callable[[list[str]], str]) -> Callable[[list[str]], str]:
+def _entrywise(scalar: Emitter) -> Emitter:
     """The matrix form of an op that is its scalar form applied entry by
     entry, at any shape: `Matrix.mk fun i j => scalar (a i j) (b i j)`."""
     return lambda a: mat_mk(scalar([f"({x} i j)" for x in a]), "i", "j")
 
 
 def _pointwise(name: str, theories: tuple[str, ...],
-               scalar: Callable[[list[str]], str]) -> Op:
+               scalar: "Emitter | OfOp") -> Op:
     """The row of an op that is `scalar` entry by entry (`_entrywise`)."""
+    if isinstance(scalar, OfOp):
+        return Op(name, theories, scalar=scalar,
+                  mat=OfOp(lambda op: _entrywise(scalar.make(op))))
     return Op(name, theories, mat=_entrywise(scalar), scalar=scalar)
 
 
@@ -136,15 +151,6 @@ _ZERO = Unsupported(
     "the zero rate of change, of a `delay` block. No encoding here has "
     "continuous time."
 )
-
-
-def _word_with_no_lean_form(lean_form: str) -> Unsupported:
-    """A word op of the theory that no Lean backend emits, and why;
-    `codegen.context.lean_gaps` reports it up front."""
-    return Unsupported(
-        f"no Lean form. {lean_form} A module using it is refused at project "
-        "generation."
-    )
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -221,19 +227,8 @@ OPS: tuple[Op, ...] = (
         scalar=lambda a: f"({a[0]} ^^^ {a[1]})",
     ),
     *(
-        Op(
-            name,
-            WORD,
-            mat=_word_with_no_lean_form(
-                f"The matrix form would be `~~~(a {sym} b)`."
-            ),
-            scalar=_SEE_MAT,
-        )
-        for name, sym in (
-            ("Nand", "&&&"),
-            ("Nor", "|||"),
-            ("Xnor", "^^^"),
-        )
+        _pointwise(name, WORD, lambda a, sym=sym: f"(~~~({a[0]} {sym} {a[1]}))")
+        for name, sym in (("Nand", "&&&"), ("Nor", "|||"), ("Xnor", "^^^"))
     ),
     # ── arithmetic ────────────────────────────────────────────────────
     Op(
@@ -291,41 +286,22 @@ OPS: tuple[Op, ...] = (
     Op(
         "Abs",
         SIGNED,
-        mat=_word_with_no_lean_form(
-            "The matrix form would negate the entries below zero."
-        ),
+        mat=Unsupported("no Lean form; nothing has asked for one. It would "
+                        "negate the entries below zero."),
         scalar=_SEE_MAT,
     ),
-    Op(
-        "Div",
-        UNSIGNED,
-        mat=_word_with_no_lean_form(
-            "The matrix form would be `BitVec.udiv`."
-        ),
-        scalar=_SEE_MAT,
-    ),
-    Op(
-        "Div",
-        SIGNED,
-        mat=_word_with_no_lean_form(
-            "The matrix form would be `BitVec.sdiv`."
-        ),
-        scalar=_SEE_MAT,
-    ),
+    # SMT-LIB's division by zero, which reactor's is: `bvudiv` by zero is
+    # all ones, `bvsdiv` 1 or all ones by the dividend's sign. Lean's own
+    # `/` on `BitVec` gives 0; `smtUDiv` and `smtSDiv` are SMT-LIB's.
+    _pointwise("Div", UNSIGNED, lambda a: f"(BitVec.smtUDiv {a[0]} {a[1]})"),
+    _pointwise("Div", SIGNED, lambda a: f"(BitVec.smtSDiv {a[0]} {a[1]})"),
     Op(
         "Rem",
         UNSIGNED,
         mat=lambda a: mat_mk(f"BitVec.umod ({a[0]} i j) ({a[1]} i j)", "i", "j"),
         scalar=lambda a: f"(BitVec.umod {a[0]} {a[1]})",
     ),
-    Op(
-        "Rem",
-        SIGNED,
-        mat=_word_with_no_lean_form(
-            "The matrix form would be `BitVec.srem`."
-        ),
-        scalar=_SEE_MAT,
-    ),
+    _pointwise("Rem", SIGNED, lambda a: f"(BitVec.srem {a[0]} {a[1]})"),
     Op(
         "Mod",
         SIGNED,
@@ -350,19 +326,16 @@ OPS: tuple[Op, ...] = (
             ("Ne", lambda x, y: f"{x} ≠ {y}"),
         )
     ),
-    # Words compare unsigned and signed apart.
+    # Words compare unsigned and signed apart, by `BitVec`'s own orderings,
+    # which are `Bool`-valued: `ult`/`ule` and `slt`/`sle`, `Gt`/`Ge` with
+    # the operands swapped.
     *(
-        Op(
-            name,
-            theories,
-            mat=_word_with_no_lean_form(
-                "The matrix form would compare with `BitVec`'s own "
-                f"{order} ordering."
-            ),
-            scalar=_SEE_MAT,
-        )
-        for theories, order in ((UNSIGNED, "unsigned"), (SIGNED, "signed"))
-        for name in ("Lt", "Le", "Gt", "Ge")
+        _pointwise(name, theories,
+                   lambda a, rel=f"BitVec.{sign}{rel}", swap=swap:
+                   f"({rel} {a[1]} {a[0]})" if swap else f"({rel} {a[0]} {a[1]})")
+        for theories, sign in ((UNSIGNED, "u"), (SIGNED, "s"))
+        for name, rel, swap in (("Lt", "lt", False), ("Le", "le", False),
+                                ("Gt", "lt", True), ("Ge", "le", True))
     ),
     # ── reductions and matrix ops ─────────────────────────────────────
     # `Min`/`Max` are reductions -- one read wire of any shape, a 1×1
@@ -431,26 +404,27 @@ OPS: tuple[Op, ...] = (
                       "else _argmax_expr"),
     ),
     # ── shifts, rotations and resizing of words ───────────────────────
-    *(
-        Op(
-            name,
-            theories,
-            mat=_word_with_no_lean_form(f"The matrix form would be `{lean}`."),
-            scalar=_SEE_MAT,
-        )
-        for name, theories, lean in (
-            ("Shl", WORD, "a <<< b"),
-            ("Shr", UNSIGNED, "a >>> b"),
-            ("Shr", SIGNED, "BitVec.sshiftRight' a b"),
-            ("RotateLeft", WORD, "BitVec.rotateLeft a i"),
-            ("RotateRight", WORD, "BitVec.rotateRight a i"),
-            ("Repeat", WORD, "BitVec.replicate i a"),
-            ("Extract", WORD, "BitVec.extractLsb i j a"),
-            ("Extend", UNSIGNED, "BitVec.zeroExtend (w + i) a"),
-            ("Extend", SIGNED, "BitVec.signExtend (w + i) a"),
-            ("Concat", WORD, "a ++ b"),
-        )
-    ),
+    # A shift by a word shifts by its value, all of it shifted out from the
+    # width on, as SMT-LIB's; `sshiftRight'` fills with the sign bit. The
+    # rotations, `Repeat`, `Extract` and `Extend` carry their amounts, and
+    # a width that changes is the written wire's, which its `let` ascribes:
+    # `BitVec (2 - 1 + 1)` is `BitVec 2` by evaluation.
+    _pointwise("Shl", WORD, lambda a: f"({a[0]} <<< {a[1]})"),
+    _pointwise("Shr", UNSIGNED, lambda a: f"({a[0]} >>> {a[1]})"),
+    _pointwise("Shr", SIGNED, lambda a: f"(BitVec.sshiftRight' {a[0]} {a[1]})"),
+    _pointwise("RotateLeft", WORD,
+               OfOp(lambda op: lambda a: f"(BitVec.rotateLeft {a[0]} {op.i})")),
+    _pointwise("RotateRight", WORD,
+               OfOp(lambda op: lambda a: f"(BitVec.rotateRight {a[0]} {op.i})")),
+    _pointwise("Repeat", WORD,
+               OfOp(lambda op: lambda a: f"(BitVec.replicate {op.i} {a[0]})")),
+    _pointwise("Extract", WORD,
+               OfOp(lambda op: lambda a: f"(BitVec.extractLsb {op.i} {op.j} {a[0]})")),
+    _pointwise("Extend", UNSIGNED,
+               OfOp(lambda op: lambda a: f"(BitVec.setWidth {op.width + op.i} {a[0]})")),
+    _pointwise("Extend", SIGNED,
+               OfOp(lambda op: lambda a: f"(BitVec.signExtend {op.width + op.i} {a[0]})")),
+    _pointwise("Concat", WORD, lambda a: f"({a[0]} ++ {a[1]})"),
     # ── casts between the theories' sorts ─────────────────────────────
     *(
         Op(
@@ -544,7 +518,7 @@ def _lean_emitter(itype, row: Op, cell, column: str):
             f"No Lean expression mapping for: {itype_name(itype)} "
             f"({column}) — {_reason(row, cell)}"
         )
-    return cell
+    return cell.make(itype) if isinstance(cell, OfOp) else cell
 
 
 def mat_emitter(itype) -> Callable[[list[str]], str]:
@@ -563,4 +537,4 @@ def scalar_emitter(itype) -> "Callable[[list[str]], str] | None":
     cell = op_for(itype).scalar
     if isinstance(cell, (Unsupported, Inline, ViaMat)):
         return None
-    return cell
+    return cell.make(itype) if isinstance(cell, OfOp) else cell

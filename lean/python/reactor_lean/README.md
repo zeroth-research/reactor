@@ -165,9 +165,10 @@ A **`Wire`** carries a `Sort` (`Bool`, `Int`, `Real`, `BitVec`) and a shape,
 always 2-D here: `[1, 1]` = scalar, `[1, n]` = row vector, `[m, n]` = matrix.
 
 A **`Term`** is one SSA node: a single operation drawn from a theory
-namespace of `reactor.tensor` (`bool`, `int`, `real`, `word`, ...), reading from some wires (`term.read`) and
-writing one output wire (`term.write[0]`).  The term lists form a
-topologically-sorted dataflow graph.
+namespace of `reactor.tensor` (`bool`, `int`, `real`, `word`, ...),
+reading from some wires (`term.read`) and writing one output wire
+(`term.write[0]`).  The term lists form a topologically-sorted dataflow
+graph.
 
 ---
 

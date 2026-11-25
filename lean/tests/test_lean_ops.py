@@ -30,6 +30,7 @@ from testdata import all_encodings
 from reactor_lean.lowering.ops import (
     OPS,
     Inline,
+    OfOp,
     Op,
     Unsupported,
     ViaMat,
@@ -129,6 +130,8 @@ def test_every_cell_is_an_emitter_or_says_why(column):
             assert cell.site.strip(), f"{op.name}.{column}: empty site"
         elif isinstance(cell, ViaMat):
             assert cell.note.strip(), f"{op.name}.{column}: empty note"
+        elif isinstance(cell, OfOp):
+            assert callable(cell.make), f"{op.name}.{column}: not an emitter"
         else:
             assert callable(cell), f"{op.name}.{column}: not an emitter"
 
@@ -166,19 +169,9 @@ _KNOWN_GAPS = {
     # Nondeterministic choice, and the zero rate of change: every encoding
     # here is a function of the read wires, in discrete time.
     *(("", name, column) for name in ("Havoc", "Zero") for column in COLUMNS),
-    # `Xor` has no Lean emitter.
+    # `Xor` has no Lean emitter, nor has a signed word's `Abs`.
     *(("bool", "Xor", c) for c in COLUMNS),
-    # Words with no Lean form.
-    *(("word", name, c)
-      for name in ("Concat", "Extract", "Nand", "Nor", "Repeat", "RotateLeft",
-                   "RotateRight", "Shl", "Xnor")
-      for c in COLUMNS),
-    *(("word.signed", name, c)
-      for name in ("Abs", "Div", "Extend", "Ge", "Gt", "Le", "Lt", "Rem", "Shr")
-      for c in COLUMNS),
-    *(("word.unsigned", name, c)
-      for name in ("Div", "Extend", "Ge", "Gt", "Le", "Lt", "Shr")
-      for c in COLUMNS),
+    *(("word.signed", "Abs", c) for c in COLUMNS),
 }
 
 
@@ -203,31 +196,23 @@ def test_the_coverage_gaps_are_the_known_ones():
 # ══════════════════════════════════════════════════════════════════════
 
 
-def _word_ult_module() -> Module:
-    """Two variables, one an unsigned comparison of words, which Lean has
-    not."""
+def _word_abs_module() -> Module:
+    """A signed word's `Abs`, which has no Lean form."""
     s = Var(Word(8, S))
-    flag = Var(Bool(S))
-    init = [
-        Term(tensor.word.Const(torch.tensor([[3]]), 8), [X(s)]),
-        Term(tensor.bool.Const(torch.tensor([[False]])), [X(flag)]),
-    ]
-    update = [
-        Term(Skip(Word(8, S)), [X(s)], [s]),
-        Term(tensor.word.unsigned.Lt(8, S), [X(flag)], [s, s]),
-    ]
-    return Module.sequential([s, flag], init, update)
+    init = [Term(tensor.word.Const(torch.tensor([[3]]), 8), [X(s)])]
+    update = [Term(tensor.word.signed.Abs(8, S), [X(s)], [s])]
+    return Module.sequential([s], init, update)
 
 
 @pytest.mark.parametrize("encoding", ["to_lean_functional", "to_lean_scalar"])
 def test_a_missing_lean_form_is_refused_with_the_recorded_reason(encoding):
     """The cell says whether the op was forgotten, is unimplementable, or is
     handled somewhere else, and that reason is what reaches the caller."""
-    m2l = ModuleToLean4(LeanContext(_word_ult_module()))
+    m2l = ModuleToLean4(LeanContext(_word_abs_module()))
     with pytest.raises(ValueError) as excinfo:
         getattr(m2l, encoding)()
     message = str(excinfo.value)
-    assert message.startswith("No Lean expression mapping for: Lt")
+    assert message.startswith("No Lean expression mapping for: Abs")
     assert "no Lean form" in message
 
 
@@ -295,9 +280,14 @@ def test_a_gap_is_a_row_with_no_matrix_form():
     assert ops.gap_of(_cells(ops.Inline("codegen.terms._special"), see_mat)) is None
 
 
-def test_ops_of_two_theories_that_share_a_name_are_two_gaps():
+def test_ops_of_two_theories_that_share_a_name_are_two_gaps(monkeypatch):
     """Keyed by name alone, `word.signed.Div` was not reported beside
-    `word.unsigned.Div`, and was refused on the next run instead."""
+    `word.unsigned.Div`, and was refused on the next run instead. Both
+    have a Lean form now, so here they are made gaps again."""
+    for theory, lean in (("word.unsigned", "BitVec.udiv"), ("word.signed", "BitVec.sdiv")):
+        monkeypatch.setitem(ops._BY_KEY, (theory, "Div"), ops.Op(
+            "Div", (theory,), mat=Unsupported(f"no Lean form; not {lean}"),
+            scalar=Unsupported("see the matrix column")))
     s, d = Var(Word(8, S)), Var(Word(8, S))
     init = [
         Term(tensor.word.Const(torch.tensor([[7]]), 8), [X(s)]),
@@ -568,6 +558,46 @@ def test_linear_with_a_bias_that_differs_across_columns_has_no_lean_form():
     with pytest.raises(Refused, match="`int.Linear`, and its bias .* differs"):
         lean_context(Module.sequential([x], init, update))
 
+
+
+# ──────────────────────────────────────────────────────────────
+# The word ops the circuit encoding stood in for are `BitVec`'s
+# ──────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("op, args, scalar", [
+    (tensor.word.Nand(4, S), ["a", "b"], "(~~~(a &&& b))"),
+    (tensor.word.unsigned.Div(4, S), ["a", "b"], "(BitVec.smtUDiv a b)"),
+    (tensor.word.signed.Div(4, S), ["a", "b"], "(BitVec.smtSDiv a b)"),
+    (tensor.word.signed.Rem(4, S), ["a", "b"], "(BitVec.srem a b)"),
+    (tensor.word.unsigned.Le(4, S), ["a", "b"], "(BitVec.ule a b)"),
+    (tensor.word.signed.Gt(4, S), ["a", "b"], "(BitVec.slt b a)"),
+    (tensor.word.signed.Shr(4, S), ["a", "b"], "(BitVec.sshiftRight' a b)"),
+    (tensor.word.RotateRight(3, 4, S), ["a"], "(BitVec.rotateRight a 3)"),
+    (tensor.word.Extract(2, 1, 4, S), ["a"], "(BitVec.extractLsb 2 1 a)"),
+    (tensor.word.unsigned.Extend(2, 4, S), ["a"], "(BitVec.setWidth 6 a)"),
+    (tensor.word.signed.Extend(4, 4, S), ["a"], "(BitVec.signExtend 8 a)"),
+    (tensor.word.Repeat(2, 4, S), ["a"], "(BitVec.replicate 2 a)"),
+    (tensor.word.Concat([4, 2], S), ["a", "b"], "(a ++ b)"),
+])
+def test_a_word_op_is_bitvecs_own_entry_by_entry(op, args, scalar):
+    """Bare on a scalar; on a matrix, the same entry by entry. A rotation,
+    `Extract`, `Extend` and `Repeat` print the amounts the op carries."""
+    assert scalar_emitter(op)(args) == scalar
+    entries = [f"({a} i j)" for a in args]
+    assert mat_emitter(op)(args) == f"(Matrix.mk fun i j => {scalar_emitter(op)(entries)})"
+
+
+def test_a_module_of_every_word_op_has_every_encoding():
+    from reactor_lean.parse import load
+    from testdata import MODS
+
+    module = load(MODS / "m_word_ops.py").module
+    assert lean_gaps(LeanContext(module)) == []
+    lean = all_encodings(module)
+    for form in ("BitVec.smtUDiv", "BitVec.extractLsb 5 0", "BitVec.ult",
+                 "BitVec.sle", "BitVec.rotateLeft", "++"):
+        assert form in lean, form
 
 
 # ──────────────────────────────────────────────────────────────

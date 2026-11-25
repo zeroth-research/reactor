@@ -19,7 +19,8 @@ from reactor_lean.project.names import LINTERS_OFF, Layout
 from reactor_lean.project.scaffold import ENCODINGS, write_encoding
 from reactor_lean.codegen.encodings.scalar import _argmax_scalar_def_lines
 from lake import lake_build
-from testdata import LAKE_PROJECT, fixture
+from reactor_lean.parse import load
+from testdata import LAKE_PROJECT, MODS, fixture
 
 _CERTS_DIR = LAKE_PROJECT / "Certs"
 
@@ -32,6 +33,12 @@ _CERTS_DIR = LAKE_PROJECT / "Certs"
 
 _make_countdown = partial(fixture, "svcomp_countdown")
 _make_twovars = partial(fixture, "svcomp_twovars")
+
+
+def _make_word_ops() -> Module:
+    """`limits/mods/m_word_ops.py`: every word op that the circuit encoding
+    once stood in for, at 1×1 and entry by entry."""
+    return load(MODS / "m_word_ops.py").module
 
 
 def _make_counter() -> Module:
@@ -258,7 +265,8 @@ def _make_three_wires() -> Module:
 
 # Widths that exercise the scalar encoding's flattening: all-1x1, then
 # multi-element state, up to the 32 that stresses the index enumeration;
-# then the ops whose 1×1 result is made of more than 1×1 operands, and `Abs`.
+# then the ops whose 1×1 result is made of more than 1×1 operands, `Abs`,
+# and the word ops.
 _SCALAR_ENC_SPECS = [
     ("Scalar", _make_countdown),
     ("Vec6", lambda: _make_countdown_vec(6)),
@@ -269,6 +277,7 @@ _SCALAR_ENC_SPECS = [
     ("Argmax2x2", lambda: _make_argmax(2, 2)),
     ("Argmax1x12", lambda: _make_argmax(1, 12)),
     ("Abs", _make_abs),
+    ("WordOps", _make_word_ops),
 ]
 
 
