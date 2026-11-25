@@ -175,10 +175,12 @@ respectively.
         input colours reach this boundary. In contrast, our guard holds for
         every colour that satisfies~$\varphi_T$, which matches the predicate
         transitions of Petrinaut, which fire in every simulation step in which
-        their predicate holds. Under a discretized clock, the boundary
-        semantics would be fragile: a colour may jump over the boundary
-        between two clock ticks, for example, from~$4$ to~$6$ over the
-        boundary~$5$, and the transition would never fire.}
+        their predicate holds. Under a clock with steps of a fixed size, as
+        in Petrinaut, the boundary semantics would be fragile: a colour may
+        jump over the boundary between two steps, for example, from~$4$
+        to~$6$ over the boundary~$5$, and the transition would never fire.
+        Our ticks avoid this by admissible durations, see
+        Definition~\ref{def:tick}.}
 
     \item $\mathcal{D} = \emptyset$, since there are no delay transitions.
 
@@ -342,10 +344,38 @@ in~$c$, and call $\Phi_P$ the \emph{flow} of~$P$:
 In both cases, if $\mathcal{V}_P$ is constant, then
 $\Phi_P(c, \Delta_t) = c + \Delta_t \cdot \mathcal{V}_P$.
 
+\paragraph{Admissible durations.}
+Since colours change during a tick, a transition may become enabled in the
+middle of a tick. A tick must not go beyond this moment. Otherwise, the
+transition fires late, or never, if its guard holds only for a short time.
+For example, a colour that moves from~$4$ to~$6$ in one tick skips the guard
+$c = 5$. For a binding $\cvec = (c_1, \dots, c_m)$ of a transition~$T$ in a
+marking~$\bfm$ and $s \in \Dom$, we write
+$\cvec(s) = (\Phi_{P(A_1)}(c_1, s), \dots, \Phi_{P(A_m)}(c_m, s))$ for the
+colours of the same tokens after $s$ time units. A duration $\Delta_t \in \Dom$
+with $\Delta_t > 0$ is \emph{admissible} for~$\bfm$ if, for every
+binding~$\cvec$ of a transition~$T$ in~$\bfm$ and every $s \in \Dom$ with
+$0 < s < \Delta_t$, the binding $\cvec(s)$ enables~$T$ only if $\cvec$
+enables~$T$. That is, no binding becomes enabled strictly inside the tick. A
+binding may become enabled exactly at the end of the tick, and then it fires
+in the next round.
+
+The largest admissible duration is the time until the next binding becomes
+enabled, that is, the first time at which a solution of the differential
+equations satisfies a guard. In general, this time has no closed form. We do
+not fix how to compute it. Instead, we assume an \emph{oracle} that decides,
+for a marking~$\bfm$ and a duration~$\Delta_t$, whether $\Delta_t$ is
+admissible for~$\bfm$. If no duration is admissible, then time stops. This
+happens, for example, if a colour starts on the boundary of a strict guard
+$c > 5$ and moves into it. Petrinaut has no such oracle: it advances time in
+steps of a fixed size and evaluates the guards after every step, so it may
+skip an enabling.
+
 \begin{definition}[Clock tick]\label{def:tick}
   For markings $\bfm$ and~$\bfm'$ and a duration $\Delta_t \in \Dom$ with $\Delta_t > 0$,
   we write $\bfm \tickto{\Delta_t} \bfm'$ iff $\Phi_P(c, \Delta_t)$ is defined for every
-  token $(P, c) \in \bfm$, and
+  token $(P, c) \in \bfm$, the duration~$\Delta_t$ is admissible
+  for~$\bfm$, and
   \[
     \bfm' = \mset{(P, \Phi_P(c, \Delta_t)) \mid (P, c) \in \bfm},
   \]
@@ -913,8 +943,9 @@ fixed, rather than reachability of a specific marking.
 \end{theorem}
 
 \begin{proof}
-  Since $\mathcal{V}_P(c) = \bar{0}$ for every place~$P$, a tick of every
-  duration~$\Delta_t > 0$ is possible and leaves the marking unchanged. Since every
+  Since $\mathcal{V}_P(c) = \bar{0}$ for every place~$P$, no colour changes
+  during a tick. Hence, every duration~$\Delta_t > 0$ is admissible, and a
+  tick of this duration leaves the marking unchanged. Since every
   marking has a successor round, every finite sequence of rounds extends to
   an execution. Hence, $P_{\mathit{Err}}$ is coverable from~$\mathcal{I}_n$
   iff there are rounds $\bfm_0 \Rightarrow \bfm_1 \Rightarrow \dots
@@ -1775,9 +1806,11 @@ small model theorem relies. All gadgets below are local.
   Remark~\ref{rem:approx}, which are exact for constant rates. Since no
   tick passes the expiry of a clock, time stops exactly when the colour
   reaches the first facet, and $T$ fires in this round. Hence, the gadget is
-  exact in both readings. In particular, it resolves the problem of the
-  footnote on guards in Definition~\ref{def:dcpn0}, where a colour jumps over
-  the boundary between two ticks. Tokens that enter~$P$ outside the closure
+  exact in both readings. In particular, the gadget replaces the oracle of
+  Definition~\ref{def:tick} for~$T$ with a computable one: $T$ is next
+  enabled when the first clock expires, that is, after
+  $\min_i c_{l_i} / (a_i \cdot v)$ time units. Tokens that enter~$P$ outside
+  the closure
   of~$O_T$ can be sent to a copy of~$P$ by splitting the producing
   transitions with guards on the produced colours.
 
@@ -1819,8 +1852,10 @@ small model theorem relies. All gadgets below are local.
 Table~\ref{tab:gadgets} summarizes the gadgets. Together with the native
 enabling and inhibitor arcs of \DCPN{2}, they express DCPNs whose delay
 transitions either have a single ordinary input arc, or have a constant rate,
-whose guard transitions have polyhedral boundaries and input colours with
-constant rates, and whose firing measures have definable supports.
+whose guard transitions have polyhedral boundaries, and whose firing measures
+have definable supports. If the input colours of such a guard transition have
+constant rates, then Gadget~\ref{gad:hitting} also replaces the oracle of
+Definition~\ref{def:tick} with a computable one.
 
 \begin{table}[t]
   \centering
@@ -1857,10 +1892,13 @@ The following features are not expressed by the gadgets:
   \item delay transitions with several input arcs whose rates depend on the
     colours of the input tokens, since their delay belongs to a combination
     of tokens;
-  \item guards with boundaries when the colours do not change at constant
-    rates, or when the boundaries are not polyhedral, since the hitting
-    times are then not affine, and only predicate guards checked after every
-    tick are available;
+  \item guards with boundaries that are not polyhedral, since guards are
+    formulas of linear arithmetic. A polyhedral boundary can be expressed
+    directly by the guard $\bigvee_i a_i \cdot c \ge b_i$, since admissible
+    ticks stop when the colour reaches the boundary. However, if the colours
+    do not change at constant rates, then this relies on the oracle of
+    Definition~\ref{def:tick}, which has to compute hitting times that are
+    not affine;
   \item cascades of immediate transitions that happen at the same time, since
     every stage of a cascade costs a round, see the remark at the end of the
     execution semantics of \DCPN{0};
