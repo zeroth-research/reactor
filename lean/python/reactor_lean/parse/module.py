@@ -15,10 +15,11 @@ from typing import Any
 
 from reactor import Module
 
+from ..errors import Refused
 from .names import Names
 
 
-class InputError(Exception):
+class InputError(Refused):
     """The input is not a module reactor can read; the message says why."""
 
 

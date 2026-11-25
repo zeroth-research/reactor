@@ -31,6 +31,8 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from ..errors import Refused
+
 _INTERNAL = re.compile(r"(s|e|el)(\d+)?")
 _POSITIONAL = re.compile(r"@(intf|extl)\.(\d+)")
 _KINDS = {"intf": "ctrl", "extl": "extl"}
@@ -39,7 +41,7 @@ _FORBIDDEN = re.compile(r"[\s()|\";]")
 _SIMPLE_SYMBOL = re.compile(r"[A-Za-z~!$%^&*_+=<>.?/-][A-Za-z0-9~!@$%^&*_+=<>.?/-]*")
 
 
-class ClaimError(ValueError):
+class ClaimError(Refused):
     """A claim that names something the module does not have."""
 
 

@@ -1,10 +1,12 @@
 """`uv run reactor`: a reactive module in, a Lean 4 certificate project out.
 
 `main` runs the stages in order: `parse_args` reads the command line
-(`args`); `load` reads the module, and `claim_from_flags` what is to be
-proved of it; `codegen.context.lean_context` checks that the module has a
-Lean form, and `proof.render.lean_certificate` renders the certificate;
-`generate` writes the project, or `standalone` the one file asked for.
+(`args`); `parse.load` reads the module, and `claim_from_flags` what is
+to be proved of it; `codegen.context.lean_context` checks that the module
+has a Lean form, and `proof.render.lean_certificate` renders the
+certificate; `generate` writes the project, or `standalone` the one file
+asked for. Each stage refuses what it cannot carry out (`Refused`), and
+`main` prints that as one `error:` line.
 
 The certificate states its obligations and proves each by `sorry`: the
 proofs are a prover's to write, into `Certificate/Proofs.lean`, which
@@ -91,22 +93,19 @@ __all__ = ["Settings", "main", "parse_args"]
 
 def main():
     settings = parse_args()
-
-    # `$REACTLIB` is a checkout the project's lakefile will require, and
-    # `$REACTOR_LAKE_CACHE` the packages it will build against, so a bad
-    # one is refused here, before any of the project is written.
-    if not settings.cert_file:
-        try:
+    # What the module file's own code raises is not a refusal, and keeps
+    # its traceback.
+    try:
+        # `$REACTLIB` is a checkout the project's lakefile will require, and
+        # `$REACTOR_LAKE_CACHE` the packages it will build against, so a bad
+        # one is refused here, before any of the project is written.
+        if not settings.cert_file:
             reactlib_checkout()
             lake_cache()
-        except Refused as e:
-            raise SystemExit(f"error: {e}") from e
-
-    problem = load(settings)
-    module = problem.module
-    print(module)
-    claim, given = claim_from_flags(settings, problem.names)
-    try:
+        problem = parse.load(settings.module_file, settings.module_def)
+        module = problem.module
+        print(module)
+        claim, given = claim_from_flags(settings, problem.names)
         ctx = lean_context(module)
         lean_cert = lean_certificate(module, claim, given)
     except Refused as e:
@@ -121,25 +120,8 @@ def main():
 
 
 # ══════════════════════════════════════════════════════════════════════
-# What the run is about: the module, and the claim the flags ask
+# What is to be proved of the module
 # ══════════════════════════════════════════════════════════════════════
-
-
-def load(settings: Settings) -> "parse.Problem":
-    """The module the run is about, and the input it was read from.
-
-    The loader refuses a path that is not there or cannot be read, a file
-    that is not a module and a `-d` the file does not define, all as
-    `InputError`. All of them are the user's input, so they are reported
-    rather than raised. What the module file's own code raises is not a
-    refusal, and keeps its traceback: an `AttributeError` from a typo in
-    `module()` reads, as one `error:` line, exactly like "must define
-    `module`", and an `OSError` from a file it opens like a missing input.
-    """
-    try:
-        return parse.load(settings.module_file, settings.module_def)
-    except (parse.ClaimError, parse.InputError) as e:
-        raise SystemExit(f"error: {e}") from e
 
 
 def claim_from_flags(
@@ -160,10 +142,7 @@ def claim_from_flags(
     def internal(text: "str | None", flag: str) -> "str | None":
         if not text:
             return None
-        try:
-            spelled = parse.to_internal(text, names, flag)
-        except parse.ClaimError as e:
-            raise SystemExit(f"error: {e}") from e
+        spelled = parse.to_internal(text, names, flag)
         print(f".. {flag}, in internal names: {spelled}")
         return spelled
 
