@@ -5,10 +5,10 @@ multi-step execution of hand-built modules.
 """
 import pytest
 import torch
-from reactor import Wire, Term, Module, Bool, Real, T, Int, Word, Var, X
+from reactor import Wire, Term, Module, T, Var, X, Zero
+from reactor.tensor.sort import Bool, Real, Int, Word
 from reactor import tensor
 from reactor.tensor import Skip, Havoc
-from reactor.tensor.zero import Zero
 from reactor.eval import eval_itype, execute_init, execute_update
 
 

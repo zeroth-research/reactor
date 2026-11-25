@@ -1,6 +1,7 @@
 import pytest
 import gymnasium as gym
-from reactor import Module, Wire, Term, Real, Var, X
+from reactor import Module, Wire, Term, Var, X
+from reactor.tensor.sort import Real
 from reactor.tensor import Havoc
 from gymnasium import spaces
 

@@ -7,12 +7,12 @@ their width, whose operations follow SMT-LIB2, as those of `reactor.eval` do.
 
 import z3 as _z3
 import torch
-from ..reactor.tensor import Havoc, Skip
-from ..sort import Real, Int, Bool, Word
+from ..tensor import Havoc, Skip
+from ..tensor.sort import Real, Int, Bool, Word
 import numpy as _np
 import operator
 
-from ..reactor import tensor
+from ..reactor import tensor, Zero
 
 
 def fresh(dtype, prefix):
@@ -66,7 +66,7 @@ def interpret(itype):
             return lambda x: x
         case Havoc(dtype):
             return lambda: fresh(dtype, "HAVOC")
-        case tensor.zero.Zero():
+        case Zero():
             # the singleton sort is the rate of change of discrete values, which are
             # never integrated: nothing encodes it
             raise RuntimeError("Zero writes the singleton sort, which is never encoded")

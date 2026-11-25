@@ -48,6 +48,7 @@ their theories: [`super::real`], [`super::int`], [`super::bool`] and
 [`super::word`].
 */
 
+use crate::sort::Zero;
 use base::differentiable::Differentiable;
 use derive_more::From;
 use std::fmt;
@@ -351,45 +352,6 @@ impl fmt::Display for Word {
 /// Words are discrete, so their tangent is trivial: the singleton sort
 /// [`Zero`].
 impl Differentiable for Word {
-    type Tangent = Zero;
-
-    fn tangent(self) -> Zero {
-        Zero
-    }
-}
-
-/// The singleton sort, with exactly one value: the trivial tangent of
-/// discrete sorts. Its own tangent is itself.
-#[derive(Clone, Copy, PartialEq, Debug, Eq, Default)]
-#[cfg_attr(
-    feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.sort")
-)]
-pub struct Zero;
-
-#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
-impl Zero {
-    #[cfg_attr(feature = "pyo3", new)]
-    pub fn new() -> Self {
-        Zero
-    }
-
-    /// The tangent sort `T(self)`: the sort of the rate of change of its
-    /// values.
-    #[cfg(feature = "pyo3")]
-    #[pyo3(name = "tangent")]
-    fn tangent(&self) -> Zero {
-        Differentiable::tangent(self)
-    }
-}
-
-impl fmt::Display for Zero {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Zero()")
-    }
-}
-
-impl Differentiable for Zero {
     type Tangent = Zero;
 
     fn tangent(self) -> Zero {

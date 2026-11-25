@@ -217,9 +217,9 @@ mod any {
 
     #[test]
     fn zero_writes_the_singleton_sort() {
-        let op = Any::Zero(Zero);
+        let op = Any::Zero(theory::zero::Zero);
         assert_eq!(op.dom(), Poly::unit());
-        let cod: Poly<sort::Any> = base::mono![sort::Zero.into()].into();
+        let cod: Poly<sort::Any> = base::mono![theory::sort::Zero.into()].into();
         assert_eq!(op.cod(), cod);
     }
 
@@ -234,7 +234,10 @@ mod any {
         assert_eq!(op.dom(), Poly::unit());
         assert_eq!(op.cod(), base::mono![rate].into());
         // the rate of change of a discrete value: the singleton
-        assert!(matches!(Any::zero(&sort::Zero.into()), Any::Zero(Zero)));
+        assert!(matches!(
+            Any::zero(&theory::sort::Zero.into()),
+            Any::Zero(theory::zero::Zero)
+        ));
     }
 
     #[test]
@@ -1025,6 +1028,7 @@ mod real {
 /// Tests for `tensor::sort`.
 mod sort {
     use base::differentiable::T;
+    use theory::sort::Zero;
     use theory::tensor::sort::*;
 
     #[test]

@@ -7,7 +7,9 @@ word ops, no-implicit-promotion (+ `cast`), the `collecting()` term collector, a
 import torch
 import pytest
 
-from reactor import Wire, Bool, Int, Real, T, Word, Var, X as _X, TheoryError
+import reactor
+from reactor import Wire, T, Var, TheoryError
+from reactor.tensor.sort import Bool, Int, Real, Word
 from reactor import tensor
 from reactor.eval import eval_itype
 from reactor.expr import expr, cast, ite, collecting, IExpr, RExpr, BExpr, SExpr, UExpr, X
@@ -136,7 +138,7 @@ def test_variable_reads_latched_and_nxt():
     pair = _var(INT)
     x = expr(pair)
     assert x.wire is pair
-    assert X(x).wire == _X(pair)
+    assert X(x).wire == reactor.X(pair)
 
 
 def test_nxt_requires_a_variable():

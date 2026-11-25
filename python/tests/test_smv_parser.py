@@ -3,7 +3,8 @@
 from pathlib import Path
 import pytest
 
-from reactor import Wire, Module, parse_smv, Word, Bool, Var, X
+from reactor import Wire, Module, parse_smv, Var, X
+from reactor.tensor.sort import Word, Bool
 from reactor import tensor
 from reactor.tensor import Skip
 from reactor.eval import eval_itype

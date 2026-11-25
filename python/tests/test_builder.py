@@ -3,7 +3,8 @@
 import pytest
 import torch
 
-from reactor import Real, T, Int, Wire, TheoryError, tensor
+from reactor import T, Wire, TheoryError, tensor
+from reactor.tensor.sort import Real, Int
 from reactor.builder import builder_for, RealTermBuilder
 from reactor.eval import eval_itype
 

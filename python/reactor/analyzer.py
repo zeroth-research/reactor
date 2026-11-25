@@ -18,8 +18,8 @@ from enum import Enum, auto
 from typing import Any, Dict, List, Set, Tuple, Union, Callable
 
 from .reactor import Wire, Term, Var, X
-from .reactor.tensor import Havoc
-from .sort import Bool, Real, Int, Word
+from .tensor import Havoc
+from .tensor.sort import Bool, Real, Int, Word
 from .builder import TermBuilder, builder_for
 
 

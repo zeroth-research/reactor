@@ -1,6 +1,7 @@
 import pytest
 import torch
-from reactor import Wire, Term, Atom, Module, Bool, Int, Real, T, Var, X, d
+from reactor import Wire, Term, Atom, Module, T, Var, X, d
+from reactor.tensor.sort import Bool, Int, Real
 from reactor import tensor
 from reactor.tensor import Skip
 

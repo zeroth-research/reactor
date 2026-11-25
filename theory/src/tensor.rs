@@ -37,15 +37,14 @@ pub mod int;
 pub mod real;
 pub mod sort;
 pub mod word;
-pub mod zero;
 
+use crate::zero;
 use base::boundary::{Boundary, Poly};
 use derive_more::From;
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 use std::fmt;
 use subenum::subenum;
-pub use zero::Zero;
 
 /// A matrix of values, as held by the operations that carry data: the
 /// constants, and the coefficients of `Affine`. The operations are generic
@@ -58,7 +57,7 @@ pub trait Tensor {
 /// The operations of all theories: a value of `Any` is an operation of one
 /// of them, on the sorts in [`sort::Any`], with its data held in tensors of
 /// type `T`; or one of the structural operations [`Havoc`], [`Skip`] and
-/// [`Zero`], which belong to no theory and so to no logic.
+/// [`Zero`](crate::zero::Zero), which belong to no theory and so to no logic.
 ///
 /// `subenum` defines the logics that take whole theories: [`Prop`],
 /// propositional logic; [`NRA`] and [`NIA`], non-linear real and integer
@@ -84,7 +83,7 @@ pub enum Any<T> {
     Word(word::BV<T>),
     Havoc(Havoc),
     Skip(Skip),
-    Zero(Zero),
+    Zero(zero::Zero),
 }
 
 /// Linear real arithmetic: the linear operations of [`real`], with the
@@ -363,7 +362,7 @@ impl<T> crate::Differential<sort::Any> for Any<T> {
                     .expect("the zero of a real writes it")
                     .into(),
             ),
-            sort::Any::Zero(_) => Any::Zero(Zero),
+            sort::Any::Zero(_) => Any::Zero(zero::Zero),
             _ => panic!("only the tangent sorts, reals and Zero, have a zero: {range}"),
         }
     }
@@ -540,7 +539,7 @@ where
         if let Ok(op) = ob.extract::<Skip>() {
             return Ok(Any::Skip(op));
         }
-        if let Ok(op) = ob.extract::<Zero>() {
+        if let Ok(op) = ob.extract::<zero::Zero>() {
             return Ok(Any::Zero(op));
         }
         Err(pyo3::exceptions::PyTypeError::new_err(format!(

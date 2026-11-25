@@ -44,7 +44,7 @@ use subenum::subenum;
 
 /// The sorts of the theory, as in the signature of SMT-LIB2's `Reals`:
 /// real matrices, and the booleans of the Core theory, which comparisons
-/// write, together with [`Zero`](crate::tensor::sort::Zero). It is the subset
+/// write, together with [`Zero`](crate::sort::Zero). It is the subset
 /// [`tensor::sort::Reals`](crate::tensor::sort::Reals) of the sorts of all theories.
 pub use super::sort::Reals as Sort;
 

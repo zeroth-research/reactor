@@ -57,7 +57,7 @@ use std::fmt;
 
 /// The sorts of the theory, as in the signature of SMT-LIB2's
 /// FixedSizeBitVectors: words, and the booleans of the Core theory, which
-/// comparisons write, together with [`Zero`](crate::tensor::sort::Zero), the tangent of both. It is
+/// comparisons write, together with [`Zero`](crate::sort::Zero), the tangent of both. It is
 /// the subset [`tensor::sort::Words`](crate::tensor::sort::Words) of the sorts of all
 /// theories.
 pub use super::sort::Words as Sort;

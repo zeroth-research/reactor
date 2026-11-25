@@ -1,6 +1,8 @@
+pub mod sort;
 pub mod tensor;
 #[cfg(feature = "torch")]
 pub mod torch;
+pub mod zero;
 
 pub use tensor::Tensor;
 

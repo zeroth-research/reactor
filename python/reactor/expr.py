@@ -47,10 +47,11 @@ from typing import override
 
 import torch
 
-from .reactor import Term, Wire, Var, X as _X, d as _d
-from .reactor import tensor
-from .sort import Real, Int, Bool, Word, Zero
-from .sort import shape as _shape, family as _family
+from . import reactor
+from .reactor import Term, Wire, Var
+from .reactor import tensor, Zero
+from .sort import ZeroSort
+from .tensor.sort import Real, Int, Bool, Word
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +60,21 @@ from .sort import shape as _shape, family as _family
 # ---------------------------------------------------------------------------
 
 _open_collectors: list[list[Term]] = []
+
+def _family(sort) -> str:
+    """A key identifying a sort's family (with its width, for words), ignoring its shape:
+    two values may combine only if their families match."""
+    match sort:
+        case Real():
+            return "Real"
+        case Int():
+            return "Int"
+        case Bool():
+            return "Bool"
+        case Word(w):
+            return f"Word{w}"
+    raise TypeError(f"unknown sort: {sort}")
+
 
 
 class collecting:
@@ -98,7 +114,7 @@ def _wrap(wire, *, next=None, value=None, signed=False, tag=None) -> "Expr":
             return SExpr(wire, next=next, value=value, tag=tag)
         case Word() if not signed:
             return UExpr(wire, next=next, value=value, tag=tag)
-        case Zero():
+        case ZeroSort():
             # the singleton: a value with no operations, only ever written as is
             return Expr(wire, next=next, value=value, tag=tag)
     raise TypeError(f"no Expr class for sort {wire.dtype}")
@@ -129,13 +145,13 @@ class Expr:
         return self._wire
 
     @property
-    def dtype(self) -> Real | Int | Bool | Word | Zero:
+    def dtype(self) -> Real | Int | Bool | Word | ZeroSort:
         return self._wire.dtype
 
     @property
     def shape(self) -> list:
         """The ``[rows, cols]`` matrix shape of this expression's wire sort (always 2-D)."""
-        return _shape(self._wire.dtype)
+        return self._wire.dtype.shape
 
     @property
     def tag(self):
@@ -613,14 +629,14 @@ def _const(value, sort, *, signed, tag=None) -> Expr:
         raise TypeError("expr(): a numeric literal needs an explicit sort= ")
 
     # the singleton sort, the rate of change of discrete values: its only value is
-    # written by the operation `tensor.zero.Zero()`, given as is, unambiguously, and no literal
-    if sort is Zero or isinstance(sort, Zero):
-        if not isinstance(value, tensor.zero.Zero):
+    # written by the operation `Zero()`, given as is, unambiguously, and no literal
+    if sort is ZeroSort or isinstance(sort, ZeroSort):
+        if not isinstance(value, Zero):
             raise TypeError(
                 f"expr(): the rate of change of discrete values, of the sort Zero, is "
-                f"written `Zero`, got {value!r}"
+                f"written `Zero()`, got {value!r}"
             )
-        term = Term.constant(tensor.zero.Zero(), [Wire(Zero())])
+        term = Term.constant(Zero(), [Wire(ZeroSort())])
         _emit(term)
         return _wrap(term.write[0], value=value, tag=tag)
 
@@ -648,7 +664,7 @@ def _resolve_sort(sort, shape) -> Real | Int | Bool | Word:
         raise TypeError("a word needs a width: pass sort=Word(width, [...])")
     if sort in (Bool, Int, Real):
         return sort(shape)
-    if _shape(sort) != shape:
+    if sort.shape != shape:
         raise TypeError(f"the sort {sort} is not of the shape {shape}")
     return sort
 
@@ -670,14 +686,14 @@ def cast(e: Expr, sort) -> Expr:
 def X(v: Expr) -> Expr:
     """The `next` wire of a variable expr."""
     if isinstance(v, Expr):
-        return _wrap(_X(v._wire), signed=isinstance(v, SExpr))
+        return _wrap(reactor.X(v._wire), signed=isinstance(v, SExpr))
     else:
         raise ValueError(f"expr.X expects an expression, got {v}")
 
 
 def d(v: Expr) -> Expr:
     """The `derived` wire of a variable expr."""
-    return _wrap(_d(v._wire), signed=isinstance(v, SExpr))
+    return _wrap(reactor.d(v._wire), signed=isinstance(v, SExpr))
 
 
 def ite(cond: Expr, iftrue, iffalse) -> Expr:

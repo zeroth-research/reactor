@@ -10,7 +10,7 @@ import torch
 import numpy as np
 import z3
 
-from reactor import Real, Int, Bool, Word
+from reactor.tensor.sort import Real, Int, Bool, Word
 from reactor import tensor
 from reactor.tensor import Skip
 from reactor.eval import eval_itype

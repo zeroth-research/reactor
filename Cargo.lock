@@ -740,6 +740,7 @@ dependencies = [
 name = "reactor-python"
 version = "0.1.0"
 dependencies = [
+ "base",
  "dataflow",
  "pyo3",
  "pyo3-tch",

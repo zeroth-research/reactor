@@ -5,8 +5,11 @@ domain left out when they read nothing; a single sort comes bare, and several as
 
 import pytest
 import torch
-from reactor.tensor import Havoc, Skip, real, int as int_, bool as bool_, word, zero
-from reactor.tensor.sort import Real, Int, Bool, Word, Zero
+import reactor
+from reactor import Zero
+from reactor.sort import ZeroSort
+from reactor.tensor import Havoc, Skip, real, int as int_, bool as bool_, word
+from reactor.tensor.sort import Real, Int, Bool, Word
 from reactor import T
 
 
@@ -89,7 +92,7 @@ def test_nullary_operations_take_and_match_their_codomain_only():
         bool_.Const(torch.ones(1, 2, dtype=torch.bool), Bool([1, 2])),
         word.Const(torch.ones(1, 2, dtype=torch.int64), Word(4, [1, 2])),
         Havoc(Int([1, 2])),
-        zero.Zero(),
+        Zero(),
     ]:
         assert type(op).__match_args__[-1] == "cod"
         assert "dom" not in type(op).__match_args__
@@ -97,7 +100,7 @@ def test_nullary_operations_take_and_match_their_codomain_only():
     assert real.Const(torch.ones(1, 2), T(Real([1, 2]))).cod == T(Real([1, 2]))
     assert word.Const(torch.ones(1, 2, dtype=torch.int64), Word(4, [1, 2])).cod == Word(4, [1, 2])
     assert Havoc(Int([1, 2])).cod == Int([1, 2])
-    assert zero.Zero().cod == Zero()
+    assert Zero().cod == ZeroSort()
     with pytest.raises(ValueError):
         real.Const(torch.ones(1, 2), Real([2, 1]))
 
@@ -134,3 +137,18 @@ def test_the_domain_is_optional_when_the_parameters_determine_it():
     assert real.Affine(torch.ones(4, 2), torch.zeros(4, 3)).cod == Real([4, 3])
     with pytest.raises(ValueError):
         real.Scale(torch.ones(2, 3), cod=T(Real([2, 3])))
+
+
+def test_the_singleton_sort_and_its_operation_belong_to_no_theory():
+    # the sort is shared by all theories, and the operation writing its only value is a
+    # special case, at the top level
+    assert Zero().cod == ZeroSort()
+    assert ZeroSort.__module__ == "reactor.sort"
+    # an operation like any other, built with no arguments: no instance stands for it
+    assert isinstance(Zero(), Zero) and Zero() == Zero()
+    assert Zero.__module__ == "reactor"
+    assert not hasattr(reactor, "ZeroType") and not hasattr(reactor, "ZeroOp")
+    assert not hasattr(reactor, "ZeroSort") and not hasattr(reactor, "zero")
+    assert not hasattr(reactor.tensor, "zero") and not hasattr(reactor.tensor.sort, "Zero")
+    # the sorts are reached through their namespaces, not at the top level
+    assert not any(hasattr(reactor, s) for s in ["Real", "Int", "Bool", "Word"])

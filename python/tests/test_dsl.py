@@ -8,10 +8,12 @@ plus check the ctrl/extl partition and the config surface.
 
 import pytest
 
-from reactor import Module, Wire, sugar, Int, Var, Real, T, X as _X, d as _d, TheoryError
+import reactor
+from reactor import Module, Wire, sugar, Var, T, TheoryError
+from reactor.tensor.sort import Int, Real
 from reactor.sugar import ite, d, X, Zero
 from reactor.tensor import Skip
-from reactor import sort
+from reactor.sort import ZeroSort
 from reactor.eval import eval_itype
 
 INT = Int([1, 1])
@@ -40,7 +42,7 @@ def _init(m):
 
 
 def _latch(m, state):
-    return {var: state[_X(var)] for var in m.ctrl}
+    return {var: state[reactor.X(var)] for var in m.ctrl}
 
 
 def _update(m, state):
@@ -79,7 +81,7 @@ def test_counter_counts():
     m = Counter(ctrl=(x,))
     print(m)
     # (_x_lat, x_nxt) = x
-    assert _trace(m, 5, _X(x)) == [0, 1, 2, 3, 4, 5]
+    assert _trace(m, 5, reactor.X(x)) == [0, 1, 2, 3, 4, 5]
 
 
 # --- multi-var with ite and an unchanged var --------------------------------
@@ -97,8 +99,8 @@ def test_multivar_ite_and_hold():
     cap, x = _pair(), _pair()
     m = Bounded(ctrl=(x, cap))
     assert m.closed()
-    assert _trace(m, 5, _X(x)) == [0, 1, 2, 3, 3, 3]
-    assert _trace(m, 5, _X(cap)) == [3, 3, 3, 3, 3, 3]
+    assert _trace(m, 5, reactor.X(x)) == [0, 1, 2, 3, 3, 3]
+    assert _trace(m, 5, reactor.X(cap)) == [3, 3, 3, 3, 3, 3]
 
 
 # --- extl variables become external inputs (open module) --------------------
@@ -210,8 +212,8 @@ def test_differential_sugar_module():
 
     a = m.atoms[0]
     # the delay drives d(x); the synthesised skip update drives X(x)
-    assert _d(x) in a.delay.write()
-    assert _X(x) in a.update.write()
+    assert reactor.d(x) in a.delay.write()
+    assert reactor.X(x) in a.update.write()
     assert len(a.update) == 1
 
 
@@ -240,11 +242,11 @@ def test_hybrid_sugar_module():
 
     a = m.atoms[0]
     # every block is explicit and drives its wire of x
-    assert _X(x) in a.init.write()
-    assert _X(x) in a.update.write()
-    assert _d(x) in a.delay.write()
+    assert reactor.X(x) in a.init.write()
+    assert reactor.X(x) in a.update.write()
+    assert reactor.d(x) in a.delay.write()
     # the update reads the reset guard from the input's next value
-    assert _X(t) in a.update.read()
+    assert reactor.X(t) in a.update.read()
 
 
 class _Mixed(sugar.Module):
@@ -257,7 +259,7 @@ class _Mixed(sugar.Module):
         return x, n + 1
 
     def delay(self, x, n, t):
-        return 1 * d(t), Zero  # the counter does not change in time: its rate is zero
+        return 1 * d(t), Zero()  # the counter does not change in time: its rate is zero
 
 
 def test_delay_of_mixed_real_and_discrete_variables():
@@ -266,12 +268,12 @@ def test_delay_of_mixed_real_and_discrete_variables():
     writer = {w: term for term in a.delay for w in term.write}
     # the counter's rate of change is the singleton: `Zero`, reading nothing, copied
     # into d(n) at the singleton sort
-    skip = writer[_d(n)]
-    assert skip.itype == Skip(sort.Zero())
+    skip = writer[reactor.d(n)]
+    assert skip.itype == Skip(ZeroSort())
     zero = writer[skip.read[0]]
-    assert zero.itype == Zero and len(zero.read) == 0
+    assert zero.itype == Zero() and len(zero.read) == 0
     # the real's rate of change is a real of degree 1, copied at that sort
-    skip = writer[_d(x)]
+    skip = writer[reactor.d(x)]
     assert skip.itype == Skip(T(Real([1, 1])))
     assert skip.read[0].dtype == T(Real([1, 1]))
 

@@ -10,9 +10,9 @@ and every word result is reduced modulo `2^w`. Division by zero follows SMT-LIB2
 
 import torch
 
-from .reactor.tensor import Havoc, Skip
-from .reactor.tensor.zero import Zero
-from .sort import Real, Int, Bool, Word, shape as _shape
+from .tensor import Havoc, Skip
+from .reactor import Zero
+from .tensor.sort import Real, Int, Bool, Word
 
 from .reactor import tensor
 

@@ -5,7 +5,8 @@ import pytest
 import torch
 import torch.nn as nn
 
-from reactor import Real, Int, Word, Bool, X
+from reactor import X
+from reactor.tensor.sort import Real, Int, Word, Bool
 from reactor.torch import Module
 
 

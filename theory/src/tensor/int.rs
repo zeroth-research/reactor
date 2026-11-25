@@ -45,7 +45,7 @@ use subenum::subenum;
 
 /// The sorts of the theory, as in the signature of SMT-LIB2's `Ints`:
 /// int matrices, and the booleans of the Core theory, which comparisons
-/// write, together with [`Zero`](crate::tensor::sort::Zero). It is the subset
+/// write, together with [`Zero`](crate::sort::Zero). It is the subset
 /// [`tensor::sort::Ints`](crate::tensor::sort::Ints) of the sorts of all theories.
 pub use super::sort::Ints as Sort;
 

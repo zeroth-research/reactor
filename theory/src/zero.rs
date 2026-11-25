@@ -1,25 +1,26 @@
-//! The structural operation [`Zero`]: the rate of change of a value that does
-//! not change.
+/*!
+# The zero operation
 
-use super::sort;
+[`Zero`], the operation writing the only value of the sort [`sort::Zero`],
+shared by all theories: the rate of change of a value that does not change.
+*/
+
+use crate::sort;
 use base::boundary::{Boundary, Poly};
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 use std::fmt;
 
-/// Writes the only value of the singleton sort [`sort::Zero`], reading
-/// nothing: the rate of change of a value that does not change.
-///
-/// The zero rate of change of a real matrix is not this, but the zero
-/// matrix of the degree of the rate of change, [`real::Zero`](super::real::Zero).
+/// Writes the only value of the sort [`sort::Zero`], reading nothing: the
+/// rate of change of a value that does not change.
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Default)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.tensor.zero")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor")
 )]
 pub struct Zero;
 
-/// Writes the only value of the singleton sort [`sort::Zero`].
+/// Writes the only value of the sort [`sort::Zero`].
 impl Boundary<sort::Zero> for Zero {
     fn dom(&self) -> Poly<sort::Zero> {
         Poly::unit()
@@ -39,7 +40,7 @@ impl fmt::Display for Zero {
 impl Zero {
     /// The operation writing the only value of the sort of `cod`.
     pub fn with_cod(cod: [sort::Zero; 1]) -> Result<Self, crate::Error> {
-        let [_] = cod;
+        let [sort::Zero] = cod;
         Ok(Zero)
     }
 }

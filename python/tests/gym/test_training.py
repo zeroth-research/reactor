@@ -6,7 +6,8 @@ from .agent import DQNAgent
 from .train import train
 from reactor.gym import Env
 from reactor.torch import Module
-from reactor import Wire, Real, Var, X
+from reactor import Wire, Var, X
+from reactor.tensor.sort import Real
 from reactor import tensor
 from reactor.eval import eval_itype
 

@@ -14,10 +14,10 @@ from functools import partial
 import torch
 
 from .reactor import Wire, Term, Var
-from .reactor.tensor import Skip, real, int as int_, bool as bool_, word
-from .reactor.tensor.word import signed, unsigned
-from .sort import Real, Int, Bool, Word, Zero
-from .sort import shape as _shape, width as _width
+from .tensor import Skip, real, int as int_, bool as bool_, word
+from .tensor.word import signed, unsigned
+from .sort import ZeroSort
+from .tensor.sort import Real, Int, Bool, Word
 
 
 def _wire(t) -> Wire:
@@ -33,7 +33,7 @@ def _wire(t) -> Wire:
         raise TypeError(f'_wire() unexpected type(t)={type(t)}')
 
 
-def _dtype(t) -> Real | Int | Bool | Word | Zero:
+def _dtype(t) -> Real | Int | Bool | Word | ZeroSort:
     return _wire(t).dtype
 
 
@@ -232,7 +232,7 @@ class TermBuilder:
 
     # --- ops that no theory provides ---
 
-    def uninterpreted(self, name: str, sort: Real | Int | Bool | Word | Zero) -> Term:
+    def uninterpreted(self, name: str, sort: Real | Int | Bool | Word | ZeroSort) -> Term:
         raise TheoryError(f"uninterpreted functions are not supported (`{name}`)")
 
     def sin(self, a) -> Term:

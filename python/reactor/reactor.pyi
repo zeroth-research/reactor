@@ -5,15 +5,16 @@ are maintained by hand: PyO3 does not generate stubs (see
 https://pyo3.rs/v0.29.0/python-typing-hints).
 
 The extension holds the structural layer `Wire` / `Var` / `Term` / `Atom` / `Module`,
-and the namespace `tensor` of the operations and sorts, mirroring the `theory` crate:
-`tensor` holds the structural operations `Havoc` and `Skip`, `tensor.zero` the operation
-`Zero` of the singleton sort, and the namespaces
+the operation `Zero` writing the only value of the singleton sort `sort.ZeroSort`, a
+special case at the top level; and the namespaces of the other operations and of the sorts, mirroring the
+`theory` crate: `sort` holds the sorts shared by all theories, the singleton `ZeroSort`;
+`tensor` holds the structural operations `Havoc` and `Skip`, and the namespaces
 `tensor.real`, `.int`, `.bool`, `.word` (with `.signed` and `.unsigned`) hold the
 operations of each theory, each built from the parameters its sorts do not determine,
 then its domain, a single sort bare and several as a list, and optionally its codomain,
 which must agree (`tensor.real.Add([x, y])`, `tensor.word.Extract(i, j, x)`); an
 operation that reads nothing is built from its codomain (`tensor.real.Zero(x)`), except
-`tensor.zero.Zero()`, whose codomain, the singleton sort, carries no information. And
+`Zero()`, whose codomain, the singleton sort, carries no information. And
 `tensor.sort` the sorts (`Real([rows, cols])`, `Word(width, [rows, cols])`). Those are
 typed loosely here, as `Sort` and `Op`: a stub file cannot describe the nested
 namespaces of a single extension module. A `Var` bundles the latched, next (`X(v)`),
@@ -28,11 +29,13 @@ from typing import Any, Callable, Iterable, Mapping, Sequence, override
 # variables, or any iterable of them (preferably a set); None hides nothing.
 type Hide = Callable[[Var], bool] | Iterable[Var] | None
 
-# A sort of `tensor.sort`, and an operation of `tensor` or of one of its namespaces.
+# A sort of `sort` or of `tensor.sort`, and an operation, `Zero` or one of `tensor` or of
+# one of its namespaces.
 type Sort = Any
 type Op = Any
 
-# The namespace of the operations and sorts.
+# The namespaces of the operations and sorts.
+sort: ModuleType
 tensor: ModuleType
 
 
@@ -107,6 +110,24 @@ def X(var: Var) -> Wire:
 
 def d(var: Var) -> Wire:
     """The variable's derivative wire."""
+    ...
+
+
+class Zero:
+    """The operation writing the only value of the singleton sort
+    `sort.ZeroSort`, reading nothing: the rate of change of a value that does not
+    change."""
+
+    def __init__(self) -> None: ...
+
+    @property
+    def cod(self) -> Sort: ...
+
+
+
+def T(sort: Sort) -> Sort:
+    """The tangent sort: the sort of the rate of change of the values of `sort`, one
+    degree higher for a real, and the singleton `sort.ZeroSort()` for a discrete sort."""
     ...
 
 

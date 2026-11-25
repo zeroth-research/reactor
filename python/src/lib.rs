@@ -33,22 +33,30 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_function(wrap_pyfunction!(var::x, m)?)?;
     m.add_function(wrap_pyfunction!(var::d, m)?)?;
+    m.add_function(wrap_pyfunction!(tangent, m)?)?;
 
-    // The operations and sorts, in namespaces mirroring the `theory` crate:
-    // `tensor` holds the structural operations, with a namespace per theory
-    // and for the sorts. The operations carrying tensors come from
-    // `theory::torch`, the others from `theory::tensor`.
+    // A special case: the operation `Zero`, writing the only value of the
+    // singleton sort `sort.ZeroSort` shared by all theories, is at the top
+    // level, not in a namespace of its own.
+    m.add_class::<theory::zero::Zero>()?;
+
+    // The other operations and the sorts, in namespaces mirroring the
+    // `theory` crate: `sort` holds the sorts shared by all theories, the
+    // singleton `ZeroSort`, which Rust calls `sort::Zero`; `tensor`
+    // holds the structural operations, with a namespace per theory and for
+    // the sorts. The operations carrying tensors come from `theory::torch`,
+    // the others from `theory::tensor`.
     let mut namespaces = Vec::new();
+    {
+        let sort = PyModule::new(py, "sort")?;
+        sort.add_class::<theory::sort::Zero>()?;
+        m.add("sort", &sort)?;
+        namespaces.push(("sort", sort));
+    }
     {
         let tensor = PyModule::new(py, "tensor")?;
         tensor.add_class::<theory::tensor::Havoc>()?;
         tensor.add_class::<theory::tensor::Skip>()?;
-        {
-            let zero = PyModule::new(py, "zero")?;
-            zero.add_class::<theory::tensor::zero::Zero>()?;
-            tensor.add("zero", &zero)?;
-            namespaces.push(("tensor.zero", zero));
-        }
         {
             let real = PyModule::new(py, "real")?;
             real.add_class::<theory::torch::real::Const>()?;
@@ -180,7 +188,6 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             sort.add_class::<theory::tensor::sort::Int>()?;
             sort.add_class::<theory::tensor::sort::Bool>()?;
             sort.add_class::<theory::tensor::sort::Word>()?;
-            sort.add_class::<theory::tensor::sort::Zero>()?;
             tensor.add("sort", &sort)?;
             namespaces.push(("tensor.sort", sort));
         }
@@ -188,17 +195,30 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         namespaces.push(("tensor", tensor));
     }
 
-    // Each namespace takes its dotted name, and is entered in `sys.modules`
-    // under it, so that it can be imported by it, as
-    // `import reactor.reactor.tensor.real`, not only reached as an attribute.
+    // Each namespace takes its dotted name in the package that holds this
+    // extension, `reactor.tensor.real` for the extension `reactor.reactor`,
+    // the name its classes give as their module, and is entered in
+    // `sys.modules` under it, so that it can be imported by it, as
+    // `import reactor.tensor.real`, not only reached as an attribute.
+    let name = m.name()?.to_string();
+    let package = name.rsplit_once('.').map_or(name.as_str(), |(p, _)| p);
     let modules = py.import("sys")?.getattr("modules")?;
     for (name, namespace) in namespaces {
-        let dotted = format!("{}.{}", m.name()?, name);
+        let dotted = format!("{package}.{name}");
         namespace.setattr("__name__", &dotted)?;
         modules.set_item(&dotted, namespace)?;
     }
 
     Ok(())
+}
+
+/// The tangent sort `T(sort)`: the sort of the rate of change of the values
+/// of `sort`, one degree higher for a real, and the singleton
+/// `sort.ZeroSort()` for a discrete sort.
+#[pyfunction]
+#[pyo3(name = "T")]
+fn tangent(sort: sort::Any) -> sort::Any {
+    base::differentiable::T(sort)
 }
 
 fn try_iter_borrow<'py, P>(

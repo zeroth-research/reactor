@@ -11,7 +11,8 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from reactor.gym import Env
-from reactor import TheoryError, Bool, Real, Int
+from reactor import TheoryError
+from reactor.tensor.sort import Bool, Real, Int
 from reactor.tensor import Havoc
 
 

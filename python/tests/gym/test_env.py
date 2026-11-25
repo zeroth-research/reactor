@@ -11,7 +11,8 @@ from .environments import SimpleEnv
 from .qnetworks import SimpleQNet
 from reactor.gym import Env
 from reactor.torch import Module
-from reactor import Wire, Real, Int, Var, X
+from reactor import Wire, Var, X
+from reactor.tensor.sort import Real, Int
 
 # SimpleEnv's only private state is `state`; its sort must be declared explicitly.
 STATE = Real([1, 1])
