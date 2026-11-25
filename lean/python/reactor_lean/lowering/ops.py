@@ -467,7 +467,9 @@ OPS: tuple[Op, ...] = (
         "MatMul",
         NUM,
         mat=lambda a: f"({a[0]} * {a[1]})",
-        scalar=lambda a: f"({a[0]} * {a[1]})",
+        # A 1×1 product need not have 1×1 operands: a row times a column.
+        scalar=ViaMat("`*` is the matrix product, of operands that need "
+                      "not be 1×1 when the product is"),
         box="Box.mul",
     ),
     # `Get`'s entry is baked into the op, as `Linear`'s matrices are.

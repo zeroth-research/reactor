@@ -72,6 +72,26 @@ def _collect_argmax_variants(terms) -> "list[tuple[str, int]]":
     return result
 
 
+def _recon_wires(ctx: LeanContext) -> "list[Wire]":
+    """One read wire per shape and element type that is more than 1×1:
+    what `Scalar.update` may rebuild a `Matrix` of, and so what a
+    `_recon_lemma_lines` lemma is proved for."""
+    seen: set[tuple] = set()
+    out: list[Wire] = []
+    for _, wires in ctx.update_groups:
+        for w in wires:
+            key = (wire_shape(w), lean_elem_type(w.dtype))
+            if not wire_shape(w).is_scalar and key not in seen:
+                seen.add(key)
+                out.append(w)
+    return out
+
+
+def _recon_name(w) -> str:
+    shape = wire_shape(w)
+    return f"recon_{elem_ty_slug(lean_elem_type(w.dtype))}_{shape.m}_{shape.n}"
+
+
 def _recon_lemma_lines(w) -> "list[str]":
     """Lemma: rebuilding a wire from its own elements gives the wire back.
 
@@ -81,17 +101,19 @@ def _recon_lemma_lines(w) -> "list[str]":
     exactly `pack (unpack ctrl)` vs `ctrl` and `simp` cannot close the gap
     without this. Built by the same `mat_from_scalars` as the reconstruction
     itself, so the shapes match syntactically.
+
+    The proofs rewrite with it in their first `simp only`, before anything
+    else is unfolded: a later `simp` takes `(A * _m0) 0 0` apart into a sum
+    over entries of the rebuilt matrix, and leaves no matrix to match.
     """
     shape = wire_shape(w)
-    elem = lean_elem_type(w.dtype)
     m, n = shape.m, shape.n
     slots = [f"c {i} {j}" for i in range(m) for j in range(n)]
     lhs = mat_from_scalars(slots, shape)
-    name = f"recon_{elem_ty_slug(elem)}_{m}_{n}"
     return [
         "set_option maxHeartbeats 2000000 in",
         "set_option maxRecDepth 100000 in",
-        f"@[simp] theorem {name} (c : {dtype_to_lean_type(w)}) :",
+        f"@[simp] theorem {_recon_name(w)} (c : {dtype_to_lean_type(w)}) :",
         f"    {lhs} = c := by",
         "  funext i j",
         "  fin_cases i <;> fin_cases j <;> simp",
@@ -144,16 +166,8 @@ def atom_to_lean_scalar(ctx: LeanContext) -> "tuple[str, list[tuple[str, int]]]"
     argmax_variants = _collect_argmax_variants(all_terms)
 
     lines: list[str] = []
-    seen_recon: set[tuple] = set()
-    for _, wires in ctx.update_groups:
-        for w in wires:
-            if wire_shape(w).is_scalar:
-                continue
-            key = (wire_shape(w), lean_elem_type(w.dtype))
-            if key in seen_recon:
-                continue
-            seen_recon.add(key)
-            lines.extend(_recon_lemma_lines(w))
+    for w in _recon_wires(ctx):
+        lines.extend(_recon_lemma_lines(w))
     for ety, n in argmax_variants:
         lines.extend(_argmax_scalar_def_lines(ety, n))
 
@@ -248,6 +262,7 @@ def to_lean_scalar_equiv(
         simp_names = (
             ["Scalar.pack", f"Scalar.{func_name}", func_name]
             + simp_extras
+            + [_recon_name(w) for w in _recon_wires(ctx)]
             + argmax_eq_lemmas
             + ["Fin.cons_zero", "Fin.cons_succ"]
         )

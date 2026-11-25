@@ -175,14 +175,36 @@ def _make_real_half() -> Module:
         [x], [Term(tensor.real.Const(torch.tensor([[5.0]])), [X(x)])], update)
 
 
+def _make_dot_product() -> Module:
+    """d = [1 1 1]·v, a 1×1 product of a 1×3 row and the 3×1 state.
+
+    The scalar encoding binds the 1×1 `d` to a bare `Int`, and it used to
+    print the product as a bare `x0 * _m0` too, which is a 1×1 `Matrix`.
+    """
+    v, d = Var(Int([3, 1])), Var(Int([1, 1]))
+    row = Wire(Int([1, 3]))
+    init = [
+        Term(tensor.int.Const(torch.tensor([[1], [2], [3]])), [X(v)]),
+        Term(tensor.int.Const(torch.tensor([[0]])), [X(d)]),
+    ]
+    update = [
+        Term(tensor.int.Const(torch.tensor([[1, 1, 1]])), [row]),
+        Term(tensor.int.MatMul([[1, 3], [3, 1]]), [X(d)], [row, v]),
+        Term(tensor.Skip(Int([3, 1])), [X(v)], [v]),
+    ]
+    return Module.sequential([v, d], init, update)
+
+
 # Widths that exercise the scalar encoding's flattening: all-1x1, then
-# multi-element state, up to the 32 that stresses the index enumeration.
+# multi-element state, up to the 32 that stresses the index enumeration;
+# then an op whose 1×1 result is made of more than 1×1 operands.
 _SCALAR_ENC_SPECS = [
     ("Scalar", _make_countdown),
     ("Vec6", lambda: _make_countdown_vec(6)),
     ("Counter", _make_counter),
     ("Vec32", lambda: _make_countdown_vec(32)),
     ("RealHalf", _make_real_half),
+    ("DotProduct", _make_dot_product),
 ]
 
 

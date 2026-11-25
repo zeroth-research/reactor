@@ -143,7 +143,9 @@ def test_generated_executable_builds_and_runs(
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("name", ["Scalar", "Vec6", "Counter", "Vec32", "RealHalf"])
+@pytest.mark.parametrize(
+    "name", ["Scalar", "Vec6", "Counter", "Vec32", "RealHalf", "DotProduct"]
+)
 def test_scalar_encoding_builds(generate_lean_files, name):
     """The scalar encoding elaborates alongside the functional one.
 
@@ -164,7 +166,8 @@ def test_scalar_encoding_builds(generate_lean_files, name):
 
 @pytest.mark.slow
 @pytest.mark.parametrize(
-    "name", ["Scalar", "Vec6", "Counter", "Vec32", "RealHalf", "TwoVars", "Mixed"]
+    "name", ["Scalar", "Vec6", "Counter", "Vec32", "RealHalf", "DotProduct",
+             "TwoVars", "Mixed"]
 )
 def test_relational_encoding_builds(generate_lean_files, name):
     """ScalarRel elaborates on top of the scalar encoding.
