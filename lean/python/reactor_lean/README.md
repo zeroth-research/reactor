@@ -59,7 +59,7 @@ NAME/
                                 equivalence theorems
   Certificate/Data.lean         the certificate: init_pre, update_pre, P,
                                 inv, ranking
-  Certificate/Module.lean       RM and lts, the module as a ReactiveModule and
+  Certificate/Module.lean       RM and lts, the module as a ReactiveTS and
                                 its transition system: fixed text
   Certificate/Proofs.lean       the obligations, each stated again and proved
                                 by `sorry`, for a prover to replace
@@ -77,7 +77,7 @@ directory of that repository.
 | Package | Library | Modules | Contents |
 |---------|---------|---------|----------|
 | `ReactLib` | `Spec` | `Spec.LTL` | LTL formulas and their semantics |
-| | `Relational` | `Relational.Mat`, `.Basic` | matrices, ReactiveModule, the proof rules (`rule_globally`, `rule_buchi`) |
+| | `Relational` | `Relational.Mat`, `.Basic`, `.ReactiveTS`, `.ProofRules` | matrices, transition systems, ReactiveTS, the proof rules (`rule_globally`, `rule_buchi`) |
 
 By default they are git requires at `project/lakefile.py`'s
 `REACTLIB_REV`. With `REACTLIB` set to a ReactLib checkout they
@@ -362,7 +362,7 @@ files:
 1. `Data.lean`: `init_pre`, `update_pre`, `inv`, `P`, `DecidablePred P`,
    `ranking`.
 2. `Module.lean`: `def RM`, wiring `init`/`update` and the preconditions into
-   a `ReactiveModule`, and `def lts`, its transition system.
+   a `ReactiveTS`, and `def lts`, its transition system.
 3. `Proofs.lean`: `init_inv_proof`, `step_inv_proof` and `hrank_proof` (or
    `inv_imp_P_proof`), each obligation stated again and proved by `sorry`.
 4. `Certificate.lean`: `init_inv`, `step_inv` and `hrank` (or `inv_imp_P`),
@@ -390,7 +390,7 @@ its certificate is in `Certificate/Data.lean` and `Certificate/Proofs.lean`;
 `Certificate/Module.lean` is fixed text, and `Certificate/Certificate.lean` is
 fixed text, one per kind of property, so the two can be rewritten -- by
 `reactor`, by a prover or by hand -- without them. `RM` leaves its types to Lean
-(`({ ... } : ReactiveModule _ _)`), which reads them off `init_pre` and
+(`({ ... } : ReactiveTS _ _)`), which reads them off `init_pre` and
 `update`, so `Module.lean` names none of the module's. `Proofs.lean` states
 each obligation again, so a proof of it is complete in one file, and
 `Certificate.lean` takes it with `exact`, which checks the two statements

@@ -205,7 +205,7 @@ def test_main_lean_matrix_signatures():
 # ── Certificate generation ───────────────────────────────────────────
 
 
-def _cert_for(make_module, module_name="ReactiveModule"):
+def _cert_for(make_module, module_name="ReactiveTS"):
     """The project's four certificate files, as one text."""
     m = make_module()
     ctx = LeanContext(m)
@@ -216,7 +216,7 @@ def test_certificate_bool_has_rm():
     """`RM` names no type: Lean reads them off the definitions it is built
     from, which carry the module's."""
     cert = _cert_for(_make_twobitcounter)
-    assert "} : ReactiveModule _ _)" in cert
+    assert "} : ReactiveTS _ _)" in cert
     assert "(Matrix (Fin 1) (Fin 1) Bool)" in cert
     assert "(Matrix (Fin 1) (Fin 1) Bool) × (Matrix (Fin 1) (Fin 1) Bool)" in cert
 
@@ -246,7 +246,7 @@ def test_data_lean_has_sorry_when_no_property():
 
 def test_certificate_matrix_has_rm():
     cert = _cert_for(_make_matrix_module)
-    assert "} : ReactiveModule _ _)" in cert
+    assert "} : ReactiveTS _ _)" in cert
     assert "Matrix (Fin 2) (Fin 1) Int" in cert
     assert "Matrix (Fin 3) (Fin 1) Int" in cert
 

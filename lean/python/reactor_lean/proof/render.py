@@ -140,7 +140,7 @@ def generate_data_lean(
     """Generate Certificate/Data.lean: init_pre, update_pre (the
     assumptions on the inputs), inv, P, ranking.
 
-    Imports only ``Relational.Basic``.  ``Module.lean`` imports it, and
+    Imports only ``Relational.Mat``.  ``Module.lean`` imports it, and
     the proofs and the certificate through that.
 
     It sits under ``Certificate/`` rather than ``System/`` because that is what

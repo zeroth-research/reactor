@@ -6,7 +6,8 @@
     another tool -- without touching it. What changes with the module and
     the certificate is `Data.lean` (the definitions) and `Proofs.lean`. A
     `--cert-file` certificate inlines all of them, the module too. -#}
-import Relational.Basic
+import Relational.ReactiveTS
+import Relational.ProofRules
 {% if not module_inline %}
 import Certificate.Module
 import Certificate.Proofs
@@ -39,12 +40,12 @@ theorem step_inv : ∀ s e, (RM.update_pre e ∧ inv s) → inv (RM.update s e) 
 theorem hinv' : lts.StateSet_isInductiveInitial inv := by
   constructor
   · intro s hs
-    unfold lts at hs; simp only [ReactiveModule.toTS, ReactiveModule.TS_init] at hs
+    unfold lts at hs; simp only [ReactiveTS.toTS, ReactiveTS.TS_init] at hs
     obtain ⟨l, hpre, hl⟩ := hs
     rw [← hl]
     exact init_inv l hpre
   · intro s s' ⟨hs, l, hstep⟩
-    unfold lts at hstep; simp only [ReactiveModule.toTS, ReactiveModule.TS_update] at hstep
+    unfold lts at hstep; simp only [ReactiveTS.toTS, ReactiveTS.TS_update] at hstep
     rw [← hstep.2]
     exact step_inv s l ⟨hstep.1, hs⟩
 

@@ -344,7 +344,7 @@ def generate_lean_files() -> None:
     for name, make_module in _SCALAR_ENC_SPECS:
         t = ModuleToLean4(LeanContext(make_module()))
         (_CERTS_DIR / f"ScalarEnc{name}.lean").write_text(
-            f"import Relational.Basic\n\n{LINTERS_OFF}\n\n"
+            f"import Relational.Mat\n\n{LINTERS_OFF}\n\n"
             + t.to_lean_functional()
             + "\n\n"
             + t.to_lean_scalar()
