@@ -35,13 +35,14 @@ def atom_to_lean_functional(ctx: LeanContext) -> str:
     cod = product_type(ctx.ctrl_next)
     noncomp = ctx.noncomputable
 
-    init_dom = f"(extl_n: {product_type(ctx.extl_next)})"
-    lines.append(f"@[simp] {noncomp}def init {init_dom} : {cod} :=")
+    def dom(groups) -> str:
+        return " ".join(f"({p}: {product_type(w)})" for p, w in groups)
+
+    lines.append(f"@[simp] {noncomp}def init {dom(ctx.init_groups)} : {cod} :=")
     lines.append(init_body)
     lines.append("")
 
-    upd_dom = " ".join(f"({p}: {product_type(w)})" for p, w in ctx.update_groups)
-    lines.append(f"@[simp] {noncomp}def update {upd_dom} : {cod} :=")
+    lines.append(f"@[simp] {noncomp}def update {dom(ctx.update_groups)} : {cod} :=")
     lines.append(update_body)
     lines.append("")
 

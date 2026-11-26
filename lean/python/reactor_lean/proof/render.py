@@ -35,7 +35,8 @@ from .from_ir import ir_to_lean
 class LeanCertificate:
     """The certificate's definitions as Lean text, `fun s => ...` over the
     state and `fun e => ...` over the inputs; `None` where the template's
-    placeholder stands. Built by `render_certificate` alone."""
+    placeholder stands. Built by `render_certificate`; with no field set,
+    the certificate of a bare run, all placeholders."""
 
     kind: str = "buchi"
     prp: str | None = None
@@ -96,13 +97,13 @@ def render_certificate(q: "Predicates") -> LeanCertificate:
 
 
 def lean_certificate(module, claim: "Claim | None",
-                     cert: Certificate = Certificate()) -> "LeanCertificate | None":
+                     cert: Certificate = Certificate()) -> LeanCertificate:
     """The certificate as codegen takes it: the claim's and the
     certificate's predicates parsed once (`parse.predicates.read_predicates`)
-    and printed as Lean. `None` without a claim: a bare run parses
-    nothing."""
+    and printed as Lean. Without a claim, a bare run, nothing is parsed
+    and every predicate is its placeholder."""
     if claim is None:
-        return None
+        return LeanCertificate()
     return render_certificate(read_predicates(module, claim, cert))
 
 
@@ -134,7 +135,7 @@ def _cert_def_context(ctx: LeanContext, lean_cert: LeanCertificate) -> dict:
 
 def generate_data_lean(
     ctx: LeanContext,
-    lean_cert: LeanCertificate | None = None,
+    lean_cert: LeanCertificate = LeanCertificate(),
 ) -> str:
     """Generate Certificate/Data.lean: init_pre, update_pre (the
     assumptions on the inputs), inv, P, ranking.
@@ -151,7 +152,7 @@ def generate_data_lean(
     """
     return render(
         "project/Certificate/Data.lean.j2",
-        **_cert_def_context(ctx, lean_cert or LeanCertificate()),
+        **_cert_def_context(ctx, lean_cert),
     )
 
 
@@ -166,18 +167,18 @@ def generate_module_lean() -> str:
     return render("project/Certificate/Module.lean.j2")
 
 
-def generate_proofs_lean(lean_cert: LeanCertificate | None = None) -> str:
+def generate_proofs_lean(lean_cert: LeanCertificate = LeanCertificate()) -> str:
     """Generate Certificate/Proofs.lean: each obligation of `lean_cert`'s
     kind stated again, and proved by `sorry`."""
     return render(
         "project/Certificate/Proofs.lean.j2",
-        is_safety=(lean_cert or LeanCertificate()).is_safety,
+        is_safety=lean_cert.is_safety,
     )
 
 
 def generate_certificate_lean(
     ctx: LeanContext,
-    lean_cert: LeanCertificate | None = None,
+    lean_cert: LeanCertificate = LeanCertificate(),
     *,
     module_inline: str | None = None,
 ) -> str:
@@ -195,7 +196,6 @@ def generate_certificate_lean(
             proofs with it. Should be the output of
             ``ModuleToLean4.to_lean_functional()``.
     """
-    lean_cert = lean_cert or LeanCertificate()
     inline = {}
     if module_inline is not None:
         inline = dict(
@@ -217,15 +217,14 @@ def generate_certificate_lean(
 
 
 def certificate_files(
-    ctx: LeanContext, lean_cert: LeanCertificate | None = None,
+    ctx: LeanContext, lean_cert: LeanCertificate = LeanCertificate(),
 ) -> dict[str, str]:
     """The project's four certificate files by project-relative path: the
     definitions (`Data.lean`); `RM` and `lts` over them (`Module.lean`), the
     same text for every certificate; the obligations stated again and
     proved by `sorry` (`Proofs.lean`); and the certificate, which is fixed
     text for the property's kind and takes its proofs from `Proofs.lean`
-    (`Certificate.lean`). Placeholders where `lean_cert` has no predicate,
-    or is `None`.
+    (`Certificate.lean`). Placeholders where `lean_cert` has no predicate.
 
     Rendered together because they are rewritten together: a definitions
     file left over from other predicates no longer matches the proofs, and
@@ -241,7 +240,7 @@ def certificate_files(
 
 def generate_standalone_cert_lean(
     ctx: LeanContext,
-    lean_cert: LeanCertificate | None = None,
+    lean_cert: LeanCertificate = LeanCertificate(),
 ) -> str:
     """Generate a self-contained certificate Lean file with init/update inlined.
 

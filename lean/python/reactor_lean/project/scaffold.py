@@ -13,7 +13,7 @@ from pathlib import Path
 
 from ..codegen.context import LeanContext
 from ..codegen.encodings import ModuleToLean4
-from .names import LINTERS_OFF, SYSTEM_LAYOUT, Layout
+from .names import CERT_LIB, LINTERS_OFF, SYSTEM_LAYOUT, Layout
 from .templates import render
 from .lake_cache import Packages, project_packages, use_lake_cache
 from .lakefile import LEAN_TOOLCHAIN, generate_lakefile
@@ -151,7 +151,7 @@ def create_project(
     if packages is None:
         packages = project_packages()
     project_dir = output_dir / project_name
-    src_dir = project_dir / "System"
+    src_dir = project_dir / SYSTEM_LAYOUT.base
     dbg_dir = project_dir / "dbg"
 
     # Create directory structure
@@ -175,14 +175,14 @@ def create_project(
     )
     print(f"Wrote {toolchain}")
 
-    (project_dir / "Certificate.lean").write_text(render("project/Certificate.lean.j2"))
+    (project_dir / f"{CERT_LIB}.lean").write_text(render("project/Certificate.lean.j2"))
 
     # ----------------------------------------------------------
     # Generate reactive module (init and update)
     # ----------------------------------------------------------
     m2l = ModuleToLean4(ctx)
 
-    root_lean = project_dir / "System.lean"
+    root_lean = project_dir / f"{SYSTEM_LAYOUT.base}.lean"
     root_lean.write_text(generate_root())
     print(f"Wrote root module {root_lean}")
 

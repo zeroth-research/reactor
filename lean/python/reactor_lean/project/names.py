@@ -1,9 +1,9 @@
 """The names the generated Lean project is made of, in one place.
 
-Codegen writes the project's files and modules under these names, and the
-rest of the pipeline refers to them: the lake build target and its `sorry`
-filter, among others. Each is defined here once, so a reference cannot
-drift from what was written. A leaf: it imports nothing from the package,
+Codegen writes the project's files and modules under these names, and
+every import of one -- the root module's, `Main.lean`'s, one encoding's
+of another -- spells it from here. Each is defined here once, so a
+reference cannot drift from what was written. A leaf: it imports nothing from the package,
 so anything can use it. The templates under `templates/project/` spell the
 same names, and `tests/test_lean_names.py` holds the two together.
 """

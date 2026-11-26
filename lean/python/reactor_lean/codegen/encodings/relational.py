@@ -160,7 +160,8 @@ class _Domain:
     update_args: str
     extl_binders: str
     extl_args: str
-    extl_n_binder: str
+    init_binders: str
+    init_args: str
 
 
 def _domain(ctx: LeanContext, ty) -> _Domain:
@@ -187,7 +188,8 @@ def _domain(ctx: LeanContext, ty) -> _Domain:
         update_args=args(update_groups),
         extl_binders=binders(extl_groups),
         extl_args=args(extl_groups),
-        extl_n_binder=f"(extl_n : {ty(ctx.extl_next)})",
+        init_binders=binders(ctx.init_groups),
+        init_args=args(ctx.init_groups),
     )
 
 
@@ -254,13 +256,13 @@ def _init_block(dom: _Domain, ref: str) -> RelBlock:
         state_binders=f"(s : {dom.state_ty})",
         state_args="s",
         target="s",
-        binders=f" {dom.extl_n_binder}",
-        args=" extl_n",
-        extl_binders=dom.extl_n_binder,
-        extl_args="extl_n",
+        binders=f" {dom.init_binders}",
+        args=f" {dom.init_args}",
+        extl_binders=dom.init_binders,
+        extl_args=dom.init_args,
         ref=ref,
-        ref_binders=dom.extl_n_binder,
-        ref_args="extl_n",
+        ref_binders=dom.init_binders,
+        ref_args=dom.init_args,
     )
 
 
@@ -348,7 +350,7 @@ def atom_to_lean_mat_rel(ctx: LeanContext) -> str:
         blk = _init_block(dom, "init")
         lines += emit_rel_block(syn, blk, _bodies(ctx.atom.init, ctx.init_wire_names))
         lines += _conj_eq_theorem(
-            "InitCond_func_eq", blk, n_ctrl, "s = init extl_n"
+            "InitCond_func_eq", blk, n_ctrl, f"s = init {dom.init_args}"
         )
 
     lines.append("end Rel")
@@ -416,15 +418,15 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
         blk = _init_block(dom, "Scalar.init")
         lines += emit_rel_block(syn, blk, _bodies(ctx.atom.init, ctx.init_groups))
         lines += _conj_eq_theorem(
-            "InitCond_scalar_eq", blk, n_ctrl, "s = Scalar.init extl_n"
+            "InitCond_scalar_eq", blk, n_ctrl, f"s = Scalar.init {dom.init_args}"
         )
-        extl_n_unpack = scalar_unpack("extl_n", ctx.extl_next)
+        init_unpacks = " ".join(scalar_unpack(p, w) for p, w in ctx.init_groups)
         lines += _pack_bridge_theorem(
             "InitCond_func_eq",
-            f"(ctrl' : {mat.state_ty}) {mat.extl_n_binder}",
-            "ctrl' extl_n",
-            f"InitCond {new_unpack} {extl_n_unpack}",
-            "ctrl' = init extl_n",
+            f"(ctrl' : {mat.state_ty}) {mat.init_binders}",
+            f"ctrl' {mat.init_args}",
+            f"InitCond {new_unpack} {init_unpacks}",
+            f"ctrl' = init {mat.init_args}",
             ["InitCond_scalar_eq", scalar_eq_name("init")],
         )
 

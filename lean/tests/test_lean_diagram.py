@@ -514,9 +514,7 @@ def test_unbound_block_output_raises():
     with pytest.raises(ValueError, match="written by no term"):
         translate_terms_lean([], {}, out, ConstantRegistry())
     with pytest.raises(ValueError, match="written by no term"):
-        translate_terms_scalar(
-            [], {}, out, ConstantRegistry()
-        )
+        translate_terms_scalar([], {}, out, ConstantRegistry(), {})
 
 
 # ──────────────────────────────────────────────────────────────

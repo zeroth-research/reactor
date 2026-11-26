@@ -166,7 +166,8 @@ def claim_from_flags(
 # ══════════════════════════════════════════════════════════════════════
 
 
-def standalone(cert_file: str, ctx: LeanContext, lean_cert) -> None:
+def standalone(cert_file: str, ctx: LeanContext,
+               lean_cert: LeanCertificate) -> None:
     """`--cert-file`: a self-contained certificate and its sibling encodings.
 
     No project: the predicates are the ones supplied.
@@ -187,7 +188,11 @@ def standalone(cert_file: str, ctx: LeanContext, lean_cert) -> None:
             if enc.cert_file:
                 path = write_encoding(enc, m2l, layout, out.stem)
                 print(f"Wrote {enc.title.lower()}: {path}")
-    except (Refused, OSError) as e:
+    # What cannot be written is the flag's; a refusal of the module reads
+    # as it does without it.
+    except Refused as e:
+        raise SystemExit(f"error: {e}") from e
+    except OSError as e:
         raise SystemExit(f"error: --cert-file: {e}") from e
 
 
@@ -204,7 +209,7 @@ def lake_module_prefix(directory: Path) -> str:
 
 
 def generate(settings: Settings, ctx: LeanContext,
-             lean_cert: "LeanCertificate | None", source: str,
+             lean_cert: LeanCertificate, source: str,
              packages: Packages) -> Path:
     """The Lean project, with the certificate as it stands; `source` is
     the input's text, which the project keeps in `dbg/`, and `packages`

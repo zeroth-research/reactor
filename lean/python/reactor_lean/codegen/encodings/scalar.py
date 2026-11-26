@@ -209,9 +209,8 @@ def atom_to_lean_scalar(ctx: LeanContext) -> str:
         ctx.constants,
         flat_slots=init_flat,
     )
-    lines.append(
-        f"@[simp] {noncomp}def init {_scalar_dom('extl_n', ctx.extl_next)} : {cod} :="
-    )
+    init_dom = " ".join(_scalar_dom(p, w) for p, w in ctx.init_groups)
+    lines.append(f"@[simp] {noncomp}def init {init_dom} : {cod} :=")
     lines.append(prepend_recon(init_recon, init_body))
     lines.append("")
 

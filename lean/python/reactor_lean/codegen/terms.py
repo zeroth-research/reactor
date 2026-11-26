@@ -174,9 +174,9 @@ def translate_terms_lean(
 def _output_expr(wire_expr: dict[int, str], w: Wire) -> str:
     """The expression a block output is bound to, by a term or as an input.
 
-    Raises rather than emitting a placeholder: a build counts only the
-    `sorry`s under `Certificate/` as unproved, so one in `System/` would pass
-    for a proof.
+    Raises rather than emitting a placeholder: a `sorry` here would be a
+    module nobody wrote, where the only `sorry`s meant to be there are the
+    certificate's proofs, a prover's to write.
     """
     if w.id not in wire_expr:
         raise Refused(
@@ -229,19 +229,21 @@ def translate_terms_scalar(
     input_bindings: dict[int, str],
     block_outputs: list[Wire],
     constants: ConstantRegistry,
-    flat_slots: "dict[int, list[str]] | None" = None,
+    flat_slots: "dict[int, list[str]]",
 ) -> str:
     """Compile terms into a Lean body using scalar types for 1×1 wires.
 
-    ``flat_slots`` maps wire IDs to their flat scalar accessor strings.  An
-    ``Argmax`` over one row whose slots are known is a call to
-    ``argmax1d_scalar_*`` on them, instead of a matrix rebuilt from them.
+    ``flat_slots`` maps each input wire's ID to its flat scalar accessor
+    strings (`encodings.common.scalar_bindings_with_recon`), and each wire
+    a term writes gets its own here. An ``Argmax`` over one row is a call
+    to ``argmax1d_scalar_*`` on its slots, instead of a matrix rebuilt from
+    them; a ``Get`` is the one slot it picks.
 
     Falls back to the op table's matrix column for non-scalar output wires
     and for the ops whose scalar cell is `ViaMat`.
     """
     wire_expr: dict[int, str] = dict(input_bindings)
-    flat_slots = dict(flat_slots or {})
+    flat_slots = dict(flat_slots)
     let_lines: list[str] = []
 
     for var_counter, term in enumerate(terms):
@@ -256,8 +258,8 @@ def translate_terms_scalar(
             # against `argmax_1d`, and nothing relates that to the `argmax`
             # the functional encoding takes of more than one row.
             in_wire = term.read[0]
-            slots = flat_slots.get(in_wire.id)
-            if slots is not None and argmax_variant(term) == "argmax_1d":
+            if argmax_variant(term) == "argmax_1d":
+                slots = flat_slots[in_wire.id]
                 helper = argmax_scalar_name(in_wire.dtype, len(slots))
                 expr = f"({helper} {' '.join(slots)})"
             else:
@@ -271,14 +273,9 @@ def translate_terms_scalar(
             if wire_shape(write_wire).is_scalar:
                 expr = f"({expr} 0 0)"
         elif name == "Get":
-            # A 1x1 element of whatever is read: its flat slot where the
-            # read wire has them, else the matrix applied to the indices.
+            # A 1x1 element of whatever is read: its flat slot.
             in_wire, op = term.read[0], term.itype
-            slots = flat_slots.get(in_wire.id)
-            if slots is not None:
-                expr = slots[op.row * wire_shape(in_wire).n + op.col]
-            else:
-                expr = f"({wire_expr[in_wire.id]} {op.row} {op.col})"
+            expr = flat_slots[in_wire.id][op.row * wire_shape(in_wire).n + op.col]
         elif wire_shape(write_wire).is_scalar and scalar_emitter(term.itype) is not None:
             input_exprs = [wire_expr[w.id] for w in term.read]
             expr = scalar_emitter(term.itype)(input_exprs)

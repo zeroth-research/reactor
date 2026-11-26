@@ -91,6 +91,20 @@ def test_a_cert_file_sibling_that_cannot_be_written(tmp_path):
     assert err.startswith("error: --cert-file: ")
 
 
+def test_a_refusal_of_the_module_is_not_the_cert_files(tmp_path, monkeypatch):
+    """Only what cannot be written is `--cert-file`'s; a refusal of the
+    module reads as it does without the flag."""
+    from reactor_lean import cli
+    from reactor_lean.errors import Refused
+
+    def refuse(*_):
+        raise Refused("block output wire #7 is written by no term")
+
+    monkeypatch.setattr(cli, "generate_standalone_cert_lean", refuse)
+    with pytest.raises(SystemExit, match="^error: block output wire #7"):
+        cli.standalone(str(tmp_path / "Cert.lean"), None, None)
+
+
 def test_a_let_in_a_claim(tmp_path):
     err = _refused(reactor(COUNTER, "--buchi", "(= (X @intf.0) 0)",
                            "--invariant", "(let ((y (X @intf.0))) (>= y 0))",
