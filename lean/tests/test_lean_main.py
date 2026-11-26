@@ -163,6 +163,8 @@ def test_bitvec_extl_is_parsed_as_bitvec():
     assert "BitVec.ofInt 8 v" in main, "BitVec input is not converted"
     assert "Matrix (Fin 1) (Fin 1) (BitVec 8)" in main
     assert "Array Int" not in main
+    # Printed as the number it holds, which the parser reads back.
+    assert "showMatrix 1 1 showWord v0" in main
 
 
 def test_real_io_is_refused_with_a_reason():

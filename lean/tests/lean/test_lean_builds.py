@@ -83,8 +83,9 @@ def test_argmax_scalar_equiv_build(generate_lean_files):
     [
         # LIA: x starts at 0, increments each step, resets at 10
         ("counter", "x\nx\nx\n", ["0", "1", "2"]),
-        # BV: two-bit counter with enable=1 counts 00, 10, 01, 11
-        ("twobit", "1\n1\n1\n", ["0x0#1", "0x0#1", "0x1#1", "0x0#1", "0x0#1", "0x1#1"]),
+        # BV: two-bit counter with enable=1 counts 00, 10, 01, 11; a word
+        # is printed as the number it holds, which is how it is read.
+        ("twobit", "1\n1\n1\n", ["0", "0", "1", "0", "0", "1"]),
     ],
 )
 def test_generated_executable_builds_and_runs(

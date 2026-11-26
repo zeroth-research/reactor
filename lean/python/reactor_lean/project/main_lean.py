@@ -10,7 +10,7 @@ from ..errors import Refused
 from ..lowering.sorts import lean_elem_type, mat_mk, wire_shape
 from ..codegen.context import LeanContext
 from ..codegen.terms import build_tuple, product_type
-from .names import LINTERS_OFF
+from .names import LINTERS_OFF, SYSTEM_LAYOUT
 
 
 def check_runnable(ctx: LeanContext) -> None:
@@ -44,9 +44,14 @@ def _elem_parser(sort) -> "tuple[str, str, str]":
 
 
 def _elem_shower(sort) -> str:
-    """Lean function rendering one element of `sort` (as `_elem_parser`
-    reads it) as a String."""
-    return "showBool" if isinstance(sort, Bool) else "toString"
+    """Lean function rendering one element of `sort` as a String, in the
+    form `_elem_parser` reads back: a `Bool` as 1 or 0, a word as the
+    natural number it holds, as reactor's evaluator gives it."""
+    if isinstance(sort, Bool):
+        return "showBool"
+    if isinstance(sort, Word):
+        return "showWord"
+    return "toString"
 
 
 def generate_main_lean(ctx: LeanContext) -> str:
@@ -61,7 +66,7 @@ def generate_main_lean(ctx: LeanContext) -> str:
 
     # Imports. `init`/`update` are emitted into System/System.lean, which the
     # `System` lean_lib's root module pulls in.
-    lines.append("import System")
+    lines.append(f"import {SYSTEM_LAYOUT.base}")
     lines.append("")
     lines.append(LINTERS_OFF)
     lines.append("")
@@ -71,6 +76,7 @@ def generate_main_lean(ctx: LeanContext) -> str:
         'def parseBool (s : String) : Bool := s.trimAscii.toString == "true" || s.trimAscii.toString == "1"'
     )
     lines.append('def showBool (b : Bool) : String := if b then "1" else "0"')
+    lines.append("def showWord {w : Nat} (x : BitVec w) : String := toString x.toNat")
     lines.append("")
     lines.append("def parseIntOrFail (s : String) : IO Int := do")
     lines.append("  match s.trimAscii.toString.toInt? with")
@@ -128,7 +134,7 @@ def generate_main_lean(ctx: LeanContext) -> str:
     for i in range(len(ctrl_next)):
         destr_vars.append(f"v{i}")
     # Same order here: v{i} must bind ctrl_next[i], since the formatters
-    # below pick showBool/toString/showMatrix from that wire's type.
+    # below pick showBool/showWord/toString from that wire's type.
     lines.append(f"  let {build_tuple(destr_vars)} := v")
 
     # Format each variable by its element sort: `dtype_to_lean_type` is a
