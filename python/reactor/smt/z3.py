@@ -8,16 +8,26 @@ their width, whose operations follow SMT-LIB2, as those of `reactor.eval` do.
 import z3 as _z3
 import torch
 from ..reactor import Havoc, Skip
-from .. import reactor
-from .. import reactor as _rr
 from ..real import Real
 from ..int import Int
 from ..bool import Bool
 from ..word import Word
+from .. import real as _rl
+from ..real import broadcast as _rb
+from .. import int as _ii
+from ..int import broadcast as _ib
+from .. import bool as _bl
+from ..bool import broadcast as _bb
+from .. import word as _ww
+from ..word import broadcast as _wb
+from ..word import signed as _ws
+from ..word import unsigned as _wu
+from .. import zero as _zz
 import numpy as _np
 import operator
 
-from ..zero import Zero
+
+__all__ = ["fresh", "interpret", "eval"]
 
 
 def fresh(dtype, prefix):
@@ -71,183 +81,183 @@ def interpret(itype):
             return lambda x: x
         case Havoc(dtype):
             return lambda: fresh(dtype, "HAVOC")
-        case Zero():
+        case _zz.Zero():
             # the singleton sort is the rate of change of discrete values, which are
             # never integrated: nothing encodes it
             raise RuntimeError("Zero writes the singleton sort, which is never encoded")
-        case reactor.real.Zero(Real(shape)):
+        case _rl.Zero(Real(shape)):
             return lambda: _zeros(Real(shape))
 
         # constants
-        case _rr.bool.Truth(t):
+        case _bl.Truth(t):
             return lambda: _np.vectorize(_z3.BoolVal, otypes=[object])(t.detach().numpy())
-        case reactor.real.Num(t):
+        case _rl.Num(t):
             return lambda: _np.vectorize(_z3.RealVal, otypes=[object])(t.detach().numpy())
-        case _rr.int.Num(t):
+        case _ii.Num(t):
             return lambda: _np.vectorize(_z3.IntVal, otypes=[object])(t.detach().numpy())
-        case reactor.word.Num(t, Word(w)):
+        case _ww.Num(t, Word(w)):
             return lambda: _np.vectorize(lambda v: _z3.BitVecVal(int(v), w), otypes=[object])(t.detach().numpy())
 
         # arithmetic
-        case reactor.real.Sub() | _rr.int.Sub():
+        case _rl.Sub() | _ii.Sub():
             return _np.frompyfunc(operator.sub, 2, 1)
-        case reactor.real.Add() | _rr.int.Add():
+        case _rl.Add() | _ii.Add():
             return _np.frompyfunc(operator.add, 2, 1)
-        case reactor.real.Mul() | _rr.int.Mul():
+        case _rl.Mul() | _ii.Mul():
             return _np.frompyfunc(operator.mul, 2, 1)
-        case reactor.real.Div() | _rr.int.Div():
+        case _rl.Div() | _ii.Div():
             return _np.frompyfunc(operator.truediv, 2, 1)
-        case _rr.int.Mod():
+        case _ii.Mod():
             return _np.frompyfunc(operator.mod, 2, 1)
-        case reactor.real.MatMul() | _rr.int.MatMul():
+        case _rl.MatMul() | _ii.MatMul():
             return lambda x, y: x @ y
-        case reactor.real.Linear(a) | _rr.int.Linear(a):
+        case _rl.Linear(a) | _ii.Linear(a):
             return lambda x: a.detach().numpy() @ x
-        case reactor.real.Affine(weight, bias) | _rr.int.Affine(weight, bias):
+        case _rl.Affine(weight, bias) | _ii.Affine(weight, bias):
             return lambda x: weight.detach().numpy() @ x + bias.detach().numpy()
-        case reactor.real.Scale(c) | _rr.int.Scale(c):
+        case _rl.Scale(c) | _ii.Scale(c):
             return lambda x: c.detach().numpy() * x
 
         # comparisons (produce Bool)
-        case reactor.real.Eq() | _rr.int.Eq() | _rr.bool.Eq():
+        case _rl.Eq() | _ii.Eq() | _bl.Eq():
             return _np.frompyfunc(operator.eq, 2, 1)
-        case reactor.real.Ne() | _rr.int.Ne() | _rr.bool.Ne():
+        case _rl.Ne() | _ii.Ne() | _bl.Ne():
             return _np.frompyfunc(operator.ne, 2, 1)
-        case reactor.real.Lt() | _rr.int.Lt():
+        case _rl.Lt() | _ii.Lt():
             return _np.frompyfunc(operator.lt, 2, 1)
-        case reactor.real.Le() | _rr.int.Le():
+        case _rl.Le() | _ii.Le():
             return _np.frompyfunc(operator.le, 2, 1)
-        case reactor.real.Gt() | _rr.int.Gt():
+        case _rl.Gt() | _ii.Gt():
             return _np.frompyfunc(operator.gt, 2, 1)
-        case reactor.real.Ge() | _rr.int.Ge():
+        case _rl.Ge() | _ii.Ge():
             return _np.frompyfunc(operator.ge, 2, 1)
 
         # logical
-        case _rr.bool.And():
+        case _bl.And():
             return _np.frompyfunc(lambda x, y: _z3.And(x, y), 2, 1)
-        case _rr.bool.Or():
+        case _bl.Or():
             return _np.frompyfunc(lambda x, y: _z3.Or(x, y), 2, 1)
-        case _rr.bool.Not():
+        case _bl.Not():
             return _np.frompyfunc(lambda x: _z3.Not(x), 1, 1)
-        case _rr.bool.Xor():
+        case _bl.Xor():
             return _np.frompyfunc(lambda x, y: _z3.Xor(x, y), 2, 1)
 
         # control flow
         case (
-            reactor.real.Ite()
-            | _rr.int.Ite()
-            | _rr.bool.Ite()
-            | reactor.word.Ite()
-            | reactor.real.broadcast.Ite()
-            | _rr.int.broadcast.Ite()
-            | _rr.bool.broadcast.Ite()
-            | reactor.word.broadcast.Ite()
+            _rl.Ite()
+            | _ii.Ite()
+            | _bl.Ite()
+            | _ww.Ite()
+            | _rb.Ite()
+            | _ib.Ite()
+            | _bb.Ite()
+            | _wb.Ite()
         ):
             # pointwise, or by a scalar condition, broadcast to the whole matrix
             return _np.frompyfunc(lambda c, tt, ff: _z3.If(c, tt, ff), 3, 1)
 
         # neural-ish / aggregate
-        case reactor.real.Neg() | _rr.int.Neg():
+        case _rl.Neg() | _ii.Neg():
             return _np.frompyfunc(lambda x: -x, 1, 1)
-        case reactor.real.Abs() | _rr.int.Abs():
+        case _rl.Abs() | _ii.Abs():
             return _np.frompyfunc(lambda x: _z3.If(x >= 0, x, -x), 1, 1)
-        case reactor.real.ReLU() | _rr.int.ReLU():
+        case _rl.ReLU() | _ii.ReLU():
             return _np.frompyfunc(lambda x: _z3.If(x > 0, x, 0), 1, 1)
-        case reactor.real.Min() | _rr.int.Min():
+        case _rl.Min() | _ii.Min():
             return _np.frompyfunc(lambda x, y: _z3.If(x <= y, x, y), 2, 1)
-        case reactor.real.Max() | _rr.int.Max():
+        case _rl.Max() | _ii.Max():
             return _np.frompyfunc(lambda x, y: _z3.If(x >= y, x, y), 2, 1)
 
-        case reactor.real.Transpose() | _rr.int.Transpose():
+        case _rl.Transpose() | _ii.Transpose():
             return _np.transpose
-        case reactor.real.Argmax():
+        case _rl.Argmax():
             return lambda x: _argmax(x, _z3.RealVal)
-        case _rr.int.Argmax():
+        case _ii.Argmax():
             return lambda x: _argmax(x, _z3.IntVal)
 
         # words: comparisons, unsigned by default, signed as Z3's own
-        case reactor.word.Eq():
+        case _ww.Eq():
             return _np.frompyfunc(operator.eq, 2, 1)
-        case reactor.word.Ne():
+        case _ww.Ne():
             return _np.frompyfunc(operator.ne, 2, 1)
-        case reactor.word.unsigned.Lt():
+        case _wu.Lt():
             return _np.frompyfunc(_z3.ULT, 2, 1)
-        case reactor.word.unsigned.Le():
+        case _wu.Le():
             return _np.frompyfunc(_z3.ULE, 2, 1)
-        case reactor.word.unsigned.Gt():
+        case _wu.Gt():
             return _np.frompyfunc(_z3.UGT, 2, 1)
-        case reactor.word.unsigned.Ge():
+        case _wu.Ge():
             return _np.frompyfunc(_z3.UGE, 2, 1)
-        case reactor.word.signed.Lt():
+        case _ws.Lt():
             return _np.frompyfunc(operator.lt, 2, 1)
-        case reactor.word.signed.Le():
+        case _ws.Le():
             return _np.frompyfunc(operator.le, 2, 1)
-        case reactor.word.signed.Gt():
+        case _ws.Gt():
             return _np.frompyfunc(operator.gt, 2, 1)
-        case reactor.word.signed.Ge():
+        case _ws.Ge():
             return _np.frompyfunc(operator.ge, 2, 1)
 
         # words: arithmetic modulo 2^w
-        case reactor.word.Add():
+        case _ww.Add():
             return _np.frompyfunc(operator.add, 2, 1)
-        case reactor.word.Sub():
+        case _ww.Sub():
             return _np.frompyfunc(operator.sub, 2, 1)
-        case reactor.word.Mul():
+        case _ww.Mul():
             return _np.frompyfunc(operator.mul, 2, 1)
-        case reactor.word.Neg():
+        case _ww.Neg():
             return _np.frompyfunc(operator.neg, 1, 1)
-        case reactor.word.signed.Abs():
+        case _ws.Abs():
             return _np.frompyfunc(_abs, 1, 1)
-        case reactor.word.unsigned.Div():
+        case _wu.Div():
             return _np.frompyfunc(_z3.UDiv, 2, 1)
-        case reactor.word.unsigned.Rem():
+        case _wu.Rem():
             return _np.frompyfunc(_z3.URem, 2, 1)
-        case reactor.word.signed.Div():
+        case _ws.Div():
             # Z3's `/` on bit-vectors is the signed division
             return _np.frompyfunc(operator.truediv, 2, 1)
-        case reactor.word.signed.Rem():
+        case _ws.Rem():
             return _np.frompyfunc(_z3.SRem, 2, 1)
-        case reactor.word.signed.Mod():
+        case _ws.Mod():
             # Z3's `%` on bit-vectors is the signed modulus
             return _np.frompyfunc(operator.mod, 2, 1)
 
         # words: bitwise
-        case reactor.word.And():
+        case _ww.And():
             return _np.frompyfunc(operator.and_, 2, 1)
-        case reactor.word.Or():
+        case _ww.Or():
             return _np.frompyfunc(operator.or_, 2, 1)
-        case reactor.word.Xor():
+        case _ww.Xor():
             return _np.frompyfunc(operator.xor, 2, 1)
-        case reactor.word.Not():
+        case _ww.Not():
             return _np.frompyfunc(operator.invert, 1, 1)
-        case reactor.word.Nand():
+        case _ww.Nand():
             return _np.frompyfunc(lambda x, y: ~(x & y), 2, 1)
-        case reactor.word.Nor():
+        case _ww.Nor():
             return _np.frompyfunc(lambda x, y: ~(x | y), 2, 1)
-        case reactor.word.Xnor():
+        case _ww.Xnor():
             return _np.frompyfunc(lambda x, y: ~(x ^ y), 2, 1)
 
         # words: shifts, rotations and resizing
-        case reactor.word.Shl():
+        case _ww.Shl():
             return _np.frompyfunc(operator.lshift, 2, 1)
-        case reactor.word.unsigned.Shr():
+        case _wu.Shr():
             return _np.frompyfunc(_z3.LShR, 2, 1)
-        case reactor.word.signed.Shr():
+        case _ws.Shr():
             # Z3's `>>` on bit-vectors is the arithmetic shift
             return _np.frompyfunc(operator.rshift, 2, 1)
-        case reactor.word.RotateLeft(i):
+        case _ww.RotateLeft(i):
             return _np.frompyfunc(lambda x: _z3.RotateLeft(x, i), 1, 1)
-        case reactor.word.RotateRight(i):
+        case _ww.RotateRight(i):
             return _np.frompyfunc(lambda x: _z3.RotateRight(x, i), 1, 1)
-        case reactor.word.Concat():
+        case _ww.Concat():
             return _np.frompyfunc(_z3.Concat, 2, 1)
-        case reactor.word.Extract(i, j):
+        case _ww.Extract(i, j):
             return _np.frompyfunc(lambda x: _z3.Extract(i, j, x), 1, 1)
-        case reactor.word.Repeat(i):
+        case _ww.Repeat(i):
             return _np.frompyfunc(lambda x: _z3.RepeatBitVec(i, x), 1, 1)
-        case reactor.word.unsigned.Extend(i):
+        case _wu.Extend(i):
             return _np.frompyfunc(lambda x: _z3.ZeroExt(i, x), 1, 1)
-        case reactor.word.signed.Extend(i):
+        case _ws.Extend(i):
             return _np.frompyfunc(lambda x: _z3.SignExt(i, x), 1, 1)
         case _:
             raise NotImplementedError(f"itype: {itype}")

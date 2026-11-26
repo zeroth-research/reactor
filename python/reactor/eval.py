@@ -11,14 +11,23 @@ and every word result is reduced modulo `2^w`. Division by zero follows SMT-LIB2
 import torch
 
 from .reactor import Havoc, Skip
-from . import reactor
-from . import reactor as _rr
-from .zero import Zero
 from .real import Real
 from .int import Int
 from .bool import Bool
 from .word import Word
+from . import real as _rl
+from .real import broadcast as _rb
+from . import int as _ii
+from .int import broadcast as _ib
+from . import bool as _bl
+from .bool import broadcast as _bb
+from . import word as _ww
+from .word import broadcast as _wb
+from .word import signed as _ws
+from .word import unsigned as _wu
+from . import zero as _zz
 
+__all__ = ["eval_itype", "execute_init", "execute_update", "read_wire", "getattr_wire"]
 
 
 def _wrap(t, w):
@@ -118,162 +127,162 @@ def eval_itype(itype, read, out_sort=None):
         case Havoc(sort):
             # an arbitrary value: zeros
             return [_zeros(sort)]
-        case Zero():
+        case _zz.Zero():
             # the singleton sort is the rate of change of discrete values, which are
             # never integrated: nothing evaluates it
             raise RuntimeError("Zero writes the singleton sort, which is never evaluated")
-        case reactor.real.Zero(Real(shape)):
+        case _rl.Zero(Real(shape)):
             # the zero matrix, of any degree: the zero rate of change
             return [torch.zeros(shape, dtype=torch.float32)]
 
         # --- constants, linear and affine maps (tensors carried by the op) ---
-        case reactor.real.Num(t):
+        case _rl.Num(t):
             # a real constant may hold integers, kept as given; its value is a real, of
             # floating point, so that it neither wraps around nor mixes with integers
             return [t.clone() if t.is_floating_point() else t.to(torch.get_default_dtype())]
-        case _rr.int.Num(t) | _rr.bool.Truth(t) | reactor.word.Num(t):
+        case _ii.Num(t) | _bl.Truth(t) | _ww.Num(t):
             return [t.clone()]
-        case reactor.real.Linear(a) | _rr.int.Linear(a):
+        case _rl.Linear(a) | _ii.Linear(a):
             return [a @ r[0]]
-        case reactor.real.Affine(a, b) | _rr.int.Affine(a, b):
+        case _rl.Affine(a, b) | _ii.Affine(a, b):
             return [a @ r[0] + b]
-        case reactor.real.Scale(c) | _rr.int.Scale(c):
+        case _rl.Scale(c) | _ii.Scale(c):
             return [c * r[0]]
 
         # --- choice ---
         case (
-            reactor.real.Ite()
-            | _rr.int.Ite()
-            | _rr.bool.Ite()
-            | reactor.word.Ite()
-            | reactor.real.broadcast.Ite()
-            | _rr.int.broadcast.Ite()
-            | _rr.bool.broadcast.Ite()
-            | reactor.word.broadcast.Ite()
+            _rl.Ite()
+            | _ii.Ite()
+            | _bl.Ite()
+            | _ww.Ite()
+            | _rb.Ite()
+            | _ib.Ite()
+            | _bb.Ite()
+            | _wb.Ite()
         ):
             # pointwise, or by a scalar condition, broadcast to the whole matrix
             return [torch.where(r[0], r[1], r[2])]
 
         # --- real and integer arithmetic (exact) ---
-        case reactor.real.Add() | _rr.int.Add():
+        case _rl.Add() | _ii.Add():
             return [r[0] + r[1]]
-        case reactor.real.Sub() | _rr.int.Sub():
+        case _rl.Sub() | _ii.Sub():
             return [r[0] - r[1]]
-        case reactor.real.Mul() | _rr.int.Mul():
+        case _rl.Mul() | _ii.Mul():
             return [r[0] * r[1]]
-        case reactor.real.Div():
+        case _rl.Div():
             return [r[0] / r[1]]
-        case _rr.int.Div():
+        case _ii.Div():
             return [_euclid(r[0], r[1])[0]]
-        case _rr.int.Mod():
+        case _ii.Mod():
             return [_euclid(r[0], r[1])[1]]
-        case reactor.real.Neg() | _rr.int.Neg():
+        case _rl.Neg() | _ii.Neg():
             return [-r[0]]
-        case reactor.real.Abs() | _rr.int.Abs():
+        case _rl.Abs() | _ii.Abs():
             return [r[0].abs()]
-        case reactor.real.ReLU() | _rr.int.ReLU():
+        case _rl.ReLU() | _ii.ReLU():
             return [r[0].relu()]
-        case reactor.real.Min() | _rr.int.Min():
+        case _rl.Min() | _ii.Min():
             return [torch.minimum(r[0], r[1])]
-        case reactor.real.Max() | _rr.int.Max():
+        case _rl.Max() | _ii.Max():
             return [torch.maximum(r[0], r[1])]
-        case reactor.real.Argmax() | _rr.int.Argmax():
+        case _rl.Argmax() | _ii.Argmax():
             return [r[0].argmax().reshape(1, 1).to(r[0].dtype)]
-        case reactor.real.Transpose() | _rr.int.Transpose():
+        case _rl.Transpose() | _ii.Transpose():
             return [r[0].transpose(0, 1)]
-        case reactor.real.MatMul() | _rr.int.MatMul():
+        case _rl.MatMul() | _ii.MatMul():
             return [r[0] @ r[1]]
 
         # --- comparisons: write booleans ---
-        case reactor.real.Eq() | _rr.int.Eq() | _rr.bool.Eq() | reactor.word.Eq():
+        case _rl.Eq() | _ii.Eq() | _bl.Eq() | _ww.Eq():
             return [r[0].eq(r[1])]
-        case reactor.real.Ne() | _rr.int.Ne() | _rr.bool.Ne() | reactor.word.Ne():
+        case _rl.Ne() | _ii.Ne() | _bl.Ne() | _ww.Ne():
             return [r[0].ne(r[1])]
-        case reactor.real.Lt() | _rr.int.Lt() | reactor.word.unsigned.Lt():
+        case _rl.Lt() | _ii.Lt() | _wu.Lt():
             return [r[0].lt(r[1])]
-        case reactor.real.Le() | _rr.int.Le() | reactor.word.unsigned.Le():
+        case _rl.Le() | _ii.Le() | _wu.Le():
             return [r[0].le(r[1])]
-        case reactor.real.Gt() | _rr.int.Gt() | reactor.word.unsigned.Gt():
+        case _rl.Gt() | _ii.Gt() | _wu.Gt():
             return [r[0].gt(r[1])]
-        case reactor.real.Ge() | _rr.int.Ge() | reactor.word.unsigned.Ge():
+        case _rl.Ge() | _ii.Ge() | _wu.Ge():
             return [r[0].ge(r[1])]
-        case reactor.word.signed.Lt([Word(w), Word(u)]):
+        case _ws.Lt([Word(w), Word(u)]):
             return [_signed(r[0], w).lt(_signed(r[1], u))]
-        case reactor.word.signed.Le([Word(w), Word(u)]):
+        case _ws.Le([Word(w), Word(u)]):
             return [_signed(r[0], w).le(_signed(r[1], w))]
-        case reactor.word.signed.Gt([Word(w), Word(u)]):
+        case _ws.Gt([Word(w), Word(u)]):
             return [_signed(r[0], w).gt(_signed(r[1], w))]
-        case reactor.word.signed.Ge([Word(w), Word(u)]):
+        case _ws.Ge([Word(w), Word(u)]):
             return [_signed(r[0], w).ge(_signed(r[1], w))]
 
         # --- propositional logic ---
-        case _rr.bool.And():
+        case _bl.And():
             return [r[0].logical_and(r[1])]
-        case _rr.bool.Or():
+        case _bl.Or():
             return [r[0].logical_or(r[1])]
-        case _rr.bool.Xor():
+        case _bl.Xor():
             return [r[0].logical_xor(r[1])]
-        case _rr.bool.Not():
+        case _bl.Not():
             return [r[0].logical_not()]
 
         # --- words: arithmetic modulo 2^w ---
-        case reactor.word.Add(_, Word(w)):
+        case _ww.Add(_, Word(w)):
             return [_wrap(r[0] + r[1], w)]
-        case reactor.word.Sub(_, Word(w)):
+        case _ww.Sub(_, Word(w)):
             return [_wrap(r[0] - r[1], w)]
-        case reactor.word.Mul(_, Word(w)):
+        case _ww.Mul(_, Word(w)):
             return [_wrap(r[0] * r[1], w)]
-        case reactor.word.Neg(_, Word(w)):
+        case _ww.Neg(_, Word(w)):
             return [_wrap(-r[0], w)]
-        case reactor.word.signed.Abs(_, Word(w)):
+        case _ws.Abs(_, Word(w)):
             return [_wrap(_signed(r[0], w).abs(), w)]
-        case reactor.word.unsigned.Div(_, Word(w)):
+        case _wu.Div(_, Word(w)):
             return [_udiv(r[0], r[1], w)]
-        case reactor.word.unsigned.Rem():
+        case _wu.Rem():
             return [_urem(r[0], r[1])]
-        case reactor.word.signed.Div(_, Word(w)):
+        case _ws.Div(_, Word(w)):
             return [_sdiv(r[0], r[1], w)]
-        case reactor.word.signed.Rem(_, Word(w)):
+        case _ws.Rem(_, Word(w)):
             return [_srem(r[0], r[1], w)]
-        case reactor.word.signed.Mod(_, Word(w)):
+        case _ws.Mod(_, Word(w)):
             return [_smod(r[0], r[1], w)]
 
         # --- words: bitwise ---
-        case reactor.word.And():
+        case _ww.And():
             return [r[0] & r[1]]
-        case reactor.word.Or():
+        case _ww.Or():
             return [r[0] | r[1]]
-        case reactor.word.Xor():
+        case _ww.Xor():
             return [r[0] ^ r[1]]
-        case reactor.word.Not(_, Word(w)):
+        case _ww.Not(_, Word(w)):
             return [_wrap(~r[0], w)]
-        case reactor.word.Nand(_, Word(w)):
+        case _ww.Nand(_, Word(w)):
             return [_wrap(~(r[0] & r[1]), w)]
-        case reactor.word.Nor(_, Word(w)):
+        case _ww.Nor(_, Word(w)):
             return [_wrap(~(r[0] | r[1]), w)]
-        case reactor.word.Xnor(_, Word(w)):
+        case _ww.Xnor(_, Word(w)):
             return [_wrap(~(r[0] ^ r[1]), w)]
 
         # --- words: shifts, rotations and resizing ---
-        case reactor.word.Shl(_, Word(w)):
+        case _ww.Shl(_, Word(w)):
             return [_shl(r[0], r[1], w)]
-        case reactor.word.unsigned.Shr(_, Word(w)):
+        case _wu.Shr(_, Word(w)):
             return [_lshr(r[0], r[1], w)]
-        case reactor.word.signed.Shr(_, Word(w)):
+        case _ws.Shr(_, Word(w)):
             return [_ashr(r[0], r[1], w)]
-        case reactor.word.RotateLeft(i, _, Word(w)):
+        case _ww.RotateLeft(i, _, Word(w)):
             return [_rotl(r[0], i, w)]
-        case reactor.word.RotateRight(i, _, Word(w)):
+        case _ww.RotateRight(i, _, Word(w)):
             return [_rotl(r[0], w - i % w, w)]
-        case reactor.word.Concat([Word(u), Word(v)]):
+        case _ww.Concat([Word(u), Word(v)]):
             return [(r[0] << v) | r[1]]
-        case reactor.word.Extract(i, j, _, Word(v)):
+        case _ww.Extract(i, j, _, Word(v)):
             return [(r[0] >> j) & ((1 << v) - 1)]
-        case reactor.word.Repeat(i, Word(w)):
+        case _ww.Repeat(i, Word(w)):
             return [_repeat(r[0], i, w)]
-        case reactor.word.unsigned.Extend():
+        case _wu.Extend():
             return [r[0].clone()]
-        case reactor.word.signed.Extend(i, Word(w), Word(v)):
+        case _ws.Extend(i, Word(w), Word(v)):
             return [_wrap(_signed(r[0], w), v)]
 
     raise RuntimeError(f"cannot evaluate op: {itype}")

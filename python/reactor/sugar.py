@@ -54,7 +54,7 @@ Two base-class constraints force this (both flagged for design review):
 
 import inspect
 
-from . import reactor
+import reactor as _rr
 from .reactor import Module as _Module, Term as _Term, Var, Skip, T
 
 from .expr import expr, cast, ite, relu, argmax, collecting, Expr, X as expr_X, d as expr_d  # re-exported for authoring
@@ -94,7 +94,7 @@ def _build_init_block(cls, ctrl, extl) -> list:
             raise ValueError(f"init expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
             e = val if isinstance(val, Expr) else expr(val, sort=var.dtype)
-            terms.append(_Term(Skip(var.dtype), [reactor.X(var)], [e.wire]))
+            terms.append(_Term(Skip(var.dtype), [_rr.X(var)], [e.wire]))
         return terms
 
 
@@ -115,7 +115,7 @@ def _build_update_block(cls, ctrl, extl) -> list:
             raise ValueError(f"update expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
             e = val if isinstance(val, Expr) else expr(val, sort=var.dtype)
-            terms.append(_Term(Skip(var.dtype), [reactor.X(var)], [e.wire]))
+            terms.append(_Term(Skip(var.dtype), [_rr.X(var)], [e.wire]))
         return terms
 
 
@@ -136,7 +136,7 @@ def _build_delay_block(cls, ctrl, extl) -> list:
             raise ValueError(f"delay expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
             e = val if isinstance(val, Expr) else expr(val, sort=T(var.dtype))
-            terms.append(_Term(Skip(T(var.dtype)), [reactor.d(var)], [e.wire]))
+            terms.append(_Term(Skip(T(var.dtype)), [_rr.d(var)], [e.wire]))
         return terms
 
 
@@ -144,7 +144,7 @@ def X(var):
     if isinstance(var, Expr):
         return expr_X(var)
     elif isinstance(var, Var):
-        return reactor.X(var)
+        return _rr.X(var)
     else:
         raise ValueError(f"sugar.X expects Expr or Var, got {var}")
 
@@ -153,7 +153,7 @@ def d(var):
     if isinstance(var, Expr):
         return expr_d(var)
     elif isinstance(var, Var):
-        return reactor.d(var)
+        return _rr.d(var)
     else:
         raise ValueError(f"sugar.d expects Expr or Var, got {var}")
 

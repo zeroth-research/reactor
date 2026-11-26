@@ -4,11 +4,11 @@ import inspect
 import gymnasium as gym
 
 from ..reactor import Module, Wire, X, Var
-from ..zero import Real0
 from ..real import Real
 from ..int import Int
 from ..bool import Bool
 from ..word import Word
+from ..zero import Real0
 from ..builder import builder_for, number_sort
 from ..analyzer import (
     convert_method,

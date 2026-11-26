@@ -47,14 +47,43 @@ from typing import override
 
 import torch
 
-from . import reactor
-from . import reactor as _rr
-from .reactor import Term, Wire, Var
-from .zero import Zero, Real0
+import reactor as _rr
 from .real import Real
 from .int import Int
 from .bool import Bool
 from .word import Word
+from .zero import Real0
+from . import real as _rl
+from .real import broadcast as _rb
+from . import int as _ii
+from .int import broadcast as _ib
+from . import bool as _bl
+from .bool import broadcast as _bb
+from . import word as _ww
+from .word import broadcast as _wb
+from .word import signed as _ws
+from .word import unsigned as _wu
+from . import zero as _zz
+from .reactor import Term, Wire, Var
+
+__all__ = [
+    "collecting",
+    "Expr",
+    "AExpr",
+    "IExpr",
+    "RExpr",
+    "BExpr",
+    "WExpr",
+    "SExpr",
+    "UExpr",
+    "expr",
+    "cast",
+    "X",
+    "d",
+    "ite",
+    "relu",
+    "argmax",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +106,6 @@ def _family(sort) -> str:
         case Word(w):
             return f"Word{w}"
     raise TypeError(f"unknown sort: {sort}")
-
 
 
 class collecting:
@@ -262,11 +290,11 @@ class IExpr(AExpr):
 
     def __add__(self, o):
         o = self._coerce_same(o)
-        return self._binary(_rr.int.Add([self.dtype, o.dtype]), o)
+        return self._binary(_ii.Add([self.dtype, o.dtype]), o)
 
     def __sub__(self, o):
         o = self._coerce_same(o)
-        return self._binary(_rr.int.Sub([self.dtype, o.dtype]), o)
+        return self._binary(_ii.Sub([self.dtype, o.dtype]), o)
 
     def _mul(self, o) -> "Expr":
         """The pointwise product with the variable `o`."""
@@ -274,7 +302,7 @@ class IExpr(AExpr):
         assert self._value is None, "a constant factor goes second, as a Scale"
         assert o.shape == self.shape, f"cannot multiply {self.shape} and {o.shape} pointwise"
         o = self._coerce_same(o)
-        return self._binary(_rr.int.Mul([self.dtype, o.dtype]), o)
+        return self._binary(_ii.Mul([self.dtype, o.dtype]), o)
 
     def _scale(self, c) -> "Expr":
         """The linear map `x ↦ C ⊙ x` by the constant `c` of my shape, sharing its tensor
@@ -282,46 +310,46 @@ class IExpr(AExpr):
         assert isinstance(c, torch.Tensor), f"the constant must be a tensor, got {type(c)}"
         assert list(c.shape) == self.shape, f"cannot scale {self.shape} by a constant of {list(c.shape)}"
         integer = not c.is_floating_point() and c.dtype != torch.bool
-        return self._unary(_rr.int.Scale(c if integer else c.long(), self.dtype))
+        return self._unary(_ii.Scale(c if integer else c.long(), self.dtype))
 
     def __neg__(self):
-        return self._unary(_rr.int.Neg(self.dtype))
+        return self._unary(_ii.Neg(self.dtype))
 
     def __abs__(self):
-        return self._unary(_rr.int.Abs(self.dtype))
+        return self._unary(_ii.Abs(self.dtype))
 
     def __truediv__(self, o):
         o = self._coerce_same(o)
-        return self._binary(_rr.int.Div([self.dtype, o.dtype]), o)
+        return self._binary(_ii.Div([self.dtype, o.dtype]), o)
 
     def __matmul__(self, o):
         o = self._coerce_same(o)
-        return self._binary(_rr.int.MatMul([self.dtype, o.dtype]), o)
+        return self._binary(_ii.MatMul([self.dtype, o.dtype]), o)
 
     # comparisons -> Bool -> BExpr
     def __eq__(self, o):
         o = self._coerce_same(o)
-        return self._binary(_rr.int.Eq([self.dtype, o.dtype]), o)
+        return self._binary(_ii.Eq([self.dtype, o.dtype]), o)
 
     def __ne__(self, o):
         o = self._coerce_same(o)
-        return self._binary(_rr.int.Ne([self.dtype, o.dtype]), o)
+        return self._binary(_ii.Ne([self.dtype, o.dtype]), o)
 
     def __lt__(self, o):
         o = self._coerce_same(o)
-        return self._binary(_rr.int.Lt([self.dtype, o.dtype]), o)
+        return self._binary(_ii.Lt([self.dtype, o.dtype]), o)
 
     def __le__(self, o):
         o = self._coerce_same(o)
-        return self._binary(_rr.int.Le([self.dtype, o.dtype]), o)
+        return self._binary(_ii.Le([self.dtype, o.dtype]), o)
 
     def __gt__(self, o):
         o = self._coerce_same(o)
-        return self._binary(_rr.int.Gt([self.dtype, o.dtype]), o)
+        return self._binary(_ii.Gt([self.dtype, o.dtype]), o)
 
     def __ge__(self, o):
         o = self._coerce_same(o)
-        return self._binary(_rr.int.Ge([self.dtype, o.dtype]), o)
+        return self._binary(_ii.Ge([self.dtype, o.dtype]), o)
 
 
 class RExpr(AExpr):
@@ -330,11 +358,11 @@ class RExpr(AExpr):
 
     def __add__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.real.Add([self.dtype, o.dtype]), o)
+        return self._binary(_rl.Add([self.dtype, o.dtype]), o)
 
     def __sub__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.real.Sub([self.dtype, o.dtype]), o)
+        return self._binary(_rl.Sub([self.dtype, o.dtype]), o)
 
     def _mul(self, o) -> "Expr":
         """The pointwise product with the variable `o`."""
@@ -343,55 +371,55 @@ class RExpr(AExpr):
         assert o.shape == self.shape, f"cannot multiply {self.shape} and {o.shape} pointwise"
         o = self._coerce_same(o)
         # the degrees of the factors add up
-        return self._binary(reactor.real.Mul([self.dtype, o.dtype]), o)
+        return self._binary(_rl.Mul([self.dtype, o.dtype]), o)
 
     def _scale(self, c) -> "Expr":
         """The linear map `x ↦ C ⊙ x` by the constant `c` of my shape, sharing its tensor
         unless its element kind is not of my sort."""
         assert isinstance(c, torch.Tensor), f"the constant must be a tensor, got {type(c)}"
         assert list(c.shape) == self.shape, f"cannot scale {self.shape} by a constant of {list(c.shape)}"
-        return self._unary(reactor.real.Scale(c if c.is_floating_point() else c.float(), self.dtype))
+        return self._unary(_rl.Scale(c if c.is_floating_point() else c.float(), self.dtype))
 
     def __neg__(self):
-        return self._unary(reactor.real.Neg(self.dtype))
+        return self._unary(_rl.Neg(self.dtype))
 
     def __abs__(self):
-        return self._unary(reactor.real.Abs(self.dtype))
+        return self._unary(_rl.Abs(self.dtype))
 
     def __truediv__(self, o):
         o = self._coerce_same(o)
         # the degree of the divisor is taken off that of the dividend
-        return self._binary(reactor.real.Div([self.dtype, o.dtype]), o)
+        return self._binary(_rl.Div([self.dtype, o.dtype]), o)
 
     def __matmul__(self, o):
         o = self._coerce_same(o)
         # the degrees of the factors add up
-        return self._binary(reactor.real.MatMul([self.dtype, o.dtype]), o)
+        return self._binary(_rl.MatMul([self.dtype, o.dtype]), o)
 
     # comparisons -> Bool -> BExpr
     def __eq__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.real.Eq([self.dtype, o.dtype]), o)
+        return self._binary(_rl.Eq([self.dtype, o.dtype]), o)
 
     def __ne__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.real.Ne([self.dtype, o.dtype]), o)
+        return self._binary(_rl.Ne([self.dtype, o.dtype]), o)
 
     def __lt__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.real.Lt([self.dtype, o.dtype]), o)
+        return self._binary(_rl.Lt([self.dtype, o.dtype]), o)
 
     def __le__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.real.Le([self.dtype, o.dtype]), o)
+        return self._binary(_rl.Le([self.dtype, o.dtype]), o)
 
     def __gt__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.real.Gt([self.dtype, o.dtype]), o)
+        return self._binary(_rl.Gt([self.dtype, o.dtype]), o)
 
     def __ge__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.real.Ge([self.dtype, o.dtype]), o)
+        return self._binary(_rl.Ge([self.dtype, o.dtype]), o)
 
 
 # ---------------------------------------------------------------------------
@@ -402,26 +430,26 @@ class RExpr(AExpr):
 class BExpr(Expr):
     def __eq__(self, o):
         o = self._coerce_same(o)
-        return self._apply(_rr.bool.Eq([self.dtype, o.dtype]), self, o)
+        return self._apply(_bl.Eq([self.dtype, o.dtype]), self, o)
 
     def __ne__(self, o):
         o = self._coerce_same(o)
-        return self._apply(_rr.bool.Ne([self.dtype, o.dtype]), self, o)
+        return self._apply(_bl.Ne([self.dtype, o.dtype]), self, o)
 
     def __and__(self, o):
         o = self._coerce_same(o)
-        return self._apply(_rr.bool.And([self.dtype, o.dtype]), self, o)
+        return self._apply(_bl.And([self.dtype, o.dtype]), self, o)
 
     def __or__(self, o):
         o = self._coerce_same(o)
-        return self._apply(_rr.bool.Or([self.dtype, o.dtype]), self, o)
+        return self._apply(_bl.Or([self.dtype, o.dtype]), self, o)
 
     def __xor__(self, o):
         o = self._coerce_same(o)
-        return self._apply(_rr.bool.Xor([self.dtype, o.dtype]), self, o)
+        return self._apply(_bl.Xor([self.dtype, o.dtype]), self, o)
 
     def __invert__(self):
-        return self._apply(_rr.bool.Not(self.dtype), self)
+        return self._apply(_bl.Not(self.dtype), self)
 
 
 # ---------------------------------------------------------------------------
@@ -441,24 +469,24 @@ class WExpr(Expr):
 
     def __eq__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.word.Eq([self.dtype, o.dtype]), o)
+        return self._binary(_ww.Eq([self.dtype, o.dtype]), o)
 
     def __ne__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.word.Ne([self.dtype, o.dtype]), o)
+        return self._binary(_ww.Ne([self.dtype, o.dtype]), o)
 
     # arithmetic, modulo 2^width
     def __add__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.word.Add([self.dtype, o.dtype]), o)
+        return self._binary(_ww.Add([self.dtype, o.dtype]), o)
 
     def __sub__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.word.Sub([self.dtype, o.dtype]), o)
+        return self._binary(_ww.Sub([self.dtype, o.dtype]), o)
 
     def __mul__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.word.Mul([self.dtype, o.dtype]), o)
+        return self._binary(_ww.Mul([self.dtype, o.dtype]), o)
 
     def __radd__(self, o):  return self._coerce(o).__add__(self)
 
@@ -467,23 +495,23 @@ class WExpr(Expr):
     def __rmul__(self, o):  return self._coerce(o).__mul__(self)
 
     def __neg__(self):
-        return self._unary(reactor.word.Neg(self.dtype))
+        return self._unary(_ww.Neg(self.dtype))
 
     # bitwise, width-preserving
     def __and__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.word.And([self.dtype, o.dtype]), o)
+        return self._binary(_ww.And([self.dtype, o.dtype]), o)
 
     def __or__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.word.Or([self.dtype, o.dtype]), o)
+        return self._binary(_ww.Or([self.dtype, o.dtype]), o)
 
     def __xor__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.word.Xor([self.dtype, o.dtype]), o)
+        return self._binary(_ww.Xor([self.dtype, o.dtype]), o)
 
     def __invert__(self):
-        return self._unary(reactor.word.Not(self.dtype))
+        return self._unary(_ww.Not(self.dtype))
 
 
 class SExpr(WExpr):
@@ -492,28 +520,28 @@ class SExpr(WExpr):
 
     def __floordiv__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.word.signed.Div([self.dtype, o.dtype]), o)
+        return self._binary(_ws.Div([self.dtype, o.dtype]), o)
 
     def __mod__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.word.signed.Mod([self.dtype, o.dtype]), o)
+        return self._binary(_ws.Mod([self.dtype, o.dtype]), o)
 
     # comparisons write booleans
     def __lt__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.word.signed.Lt([self.dtype, o.dtype]), o)
+        return self._binary(_ws.Lt([self.dtype, o.dtype]), o)
 
     def __le__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.word.signed.Le([self.dtype, o.dtype]), o)
+        return self._binary(_ws.Le([self.dtype, o.dtype]), o)
 
     def __gt__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.word.signed.Gt([self.dtype, o.dtype]), o)
+        return self._binary(_ws.Gt([self.dtype, o.dtype]), o)
 
     def __ge__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.word.signed.Ge([self.dtype, o.dtype]), o)
+        return self._binary(_ws.Ge([self.dtype, o.dtype]), o)
 
 
 class UExpr(WExpr):
@@ -522,28 +550,28 @@ class UExpr(WExpr):
 
     def __floordiv__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.word.unsigned.Div([self.dtype, o.dtype]), o)
+        return self._binary(_wu.Div([self.dtype, o.dtype]), o)
 
     def __mod__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.word.unsigned.Rem([self.dtype, o.dtype]), o)
+        return self._binary(_wu.Rem([self.dtype, o.dtype]), o)
 
     # comparisons write booleans
     def __lt__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.word.unsigned.Lt([self.dtype, o.dtype]), o)
+        return self._binary(_wu.Lt([self.dtype, o.dtype]), o)
 
     def __le__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.word.unsigned.Le([self.dtype, o.dtype]), o)
+        return self._binary(_wu.Le([self.dtype, o.dtype]), o)
 
     def __gt__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.word.unsigned.Gt([self.dtype, o.dtype]), o)
+        return self._binary(_wu.Gt([self.dtype, o.dtype]), o)
 
     def __ge__(self, o):
         o = self._coerce_same(o)
-        return self._binary(reactor.word.unsigned.Ge([self.dtype, o.dtype]), o)
+        return self._binary(_wu.Ge([self.dtype, o.dtype]), o)
 
 
 # ---------------------------------------------------------------------------
@@ -595,13 +623,13 @@ def _term_from_torch(value, sort):
     # the tensor is kept as given: no conversion of its elements
     integer = value.dtype in (torch.int, torch.long)
     if family is Bool and value.dtype == torch.bool:
-        op = _rr.bool.Truth(value, cod)
+        op = _bl.Truth(value, cod)
     elif family is Real and (value.dtype in (torch.half, torch.float, torch.double) or integer):
-        op = reactor.real.Num(value, cod)
+        op = _rl.Num(value, cod)
     elif family is Int and integer:
-        op = _rr.int.Num(value, cod)
+        op = _ii.Num(value, cod)
     elif family is Word and integer:
-        op = reactor.word.Num(value, cod)
+        op = _ww.Num(value, cod)
     else:
         raise TypeError(f"expr() unsupported literal type {value.dtype} / {sort}")
     return Term.constant(op, [Wire(op.cod)]), value
@@ -634,12 +662,12 @@ def _const(value, sort, *, signed, tag=None) -> Expr:
     # the singleton sort, the rate of change of discrete values: its only value is
     # written by the operation `Zero()`, given as is, unambiguously, and no literal
     if sort is Real0 or isinstance(sort, Real0):
-        if not isinstance(value, Zero):
+        if not isinstance(value, _zz.Zero):
             raise TypeError(
                 f"expr(): the rate of change of discrete values, of the sort Real0, is "
                 f"written `Zero()`, got {value!r}"
             )
-        term = Term.constant(Zero(), [Wire(Real0())])
+        term = Term.constant(_zz.Zero(), [Wire(Real0())])
         _emit(term)
         return _wrap(term.write[0], value=value, tag=tag)
 
@@ -689,14 +717,14 @@ def cast(e: Expr, sort) -> Expr:
 def X(v: Expr) -> Expr:
     """The `next` wire of a variable expr."""
     if isinstance(v, Expr):
-        return _wrap(reactor.X(v._wire), signed=isinstance(v, SExpr))
+        return _wrap(_rr.X(v._wire), signed=isinstance(v, SExpr))
     else:
         raise ValueError(f"expr.X expects an expression, got {v}")
 
 
 def d(v: Expr) -> Expr:
     """The `derived` wire of a variable expr."""
-    return _wrap(reactor.d(v._wire), signed=isinstance(v, SExpr))
+    return _wrap(_rr.d(v._wire), signed=isinstance(v, SExpr))
 
 
 def ite(cond: "BExpr", iftrue, iffalse) -> Expr:
@@ -711,36 +739,40 @@ def ite(cond: "BExpr", iftrue, iffalse) -> Expr:
         b = expr(b, sort=a.dtype, signed=isinstance(a, SExpr))
     if _family(a.dtype) != _family(b.dtype):
         raise TypeError(f"ite branches have different sorts {a.dtype}, {b.dtype}; use cast()")
-    match a:
-        case RExpr():
-            theory = reactor.real
-        case IExpr():
-            theory = _rr.int
-        case BExpr():
-            theory = _rr.bool
-        case WExpr():
-            theory = reactor.word
     # a condition of the shape of the branches chooses pointwise; a scalar one, the whole
     # matrix, by the choice of the theory that broadcasts it
-    if cond.shape == a.shape:
-        choice = theory.Ite
-    elif cond.shape == [1, 1]:
-        choice = theory.broadcast.Ite
-    else:
-        raise TypeError(
-            f"ite(): the condition must be of the shape {a.shape} of the branches, "
-            f"choosing pointwise, or a scalar, [1, 1], choosing the whole matrix; "
-            f"got {cond.shape}"
-        )
+    match a:
+        case RExpr() if cond.shape == a.shape:
+            choice = _rl.Ite
+        case RExpr() if cond.shape == [1, 1]:
+            choice = _rb.Ite
+        case IExpr() if cond.shape == a.shape:
+            choice = _ii.Ite
+        case IExpr() if cond.shape == [1, 1]:
+            choice = _ib.Ite
+        case BExpr() if cond.shape == a.shape:
+            choice = _bl.Ite
+        case BExpr() if cond.shape == [1, 1]:
+            choice = _bb.Ite
+        case WExpr() if cond.shape == a.shape:
+            choice = _ww.Ite
+        case WExpr() if cond.shape == [1, 1]:
+            choice = _wb.Ite
+        case _:
+            raise TypeError(
+                f"ite(): the condition must be of the shape {a.shape} of the branches, "
+                f"choosing pointwise, or a scalar, [1, 1], choosing the whole matrix; "
+                f"got {cond.shape}"
+            )
     return a._apply(choice([cond.dtype, a.dtype, b.dtype]), cond, a, b)
 
 
 def relu(e: Expr) -> Expr:
     match e:
         case RExpr():
-            return e._unary(reactor.real.ReLU(e.dtype))
+            return e._unary(_rl.ReLU(e.dtype))
         case IExpr():
-            return e._unary(_rr.int.ReLU(e.dtype))
+            return e._unary(_ii.ReLU(e.dtype))
         case _:
             raise TypeError(f"relu() needs a Real or Int operand, got {e.dtype}")
 
@@ -750,8 +782,8 @@ def argmax(e: Expr) -> Expr:
     match e:
         case RExpr():
             # the index is a plain real
-            return e._unary(reactor.real.Argmax(e.dtype))
+            return e._unary(_rl.Argmax(e.dtype))
         case IExpr():
-            return e._unary(_rr.int.Argmax(e.dtype))
+            return e._unary(_ii.Argmax(e.dtype))
         case _:
             raise TypeError(f"argmax() needs a Real or Int operand, got {e.dtype}")
