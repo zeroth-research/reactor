@@ -5,14 +5,14 @@ relational ones) are the encodings, and `common` is what the scalar ones
 share.
 """
 
-from reactor_lean.codegen.context import LeanContext
+from ..context import LeanContext
 
-from reactor_lean.codegen.encodings.functional import atom_to_lean_functional, constants_block
-from reactor_lean.codegen.encodings.scalar import (
+from .functional import atom_to_lean_functional, constants_block
+from .scalar import (
     atom_to_lean_scalar as _atom_to_lean_scalar,
     to_lean_scalar_equiv as _to_lean_scalar_equiv,
 )
-from reactor_lean.codegen.encodings.relational import (
+from .relational import (
     atom_to_lean_rel as _atom_to_lean_rel,
     atom_to_lean_mat_rel as _atom_to_lean_mat_rel,
 )

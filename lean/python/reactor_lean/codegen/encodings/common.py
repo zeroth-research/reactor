@@ -1,10 +1,12 @@
-"""Shared helpers used by multiple translate sub-modules."""
+"""What the scalar and relational encodings share: a block's wires as a
+flat tuple of their entries and as the matrices rebuilt from it, and the
+names by which one cites the other's theorems."""
 
 import re
 
-from reactor_lean.lowering.sorts import dtype_to_lean_type, wire_shape
-from reactor_lean.lowering.elements import FlatLayout, product_accessor, mat_from_scalars, flat_layout
-from reactor_lean.codegen.terms import build_tuple, product_type_scalar
+from ...lowering.sorts import dtype_to_lean_type, wire_shape
+from ...lowering.elements import FlatLayout, product_accessor, mat_from_scalars, flat_layout
+from ..terms import build_tuple, product_type_scalar
 
 
 def has_block(ctx, block: str) -> bool:

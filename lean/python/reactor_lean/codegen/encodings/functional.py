@@ -1,7 +1,7 @@
 """Functional (init/update def) translation."""
 
-from reactor_lean.codegen.terms import translate_terms_lean, product_type
-from reactor_lean.codegen.context import LeanContext
+from ..terms import translate_terms_lean, product_type
+from ..context import LeanContext
 
 
 def constants_block(ctx: LeanContext) -> str:

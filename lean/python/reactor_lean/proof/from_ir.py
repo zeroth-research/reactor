@@ -30,27 +30,19 @@ from ..parse.formula import family
 Bindings = list[tuple[str, str, list[Wire]]]
 
 
-def build_var_map(bindings: Bindings) -> tuple[dict[str, str], dict[str, Wire]]:
-    """Build Lean-accessor + wire maps for a list of (prefix, base, wires).
-
-    For each binding, each wire at position `i` gets a variable name
-    `<prefix><i>` mapped to a Lean accessor `<base><acc> [0 0]`. Scalar
-    1×1 wires get the `0 0` scalar extraction; vector/matrix wires keep
-    the raw function form.
-    """
-    var_accessor: dict[str, str] = {}
-    var_wire: dict[str, Wire] = {}
+def _variables(bindings: Bindings) -> "dict[int, tuple[str, Wire, str]]":
+    """Wire id -> (Lean accessor, wire, name) for each wire of `bindings`:
+    wire `i` of `(prefix, base, wires)` is the variable `<prefix><i>`, read
+    as its component of the tuple `base`, and out of its 1×1 `Matrix` by
+    `0 0` when it is one."""
+    out: dict[int, tuple[str, Wire, str]] = {}
     for prefix, base, wires in bindings:
-        n = len(wires)
         for i, w in enumerate(wires):
-            acc = product_accessor(i, n)
-            name = f"{prefix}{i}"
+            acc = f"{base}{product_accessor(i, len(wires))}"
             if wire_shape(w).is_scalar:
-                var_accessor[name] = f"({base}{acc} 0 0)"
-            else:
-                var_accessor[name] = f"({base}{acc})"
-            var_wire[name] = w
-    return var_accessor, var_wire
+                acc += " 0 0"
+            out[w.id] = (f"({acc})", w, f"{prefix}{i}")
+    return out
 
 
 def with_lets(body: str, lets: "list[tuple[str, str]]") -> str:
@@ -92,10 +84,7 @@ class _Printer:
     def __init__(self, formula, bindings):
         self.formula = formula
         self.by_wire = {t.write[0].id: t for t in formula.terms}
-        # wire id -> (accessor, wire, name)
-        accessor, wire = build_var_map(bindings)
-        self.vars: dict[int, tuple[str, Wire, str]] = {
-            wire[name].id: (accessor[name], wire[name], name) for name in accessor}
+        self.vars = _variables(bindings)
         self.bound: dict[int, str] = {}
         self.shared: set[int] = set()
 

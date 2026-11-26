@@ -125,7 +125,7 @@ def write_lakefile(project_dir: Path, project_name: str, packages: Packages,
 def create_project(
     output_dir: Path,
     ctx: LeanContext,
-    project_name: str = "Certificate",
+    project_name: str,
     executable: bool = False,
     *,
     certificate: Mapping[str, str],
@@ -139,7 +139,7 @@ def create_project(
         `output_dir`:      Where to create the project folder.
         `ctx`:             The module's `LeanContext`, as
                            `codegen.context.lean_context` checks it.
-        `project_name`:    Optional name of the Lean package / library.
+        `project_name`:    The name of the Lean package, and of its folder.
         `executable`:      If True, generate Main.lean and add [[lean_exe]] to lakefile.
         `certificate`:     The certificate's files by project-relative path,
                            as `proof.render.certificate_files` renders them.

@@ -1,30 +1,31 @@
 """Scalar encoding translation."""
 
-from reactor_lean.codegen.terms import (
+from reactor import Wire
+
+from ..terms import (
     argmax_variant,
-    elem_ty_slug,
     product_type,
     product_type_scalar,
     translate_terms_scalar,
     build_tuple,
     argmax_scalar_name,
 )
-from reactor_lean.lowering.sorts import (
+from ...lowering.sorts import (
     dtype_to_lean_type,
     itype_name,
+    lean_elem_slug,
     lean_elem_type,
     wire_shape,
 )
-from reactor_lean.lowering.elements import mat_from_scalars, flat_layout
-from reactor_lean.codegen.context import LeanContext
-from reactor_lean.codegen.encodings.common import (
+from ...lowering.elements import mat_from_scalars, flat_layout
+from ..context import LeanContext
+from .common import (
     prepend_recon,
     scalar_bindings_with_recon,
     has_block,
     scalar_eq_name,
     scalar_unpack,
 )
-from reactor import Wire
 
 
 def _scalar_dom(param: str, wires: "list[Wire]") -> str:
@@ -56,23 +57,22 @@ def _pack_body(var: str, wires: "list[Wire]") -> str:
     return build_tuple(parts)
 
 
-def _argmax_variants(ctx: LeanContext) -> "list[tuple[str, int]]":
-    """(elem_ty, n) for each distinct one-row Argmax input of the module:
-    the ones `translate_terms_scalar` unrolls, and an `_argmax_scalar_def_lines`
-    helper is emitted for."""
+def _argmax_variants(ctx: LeanContext) -> "list[tuple[object, int]]":
+    """(sort, n) for each distinct one-row Argmax input of the module, by
+    element type and `n`: the ones `translate_terms_scalar` unrolls, and
+    an `_argmax_scalar_def_lines` helper is emitted for."""
     seen: set[tuple[str, int]] = set()
-    result: list[tuple[str, int]] = []
+    result: list[tuple[object, int]] = []
     for term in [*ctx.atom.init, *ctx.atom.update]:
         if (itype_name(term.itype) != "Argmax"
                 or argmax_variant(term) != "argmax_1d"):
             continue
         in_wire = term.read[0]
         n = wire_shape(in_wire).total
-        ety = lean_elem_type(in_wire.dtype)
-        key = (ety, n)
+        key = (lean_elem_type(in_wire.dtype), n)
         if key not in seen:
             seen.add(key)
-            result.append(key)
+            result.append((in_wire.dtype, n))
     return result
 
 
@@ -93,7 +93,7 @@ def _recon_wires(ctx: LeanContext) -> "list[Wire]":
 
 def _recon_name(w) -> str:
     shape = wire_shape(w)
-    return f"recon_{elem_ty_slug(lean_elem_type(w.dtype))}_{shape.m}_{shape.n}"
+    return f"recon_{lean_elem_slug(w.dtype)}_{shape.m}_{shape.n}"
 
 
 def _recon_lemma_lines(w) -> "list[str]":
@@ -125,7 +125,7 @@ def _recon_lemma_lines(w) -> "list[str]":
     ]
 
 
-def _argmax_scalar_def_lines(elem_ty: str, n: int) -> "list[str]":
+def _argmax_scalar_def_lines(sort, n: int) -> "list[str]":
     """Emit a scalar def and simp theorem for argmax over n elements.
 
     The fold of ``Relational.Mat.argmax_1d`` over the n elements written
@@ -140,7 +140,8 @@ def _argmax_scalar_def_lines(elem_ty: str, n: int) -> "list[str]":
     doubled it with every element, and the `_eq` proof over 12 of them
     ran out of heartbeats.
     """
-    name = argmax_scalar_name(elem_ty, n)
+    name = argmax_scalar_name(sort, n)
+    elem_ty = lean_elem_type(sort)
     noncomp = "noncomputable " if elem_ty == "Real" else ""
     params = " ".join(f"(s{i} : {elem_ty})" for i in range(n))
     rest = ", ".join(f"({i}, s{i})" for i in range(1, n))
@@ -169,8 +170,8 @@ def atom_to_lean_scalar(ctx: LeanContext) -> str:
     lines: list[str] = []
     for w in _recon_wires(ctx):
         lines.extend(_recon_lemma_lines(w))
-    for ety, n in _argmax_variants(ctx):
-        lines.extend(_argmax_scalar_def_lines(ety, n))
+    for sort, n in _argmax_variants(ctx):
+        lines.extend(_argmax_scalar_def_lines(sort, n))
 
     lines += ["namespace Scalar", ""]
 
@@ -238,8 +239,8 @@ def to_lean_scalar_equiv(ctx: LeanContext) -> str:
     lines: list[str] = []
 
     argmax_eq_lemmas = [
-        f"{argmax_scalar_name(ety, n)}_eq"
-        for ety, n in _argmax_variants(ctx)
+        f"{argmax_scalar_name(sort, n)}_eq"
+        for sort, n in _argmax_variants(ctx)
     ]
 
     def _proof(

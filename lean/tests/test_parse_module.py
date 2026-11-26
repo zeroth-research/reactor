@@ -31,6 +31,22 @@ def test_a_callable_the_file_does_not_define_is_refused():
         parse.load(FIXTURES / "counter.py", "stray")
 
 
+def test_a_file_that_looks_itself_up_loads(tmp_path):
+    """`dataclasses` looks a class's module up in `sys.modules` when its
+    annotations are strings: the file is there while it runs, and gone
+    after."""
+    import sys
+
+    path = tmp_path / "m.py"
+    path.write_text("from __future__ import annotations\n"
+                    "from dataclasses import dataclass\n"
+                    + (FIXTURES / "counter.py").read_text()
+                    + "\n\n@dataclass\nclass Params:\n    bound: int = 10\n")
+    assert isinstance(parse.load(path).module, Module)
+    assert all(getattr(m, "__file__", None) != str(path)
+               for m in list(sys.modules.values()))
+
+
 def test_a_named_environment_is_refused(tmp_path):
     """Only a `Module` has variables a name can be given to; an
     environment has them once `reactor.Env` made it one."""

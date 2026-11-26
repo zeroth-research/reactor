@@ -140,16 +140,17 @@ def test_scalar_argmax_variants_are_named_per_element_type():
     Naming by `n` alone emitted two `def argmax1d_scalar_4` and two `_eq`
     theorems into one file for an Int and a Real Argmax of equal width.
     """
+    from reactor import Bool, Real, Word
     from reactor_lean.codegen.terms import argmax_scalar_name
 
+    S4 = [1, 4]
     names = {
-        argmax_scalar_name(ety, 4)
-        for ety in ("Int", "Real", "Bool", "(BitVec 8)")
+        argmax_scalar_name(sort, 4)
+        for sort in (Int(S4), Real(S4), Bool(S4), Word(8, S4), Word(16, S4))
     }
-    assert len(names) == 4, f"variant names collide: {sorted(names)}"
-    assert argmax_scalar_name("Int", 4) != argmax_scalar_name("Real", 4)
+    assert len(names) == 5, f"variant names collide: {sorted(names)}"
     # widths stay distinguished too
-    assert argmax_scalar_name("Int", 4) != argmax_scalar_name("Int", 8)
+    assert argmax_scalar_name(Int(S4), 4) != argmax_scalar_name(Int(S4), 8)
     # and the names are Lean identifiers
     assert all(n.replace("_", "").isalnum() for n in names), sorted(names)
 
@@ -157,10 +158,12 @@ def test_scalar_argmax_variants_are_named_per_element_type():
 def test_same_width_variants_emit_distinct_definitions():
     """Two element types at one width must not produce one name twice."""
     import re
+    from reactor import Real
     from reactor_lean.codegen.encodings.scalar import _argmax_scalar_def_lines
 
     src = "\n".join(
-        _argmax_scalar_def_lines("Int", 4) + _argmax_scalar_def_lines("Real", 4)
+        _argmax_scalar_def_lines(Int([1, 4]), 4)
+        + _argmax_scalar_def_lines(Real([1, 4]), 4)
     )
     defs = re.findall(r"^(?:noncomputable )?def (\w+)", src, re.M)
     assert len(defs) == len(set(defs)), f"duplicate definitions: {defs}"

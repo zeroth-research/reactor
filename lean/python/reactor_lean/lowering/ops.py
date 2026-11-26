@@ -81,20 +81,21 @@ class ViaMat:
     note: str
 
 
+# An emitter: the op's Lean expression, from its arguments' Lean expressions.
+Emitter = Callable[[list[str]], str]
+
+
 @dataclass(frozen=True)
 class OfOp:
     """An emitter that reads the op's own parameters besides the argument
     strings -- a rotation's amount, the bits an `Extract` keeps: `make(op)`
     is the emitter for the op at hand."""
 
-    make: Callable[[Any], Callable[[list[str]], str]]
+    make: Callable[[Any], Emitter]
 
 
-Emitter = Callable[[list[str]], str]
 MatCell = Union[Emitter, OfOp, Inline, Unsupported]
 ScalarCell = Union[Emitter, OfOp, ViaMat, Inline, Unsupported]
-
-
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -472,21 +473,6 @@ def op_for(itype) -> Op:
     return row
 
 
-def _reason(row: Op, cell) -> str:
-    """What a non-emitter cell has to say for itself.
-
-    `_SEE_MAT` carries no reason of its own: the matrix cell holds the one
-    that covers both columns.
-    """
-    if cell is _SEE_MAT:
-        cell = row.mat
-    if isinstance(cell, Unsupported):
-        return cell.reason
-    if isinstance(cell, Inline):
-        return f"handled outside the table, by {cell.site}"
-    return f"the matrix form serves it ({cell.note})"
-
-
 def gap_of(row: Op) -> "str | None":
     """Why no Lean encoding can write this row's operator, or None if one
     can: the matrix cell's reason, when it has no matrix form.
@@ -497,7 +483,7 @@ def gap_of(row: Op) -> "str | None":
     later, it does so half way through the project.
     """
     if isinstance(row.mat, Unsupported):
-        return _reason(row, row.mat)
+        return row.mat.reason
     return None
 
 
@@ -511,23 +497,22 @@ def lean_gap(itype) -> "str | None":
     return gap_of(op_for(itype))
 
 
-def _lean_emitter(itype, row: Op, cell, column: str):
-    """Unwrap a Lean cell, or raise carrying the reason the table records."""
-    if isinstance(cell, (Unsupported, Inline, ViaMat)):
-        raise Refused(
-            f"No Lean expression mapping for: {itype_name(itype)} "
-            f"({column}) — {_reason(row, cell)}"
-        )
-    return cell.make(itype) if isinstance(cell, OfOp) else cell
+def mat_emitter(itype) -> Emitter:
+    """The `Matrix`-form Lean emitter, or `Refused` saying why there is
+    none: the reason the table records, or the branch that emits the op
+    instead."""
+    cell = op_for(itype).mat
+    if isinstance(cell, Unsupported):
+        why = cell.reason
+    elif isinstance(cell, Inline):
+        why = f"handled outside the table, by {cell.site}"
+    else:
+        return cell.make(itype) if isinstance(cell, OfOp) else cell
+    raise Refused(f"No Lean expression mapping for: {itype_name(itype)} "
+                  f"(matrix form) — {why}")
 
 
-def mat_emitter(itype) -> Callable[[list[str]], str]:
-    """The `Matrix`-form Lean emitter, or a `ValueError` carrying the reason."""
-    row = op_for(itype)
-    return _lean_emitter(itype, row, row.mat, "matrix form")
-
-
-def scalar_emitter(itype) -> "Callable[[list[str]], str] | None":
+def scalar_emitter(itype) -> "Emitter | None":
     """The bare-scalar Lean emitter, or None when the matrix form serves.
 
     None covers `ViaMat` (deliberate), `Inline` (the caller has its own

@@ -356,7 +356,7 @@ Lean `fun` expressions into a `LeanCertificate`; it is the only place they
 are printed. A predicate that is `None` becomes a `True` / `sorry`
 placeholder.
 
-`certificate_files(ctx, lean_cert, proofs)` renders the project's four
+`certificate_files(ctx, lean_cert)` renders the project's four
 files:
 
 1. `Data.lean`: `init_pre`, `update_pre`, `inv`, `P`, `DecidablePred P`,

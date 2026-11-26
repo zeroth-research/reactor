@@ -8,6 +8,7 @@ returns that is not a `Module` is made one by `reactor.Env`.
 from __future__ import annotations
 
 import importlib.util
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -111,11 +112,18 @@ def _call(path: Path, module_def: str):
     if spec is None or spec.loader is None:
         raise InputError(f"{path} is no Python file")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    if not hasattr(module, module_def):
-        raise InputError(
-            f"Module file {path} must define `{module_def}` which is a "
-            "function returning `Module` or a sub-class of `Module` with "
-            "constructor without arguments."
-        )
-    return getattr(module, module_def)()
+    # In `sys.modules` while it runs, as an imported module is, for the
+    # file's own code that looks it up there: `dataclasses` does, for a
+    # class whose annotations are strings.
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+        if not hasattr(module, module_def):
+            raise InputError(
+                f"Module file {path} must define `{module_def}` which is a "
+                "function returning `Module` or a sub-class of `Module` with "
+                "constructor without arguments."
+            )
+        return getattr(module, module_def)()
+    finally:
+        del sys.modules[spec.name]

@@ -293,20 +293,21 @@ _REL_ENC_SPECS = _SCALAR_ENC_SPECS + [
 ]
 
 
-# (elem_ty, n) pairs for the generated scalar Argmax variants. n = 1 is the
+# (sort, n) pairs for the generated scalar Argmax variants: a row of `n`
+# entries of the sort. n = 1 is the
 # degenerate single-element case; the rest exercise the fold.
 # Int and Real at the same width sit together on purpose: the variant
 # names used to be built from `n` alone, so these two collided. From 12 on,
 # the `let` chain the variants used to be ran out of heartbeats.
 _ARGMAX_SCALAR_SPECS = [
-    ("Int", 1),
-    ("Int", 2),
-    ("Int", 4),
-    ("Real", 3),
-    ("Real", 4),
-    ("Int", 12),
-    ("Real", 12),
-    ("Int", 32),
+    (Int([1, 1]), 1),
+    (Int([1, 2]), 2),
+    (Int([1, 4]), 4),
+    (Real([1, 3]), 3),
+    (Real([1, 4]), 4),
+    (Int([1, 12]), 12),
+    (Real([1, 12]), 12),
+    (Int([1, 32]), 32),
 ]
 
 
@@ -376,6 +377,6 @@ def generate_lean_files() -> None:
             f"import {layout.lean_module('ScalarRel')}\n")
 
     argmax_lines = ["import Relational.Mat", ""]
-    for elem_ty, n in _ARGMAX_SCALAR_SPECS:
-        argmax_lines.extend(_argmax_scalar_def_lines(elem_ty, n))
+    for sort, n in _ARGMAX_SCALAR_SPECS:
+        argmax_lines.extend(_argmax_scalar_def_lines(sort, n))
     (_CERTS_DIR / "ArgmaxScalar.lean").write_text("\n".join(argmax_lines))

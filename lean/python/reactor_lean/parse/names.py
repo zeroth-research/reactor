@@ -32,7 +32,8 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from ..errors import Refused
+from ..errors import Refused, Unreadable
+from . import sexpr
 
 _INTERNAL = re.compile(r"(s|e|el)(\d+)?")
 _POSITIONAL = re.compile(r"@(intf|extl)\.(\d+)")
@@ -160,75 +161,48 @@ def _respell(prefix: str, i: int) -> str:
             "el": f"`@extl.{i}` for `el{i}`"}[prefix]
 
 
-_TOKEN = re.compile(r"""
-    (?P<ws>\s+) | (?P<comment>;[^\n]*) | (?P<lp>\() | (?P<rp>\))
-  | (?P<quoted>\|[^|]*\|) | (?P<string>"(?:[^"]|"")*")
-  | (?P<atom>[^\s()|";]+)
-""", re.X)
-
-
-def _tokens(text: str) -> list[tuple[str, str]]:
-    out = []
-    pos = 0
-    while pos < len(text):
-        m = _TOKEN.match(text, pos)
-        if m is None:   # an unclosed `|` or `"`: leave the rest to the parser
-            out.append(("atom", text[pos:]))
-            break
-        out.append((m.lastgroup, m.group()))
-        pos = m.end()
-    return out
-
-
-def _symbol(kind: str, tok: str) -> str | None:
-    if kind == "atom":
-        return tok
-    if kind == "quoted":
-        return tok[1:-1]
-    return None
-
-
 def _smtlib_to_internal(text: str, r: _Reader) -> str:
-    toks = _tokens(text)
-    sig = [i for i, (k, _) in enumerate(toks) if k not in ("ws", "comment")]
-    # The names a `let` binds would be read as the module's: refused
-    # rather than rewritten wrongly.
-    for a, b in zip(sig, sig[1:]):
-        if toks[a][0] == "lp" and toks[b] == ("atom", "let"):
+    """`text` with each variable it names in internal names, the rest kept
+    as written. Read by the lexer that reads the predicate (`sexpr.lex`),
+    so that what is a variable here is a symbol there."""
+    try:
+        toks = sexpr.lex(text)
+    except Unreadable as e:
+        raise r.fail(f"cannot read `{text}`: {e}") from e
+    edits: list[tuple[int, int, str]] = []    # (start, end, internal name)
+    k = 0
+    while k < len(toks):
+        tok = toks[k]
+        head = (sexpr.symbol(toks[k + 1])
+                if tok.lastgroup == "open" and k + 1 < len(toks) else None)
+        if head == "let":
+            # The names a `let` binds would be read as the module's:
+            # refused rather than rewritten wrongly.
             raise r.fail("`let` is not supported in a claim yet; write each "
                          "bound term out where it is used")
-    out: list[str] = []
-    j = 0           # index into `sig`
-    done = 0        # tokens before this are emitted
-    while j < len(sig):
-        i = sig[j]
-        kind, tok = toks[i]
-        # `( X v )`
-        if (kind == "lp" and j + 3 < len(sig)
-                and toks[sig[j + 1]] == ("atom", "X")):
-            arg_kind, arg = toks[sig[j + 2]]
-            name = _symbol(arg_kind, arg)
-            if name is None or toks[sig[j + 3]][0] != "rp":
+        if head == "X":     # `(X v)`
+            v = sexpr.symbol(toks[k + 2]) if k + 3 < len(toks) else None
+            if v is None or toks[k + 3].lastgroup != "close":
                 raise r.fail("`X` applies to a variable: `(X v)`")
-            spelled = r.internal(name, after=True)
+            spelled = r.internal(v, after=True)
             if spelled is None:
+                arg = toks[k + 2].group()
                 raise r.fail(f"`(X {arg})`: `{arg}` is not a variable")
-            out.extend(t for _, t in toks[done:i])
-            out.append(spelled)
-            done = sig[j + 3] + 1
-            j += 4
-            continue
-        head = j > 0 and toks[sig[j - 1]][0] == "lp"
-        name = _symbol(kind, tok)
-        if name is not None and not head:
-            spelled = r.internal(name, after=False)
+            edits.append((tok.start(), toks[k + 3].end(), spelled))
+            k += 4
+        elif head is not None:
+            k += 2          # a function's name is never a variable's
+        else:
+            name = sexpr.symbol(tok)
+            spelled = None if name is None else r.internal(name, after=False)
             if spelled is not None:
-                out.extend(t for _, t in toks[done:i])
-                out.append(spelled)
-                done = i + 1
-        j += 1
-    out.extend(t for _, t in toks[done:])
-    return "".join(out)
+                edits.append((tok.start(), tok.end(), spelled))
+            k += 1
+    out, done = [], 0
+    for start, end, spelled in edits:
+        out += [text[done:start], spelled]
+        done = end
+    return "".join(out) + text[done:]
 
 
 _PLACEHOLDER = "__reactor_{}_{}__"

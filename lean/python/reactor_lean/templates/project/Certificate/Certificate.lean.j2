@@ -6,10 +6,8 @@
     another tool -- without touching it. What changes with the module and
     the certificate is `Data.lean` (the definitions) and `Proofs.lean`. A
     `--cert-file` certificate inlines all of them, the module too. -#}
-{% if module_inline %}
 import Relational.Basic
-{% else %}
-import Relational.Basic
+{% if not module_inline %}
 import Certificate.Module
 import Certificate.Proofs
 {% endif %}

@@ -1,7 +1,8 @@
-from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from pathlib import Path
 
-from reactor_lean.project.names import LINTERS_OFF
+from jinja2 import Environment, FileSystemLoader, StrictUndefined
+
+from .names import LINTERS_OFF
 
 TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 

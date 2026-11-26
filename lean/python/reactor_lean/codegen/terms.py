@@ -10,24 +10,26 @@ defines.
 """
 
 from __future__ import annotations
-from reactor_lean.errors import Refused
-from reactor_lean.lowering.sorts import (
-    itype_name,
+
+from reactor import Wire
+
+from ..errors import Refused
+from ..lowering.elements import flat_indices, flat_layout
+from ..lowering.ops import mat_emitter, scalar_emitter
+from ..lowering.sorts import (
     dtype_to_lean_type,
+    itype_name,
+    lean_elem_slug,
     lean_elem_type,
     mat_mk,
     wire_shape,
 )
-from reactor_lean.lowering.elements import flat_indices, flat_layout
-from reactor_lean.codegen.literals import (
+from .literals import (
     ConstantRegistry,
     constant_expr,
     linear_list_literals,
     tensor_to_lean_scalar,
 )
-from reactor_lean.lowering.ops import mat_emitter, scalar_emitter
-
-from reactor import Wire
 
 
 def product_type(wires: list[Wire]) -> str:
@@ -210,23 +212,16 @@ def _constant_expr_scalar(term, w: "Wire", constants: ConstantRegistry) -> str:
     return name
 
 
-def argmax_scalar_name(elem_ty: str, n: int) -> str:
+def argmax_scalar_name(sort, n: int) -> str:
     """Name of the scalar encoding's argmax over one row of n elements of
-    `elem_ty` (`encodings.scalar._argmax_scalar_def_lines`).
+    `sort` (`encodings.scalar._argmax_scalar_def_lines`).
 
     The element type belongs in the name: variants are collected per
-    `(elem_ty, n)`, so naming them by `n` alone made an Argmax over
+    element type and `n`, so naming them by `n` alone made an Argmax over
     a 1×4 `Int` matrix and one over a 1×4 `Real` one emit two definitions and two
     `_eq` theorems under one name.
     """
-    return f"argmax1d_scalar_{elem_ty_slug(elem_ty)}_{n}"
-
-
-def elem_ty_slug(elem_ty: str) -> str:
-    """Lean-identifier-safe form of an element type, e.g. `(BitVec 8)` -> `bv8`."""
-    if elem_ty.startswith("(BitVec "):
-        return f"bv{elem_ty[len('(BitVec '):-1].strip()}"
-    return elem_ty.lower()
+    return f"argmax1d_scalar_{lean_elem_slug(sort)}_{n}"
 
 
 def translate_terms_scalar(
@@ -263,9 +258,7 @@ def translate_terms_scalar(
             in_wire = term.read[0]
             slots = flat_slots.get(in_wire.id)
             if slots is not None and argmax_variant(term) == "argmax_1d":
-                helper = argmax_scalar_name(
-                    lean_elem_type(in_wire.dtype), len(slots)
-                )
+                helper = argmax_scalar_name(in_wire.dtype, len(slots))
                 expr = f"({helper} {' '.join(slots)})"
             else:
                 expr = f"({_argmax_expr(term, wire_expr)} 0 0)"

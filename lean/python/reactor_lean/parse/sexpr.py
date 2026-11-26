@@ -49,8 +49,10 @@ _SYMBOL_CHARS = frozenset(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789~!@$%^&*_-+=<>.?/")
 
 
-def tokens(src: str) -> list:
-    """`src` as `Atom`s and the strings "(" and ")"; `Unreadable` at the
+def lex(src: str) -> "list[re.Match]":
+    """The tokens of `src`, whitespace and comments left out, as matches:
+    `m.lastgroup` is the kind -- "open", "close", "quoted" or one of
+    `Atom`'s -- and `m.start()`, `m.end()` the span. `Unreadable` at the
     first character no token starts with."""
     out, at = [], 0
     while at < len(src):
@@ -58,12 +60,8 @@ def tokens(src: str) -> list:
         if m is None or m.end() == at:
             raise Unreadable(f"no SMT-LIB token starts at `{src[at:at + 12]}`")
         kind = m.lastgroup
-        if kind in ("open", "close"):
-            out.append(m.group())
-        elif kind == "quoted":
-            out.append(Atom("symbol", m.group()[1:-1], at))
-        elif kind != "ws":
-            out.append(Atom(kind, m.group(), at))
+        if kind != "ws":
+            out.append(m)
         at = m.end()
         # `007` and `1x` are not a numeral and something after it.
         if kind in ("numeral", "decimal") and at < len(src) and src[at] in _SYMBOL_CHARS:
@@ -71,6 +69,31 @@ def tokens(src: str) -> list:
             while end < len(src) and src[end] in _SYMBOL_CHARS:
                 end += 1
             raise Unreadable(f"`{src[m.start():end]}` is no numeral")
+    return out
+
+
+def symbol(m: "re.Match") -> "str | None":
+    """The symbol a token of `lex` spells, its bars off when quoted; `None`
+    for a token that is no symbol."""
+    if m.lastgroup == "symbol":
+        return m.group()
+    if m.lastgroup == "quoted":
+        return m.group()[1:-1]
+    return None
+
+
+def tokens(src: str) -> list:
+    """`src` as `Atom`s and the strings "(" and ")"; `Unreadable` at the
+    first character no token starts with."""
+    out = []
+    for m in lex(src):
+        kind = m.lastgroup
+        if kind in ("open", "close"):
+            out.append(m.group())
+        elif kind == "quoted":
+            out.append(Atom("symbol", symbol(m), m.start()))
+        else:
+            out.append(Atom(kind, m.group(), m.start()))
     return out
 
 

@@ -34,6 +34,7 @@ def test_a_claim_reads_in_internal_names(surface, internal):
     ("(>= (X @intf.5) 0)", r"the module has 2 interface variable\(s\)"),
     ("(X y)", "`y` is not a variable"),
     ("(>= @foo 1)", "`@foo` is not a positional name"),
+    ("(>= (X x) #z1)", r"cannot read .*: no SMT-LIB token starts at `#z1"),
 ])
 def test_a_claim_that_names_nothing_is_refused(surface, why):
     with pytest.raises(ClaimError, match=r"^--safety: .*" + why):

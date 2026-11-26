@@ -4,6 +4,7 @@ reads its inputs from stdin and prints its state each round.
 
 from __future__ import annotations
 
+from reactor import Bool, Int, Word
 
 from ..errors import Refused
 from ..lowering.sorts import lean_elem_type, mat_mk, wire_shape
@@ -25,28 +26,27 @@ def check_runnable(ctx: LeanContext) -> None:
         )
 
 
-def _elem_parser(elem: str) -> "tuple[str, str, str]":
-    """`(bind, parser, push)` for reading one element of `elem` -- a
-    `Bool`, an `Int` or a bit-vector, since `check_runnable` refused a
-    `Real` -- from a token.
+def _elem_parser(sort) -> "tuple[str, str, str]":
+    """`(bind, parser, push)` for reading one element of `sort` -- a
+    `Bool`, an `Int` or a `Word`, since `check_runnable` refused a `Real`
+    -- from a token.
 
     The emitted line is `let v <bind> <parser> tokens[...]!`, so `bind` is
     `:=` for a pure parser and `←` for one in IO; `push` is the expression
     stored into the array.
     """
-    if elem == "Bool":
+    if isinstance(sort, Bool):
         return ":=", "parseBool", "v"
-    if elem == "Int":
+    if isinstance(sort, Int):
         return "←", "parseIntOrFail", "v"
-    assert elem.startswith("(BitVec "), elem
-    width = elem[len("(BitVec ") : -1]
-    return "←", "parseIntOrFail", f"(BitVec.ofInt {width} v)"
+    assert isinstance(sort, Word), sort
+    return "←", "parseIntOrFail", f"(BitVec.ofInt {sort.width} v)"
 
 
-def _elem_shower(elem: str) -> str:
-    """Lean function rendering one element of `elem` (as `_elem_parser`
+def _elem_shower(sort) -> str:
+    """Lean function rendering one element of `sort` (as `_elem_parser`
     reads it) as a String."""
-    return "showBool" if elem == "Bool" else "toString"
+    return "showBool" if isinstance(sort, Bool) else "toString"
 
 
 def generate_main_lean(ctx: LeanContext) -> str:
@@ -106,7 +106,7 @@ def generate_main_lean(ctx: LeanContext) -> str:
         # Every wire is a matrix here, so parse m*n tokens into an array of
         # the wire's own element type -- reading them all as Int made the
         # body disagree with the ascribed return type for every other sort.
-        bind, parser, push = _elem_parser(elem)
+        bind, parser, push = _elem_parser(w.dtype)
         lines.append(f"  let mut arr{i} : Array {elem} := #[]")
         lines.append(f"  for k in List.range {m * n} do")
         lines.append(f"    let v {bind} {parser} tokens[{offset} + k]!")
@@ -135,10 +135,9 @@ def generate_main_lean(ctx: LeanContext) -> str:
     # `Matrix ...` here whatever the sort.
     show_parts: list[str] = []
     for i, w in enumerate(ctrl_next):
-        elem = lean_elem_type(w.dtype)
         var = f"v{i}"
         m, n = wire_shape(w).m, wire_shape(w).n
-        show_parts.append(f"showMatrix {m} {n} {_elem_shower(elem)} {var}")
+        show_parts.append(f"showMatrix {m} {n} {_elem_shower(w.dtype)} {var}")
 
     if len(show_parts) == 1:
         lines.append(f"  {show_parts[0]}")

@@ -16,17 +16,17 @@ types differ by.
 from dataclasses import dataclass
 from typing import Callable
 
-from reactor_lean.codegen.terms import (
+from ..terms import (
     product_type,
     product_type_scalar,
     translate_terms_lean,
     translate_terms_scalar,
     reachable_terms,
 )
-from reactor_lean.lowering.sorts import dtype_to_lean_type
-from reactor_lean.lowering.elements import product_accessor, flat_layout
-from reactor_lean.codegen.context import LeanContext
-from reactor_lean.codegen.encodings.common import (
+from ...lowering.sorts import dtype_to_lean_type
+from ...lowering.elements import product_accessor, flat_layout
+from ..context import LeanContext
+from .common import (
     has_block,
     scalar_eq_name,
     scalar_bindings_with_recon,

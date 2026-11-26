@@ -56,6 +56,14 @@ def lean_elem_type(sort: Sort) -> str:
     raise Refused(f"no Lean type for the sort {sort}")
 
 
+def lean_elem_slug(sort: Sort) -> str:
+    """`lean_elem_type` as a part of a Lean name: `bool`, `int`, `real`,
+    `bv8`."""
+    if isinstance(sort, Word):
+        return f"bv{sort.width}"
+    return lean_elem_type(sort).lower()
+
+
 def dtype_to_lean_type(wire: Wire, simple_types=False) -> str:
     """Map a Wire's Sort to its Lean type, `(Matrix (Fin m) (Fin n) t)`;
     with `simple_types`, a 1×1 wire is its bare element type `t`."""

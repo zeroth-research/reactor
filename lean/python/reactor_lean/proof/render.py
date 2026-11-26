@@ -11,17 +11,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from reactor_lean.codegen.encodings import ModuleToLean4
-from reactor_lean.codegen.terms import product_type
-from reactor_lean.errors import PredicateRefused, Refused
-from reactor_lean.codegen.context import LeanContext
-from reactor_lean.parse.predicates import (
+from ..codegen.encodings import ModuleToLean4
+from ..codegen.terms import product_type
+from ..errors import PredicateRefused, Refused
+from ..codegen.context import LeanContext
+from ..parse.predicates import (
     Certificate, Claim, Predicates, read_predicates,
 )
-from reactor_lean.project.names import (
+from ..project.names import (
     CERTIFICATE, DATA, MODULE, PROOFS, cert_file,
 )
-from reactor_lean.project.templates import render
+from ..project.templates import render
 
 from .from_ir import ir_to_lean
 
