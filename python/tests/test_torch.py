@@ -6,10 +6,10 @@ import torch
 import torch.nn as nn
 
 from reactor import X
-from reactor.matrix.real import Real
-from reactor.matrix.int import Int
-from reactor.matrix.word import Word
-from reactor.matrix.bool import Bool
+from reactor.real import Real
+from reactor.int import Int
+from reactor.word import Word
+from reactor.bool import Bool
 from reactor.torch import Module
 
 

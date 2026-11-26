@@ -1,11 +1,11 @@
 //! The Python class of the constants of propositional logic.
 
-use crate::matrix::bool::Bool;
+use crate::bool::Bool;
 use pyo3::prelude::*;
 use pyo3_tch::PyTensor;
 
 /// A constant boolean matrix: a `torch.Tensor` of boolean elements.
-#[pyclass(frozen, name = "Truth", module = "reactor.matrix.bool")]
+#[pyclass(frozen, name = "Truth", module = "reactor.bool")]
 pub struct Truth(tch::Tensor);
 
 // SAFETY: the tensor is private to this module, which only reads its
@@ -29,8 +29,8 @@ impl Truth {
             )));
         }
         let op = match cod {
-            Some(cod) => crate::matrix::bool::Truth::with_cod(tensor.0, [cod])?,
-            None => crate::matrix::bool::Truth::new(tensor.0)?,
+            Some(cod) => crate::bool::Truth::with_cod(tensor.0, [cod])?,
+            None => crate::bool::Truth::new(tensor.0)?,
         };
         Ok(Truth(op.tensor().shallow_clone()))
     }
@@ -50,33 +50,33 @@ impl Truth {
     /// The sort it writes.
     #[getter]
     fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
-        let op: crate::matrix::bool::Truth<tch::Tensor> = slf.extract()?;
-        crate::matrix::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
+        let op: crate::bool::Truth<tch::Tensor> = slf.extract()?;
+        crate::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
     }
 }
 
-impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::bool::Truth<tch::Tensor> {
+impl<'a, 'py> FromPyObject<'a, 'py> for crate::bool::Truth<tch::Tensor> {
     type Error = PyErr;
 
     /// Fails when `ob` is not a [`Truth`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let constant = ob.cast::<Truth>()?.get();
         let shape = crate::Matrix::shape(&constant.0);
-        Ok(crate::matrix::bool::Truth::with_cod(
+        Ok(crate::bool::Truth::with_cod(
             constant.0.shallow_clone(),
-            [crate::matrix::bool::Bool::new_unchecked(shape)],
+            [crate::bool::Bool::new_unchecked(shape)],
         )?)
     }
 }
 
 /// A clone shares the tensor of the original: `tch::Tensor` is not `Clone`,
 /// so this takes a shallow clone of it, as libtorch counts its references.
-impl Clone for crate::matrix::bool::Truth<tch::Tensor> {
+impl Clone for crate::bool::Truth<tch::Tensor> {
     fn clone(&self) -> Self {
         let shape = crate::Matrix::shape(self.tensor());
-        crate::matrix::bool::Truth::with_cod(
+        crate::bool::Truth::with_cod(
             self.tensor().shallow_clone(),
-            [crate::matrix::bool::Bool::new_unchecked(shape)],
+            [crate::bool::Bool::new_unchecked(shape)],
         )
         .expect("a clone has the shape of the original")
     }
@@ -85,13 +85,13 @@ impl Clone for crate::matrix::bool::Truth<tch::Tensor> {
 /// Converts an operation of the theory into its Python class: the
 /// operations carrying tensors into the classes of this module, holding the
 /// same tensors, and the others into their own classes.
-impl<'py> IntoPyObject<'py> for crate::matrix::bool::Prop<tch::Tensor> {
+impl<'py> IntoPyObject<'py> for crate::bool::Prop<tch::Tensor> {
     type Target = PyAny;
     type Output = Bound<'py, PyAny>;
     type Error = PyErr;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-        use crate::matrix::bool::Prop;
+        use crate::bool::Prop;
 
         match self {
             Prop::Truth(op) => Truth(op.tensor().shallow_clone())

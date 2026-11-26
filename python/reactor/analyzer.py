@@ -17,12 +17,11 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Dict, List, Set, Tuple, Union, Callable
 
-from .reactor import Wire, Term, Var, X
-from .matrix import Havoc
-from .matrix.bool import Bool
-from .matrix.real import Real
-from .matrix.int import Int
-from .matrix.word import Word
+from .reactor import Wire, Term, Var, X, Havoc
+from .bool import Bool
+from .real import Real
+from .int import Int
+from .word import Word
 from .builder import TermBuilder, builder_for
 
 

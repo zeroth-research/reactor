@@ -7,11 +7,11 @@ use pyo3::exceptions::{PyException, PyIndexError};
 use pyo3::prelude::*;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use theory::matrix;
+use theory::Any;
 
 #[pyclass(module = "reactor", frozen)]
 pub(crate) struct Atom {
-    base: reactive::Atom<Op, Op, Op, matrix::Any>,
+    base: reactive::Atom<Op, Op, Op, Any>,
 }
 
 // SAFETY: the operations of the atom may hold `tch::Tensor`s, which are not
@@ -20,8 +20,8 @@ pub(crate) struct Atom {
 // tensor atomically, as for the classes of `theory::torch`.
 unsafe impl Sync for Atom {}
 
-impl From<reactive::Atom<Op, Op, Op, matrix::Any>> for Atom {
-    fn from(base: reactive::Atom<Op, Op, Op, matrix::Any>) -> Self {
+impl From<reactive::Atom<Op, Op, Op, Any>> for Atom {
+    fn from(base: reactive::Atom<Op, Op, Op, Any>) -> Self {
         Self { base }
     }
 }
@@ -224,7 +224,7 @@ impl Atom {
 }
 
 impl Atom {
-    pub(crate) fn base(&self) -> &reactive::Atom<Op, Op, Op, matrix::Any> {
+    pub(crate) fn base(&self) -> &reactive::Atom<Op, Op, Op, Any> {
         &self.base
     }
 
@@ -249,7 +249,7 @@ struct AtomInterface {
 }
 
 impl AtomInterface {
-    fn base(&self) -> &reactive::Interface<matrix::Any> {
+    fn base(&self) -> &reactive::Interface<Any> {
         let atom = &self.atom.get().base;
         match self.interface {
             AtomInterfaceType::Read => atom.read(),
@@ -267,7 +267,7 @@ impl AtomInterface {
     fn __getitem__(&self, index: usize) -> PyResult<Var> {
         self.base()
             .nth(index)
-            .map(|v| Var::from(*v))
+            .map(|v| Var::from(v.clone()))
             .ok_or(PyIndexError::new_err("index out of bounds"))
     }
 
@@ -322,7 +322,7 @@ pub(crate) struct AtomBlock {
 }
 
 // impl AtomBlock {
-//     fn base(&self) -> &dataflow::diagram::Block<Sequential, matrix::Any> {
+//     fn base(&self) -> &dataflow::diagram::Block<Sequential, Any> {
 //         let atom = &self.atom.get().base;
 //         match self.block {
 //             BlockType::Init => atom.init(),
@@ -364,7 +364,7 @@ impl AtomBlock {
 
     fn __getitem__(&self, index: usize) -> PyResult<Term> {
         let atom = &self.atom.get().base;
-        let item: Option<dataflow::diagram::Term<Op, matrix::Any>> = match self.block {
+        let item: Option<dataflow::diagram::Term<Op, Any>> = match self.block {
             BlockType::Init => atom.init().get(index).cloned(),
             BlockType::Update => atom.update().get(index).cloned(),
             BlockType::Delay => atom.delay().get(index).cloned(),
@@ -390,7 +390,7 @@ struct AtomBlockInterface {
 }
 
 impl AtomBlockInterface {
-    fn base(&self) -> &[dataflow::diagram::Wire<matrix::Any>] {
+    fn base(&self) -> &[dataflow::diagram::Wire<Any>] {
         let atom = &self.block.get().atom.get().base;
         match (&self.block.get().block, &self.interface) {
             (BlockType::Init, TermInterfaceType::Read) => atom.init().read(),

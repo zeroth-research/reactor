@@ -10,18 +10,18 @@ import torch
 import numpy as np
 import z3
 
-from reactor.matrix.real import Real
-from reactor.matrix.int import Int
-from reactor.matrix.bool import Bool
-from reactor.matrix.word import Word
-from reactor import matrix
-from reactor.matrix import Skip
+from reactor.real import Real
+from reactor.int import Int
+from reactor.bool import Bool
+from reactor.word import Word
+from reactor import real, word
+import reactor as rr
+from reactor import Skip
 from reactor.eval import eval_itype
 from reactor.smt import z3 as smt
 
 R, I, B, W = Real([2, 2]), Int([2, 2]), Bool([2, 2]), Word(8, [2, 2])
 
-real, int_, bool_, word = matrix.real, matrix.int, matrix.bool, matrix.word
 signed, unsigned = word.signed, word.unsigned
 
 # operands: reals exact in binary, integers of both signs, booleans of all pairs, and
@@ -43,21 +43,21 @@ CASES = [
     (Skip(R), [RX]),
     # the choice of whole matrices of each theory, by a scalar condition
     (real.broadcast.Ite([Bool([1, 1]), R, R]), [torch.tensor([[False]]), RX, RY]),
-    (int_.broadcast.Ite([Bool([1, 1]), I, I]), [torch.tensor([[True]]), IX, IY]),
-    (bool_.broadcast.Ite([Bool([1, 1]), B, B]), [torch.tensor([[True]]), BX, BY]),
+    (rr.int.broadcast.Ite([Bool([1, 1]), I, I]), [torch.tensor([[True]]), IX, IY]),
+    (rr.bool.broadcast.Ite([Bool([1, 1]), B, B]), [torch.tensor([[True]]), BX, BY]),
     (word.broadcast.Ite([Bool([1, 1]), W, W]), [torch.tensor([[False]]), WX, WY]),
     (real.Zero(R), []),
     # constants, linear and affine maps
     (real.Num(RX), []),
-    (int_.Num(IX), []),
-    (bool_.Truth(BX), []),
+    (rr.int.Num(IX), []),
+    (rr.bool.Truth(BX), []),
     (word.Num(WX, W), []),
     (real.Linear(A, R), [RX]),
-    (int_.Linear(AI, I), [IX]),
+    (rr.int.Linear(AI, I), [IX]),
     (real.Affine(A, A, Real([2, 2])), [RX]),
-    (int_.Affine(AI, AI, Int([2, 2])), [IX]),
+    (rr.int.Affine(AI, AI, Int([2, 2])), [IX]),
     (real.Scale(RY, R), [RX]),
-    (int_.Scale(IY, I), [IX]),
+    (rr.int.Scale(IY, I), [IX]),
     # reals
     (real.Add([R, R]), [RX, RY]),
     (real.Sub([R, R]), [RX, RY]),
@@ -79,34 +79,34 @@ CASES = [
     (real.Gt([R, R]), [RX, RY]),
     (real.Ge([R, R]), [RX, RY]),
     # integers
-    (int_.Add([I, I]), [IX, IY]),
-    (int_.Sub([I, I]), [IX, IY]),
-    (int_.Mul([I, I]), [IX, IY]),
-    (int_.Div([I, I]), [IX, IY]),
-    (int_.Mod([I, I]), [IX, IY]),
-    (int_.Neg(I), [IX]),
-    (int_.Abs(I), [IX]),
-    (int_.ReLU(I), [IX]),
-    (int_.Min([I, I]), [IX, IY]),
-    (int_.Max([I, I]), [IX, IY]),
-    (int_.Argmax(I), [IX]),
-    (int_.Transpose(I), [IX]),
-    (int_.MatMul([I, I]), [IX, IY]),
-    (int_.Ite([B, I, I]), [BX, IX, IY]),
-    (int_.Eq([I, I]), [IX, IY]),
-    (int_.Ne([I, I]), [IX, IY]),
-    (int_.Lt([I, I]), [IX, IY]),
-    (int_.Le([I, I]), [IX, IY]),
-    (int_.Gt([I, I]), [IX, IY]),
-    (int_.Ge([I, I]), [IX, IY]),
+    (rr.int.Add([I, I]), [IX, IY]),
+    (rr.int.Sub([I, I]), [IX, IY]),
+    (rr.int.Mul([I, I]), [IX, IY]),
+    (rr.int.Div([I, I]), [IX, IY]),
+    (rr.int.Mod([I, I]), [IX, IY]),
+    (rr.int.Neg(I), [IX]),
+    (rr.int.Abs(I), [IX]),
+    (rr.int.ReLU(I), [IX]),
+    (rr.int.Min([I, I]), [IX, IY]),
+    (rr.int.Max([I, I]), [IX, IY]),
+    (rr.int.Argmax(I), [IX]),
+    (rr.int.Transpose(I), [IX]),
+    (rr.int.MatMul([I, I]), [IX, IY]),
+    (rr.int.Ite([B, I, I]), [BX, IX, IY]),
+    (rr.int.Eq([I, I]), [IX, IY]),
+    (rr.int.Ne([I, I]), [IX, IY]),
+    (rr.int.Lt([I, I]), [IX, IY]),
+    (rr.int.Le([I, I]), [IX, IY]),
+    (rr.int.Gt([I, I]), [IX, IY]),
+    (rr.int.Ge([I, I]), [IX, IY]),
     # booleans
-    (bool_.And([B, B]), [BX, BY]),
-    (bool_.Or([B, B]), [BX, BY]),
-    (bool_.Xor([B, B]), [BX, BY]),
-    (bool_.Not(B), [BX]),
-    (bool_.Eq([B, B]), [BX, BY]),
-    (bool_.Ne([B, B]), [BX, BY]),
-    (bool_.Ite([B, B, B]), [BX, BX, BY]),
+    (rr.bool.And([B, B]), [BX, BY]),
+    (rr.bool.Or([B, B]), [BX, BY]),
+    (rr.bool.Xor([B, B]), [BX, BY]),
+    (rr.bool.Not(B), [BX]),
+    (rr.bool.Eq([B, B]), [BX, BY]),
+    (rr.bool.Ne([B, B]), [BX, BY]),
+    (rr.bool.Ite([B, B, B]), [BX, BX, BY]),
     # words: comparisons
     (word.Eq([W, W]), [WX, WY]),
     (word.Ne([W, W]), [WX, WY]),
@@ -188,7 +188,7 @@ def _dom(op, args):
     return op.dom if isinstance(op.dom, list) else [op.dom]
 
 
-IDS = [f"{type(op).__module__.removeprefix('reactor.matrix.')}.{type(op).__name__}" for op, _ in CASES]
+IDS = [f"{type(op).__module__.removeprefix('reactor.')}.{type(op).__name__}" for op, _ in CASES]
 
 
 @pytest.mark.parametrize("op,args", CASES, ids=IDS)

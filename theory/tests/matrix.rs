@@ -1,7 +1,8 @@
-//! Tests for the operations of `matrix`, one module per module of `matrix`.
+//! Tests for the matrix theories, one module per theory, and their operations
+//! in `Op`.
 
 use base::differentiable::T;
-use theory::matrix::real::Real;
+use theory::real::Real;
 
 /// The tangent `T` applied `n` times to `s`: the real matrices of degree `n`
 /// above it.
@@ -9,12 +10,12 @@ fn tangent(n: u8, s: Real) -> Real {
     (0..n).fold(s, |s, _| T(s))
 }
 
-/// Tests for `matrix::Op` and the logics.
+/// Tests for `Op` and the logics.
 mod op {
     use super::tangent;
     use base::boundary::{Boundary, Poly};
     use base::differentiable::T;
-    use theory::matrix::*;
+    use theory::*;
 
     /// A tensor carrying its shape only, enough to compute boundaries.
     #[derive(Debug)]
@@ -28,17 +29,17 @@ mod op {
 
     // The operations and logics, instantiated with `Mat`; these shadow the
     // generic ones of `theory::matrix`.
-    type Op = theory::matrix::Op<Mat>;
+    type Op = theory::Op<Mat>;
     #[allow(clippy::upper_case_acronyms)]
-    type NRA = theory::matrix::NRA<Mat>;
+    type NRA = theory::NRA<Mat>;
     #[allow(clippy::upper_case_acronyms)]
-    type NIA = theory::matrix::NIA<Mat>;
+    type NIA = theory::NIA<Mat>;
     #[allow(clippy::upper_case_acronyms)]
-    type LRA = theory::matrix::LRA<Mat>;
+    type LRA = theory::LRA<Mat>;
     #[allow(clippy::upper_case_acronyms)]
-    type LIA = theory::matrix::LIA<Mat>;
-    type Prop = theory::matrix::Prop<Mat>;
-    type BV = theory::matrix::BV<Mat>;
+    type LIA = theory::LIA<Mat>;
+    type Prop = theory::Prop<Mat>;
+    type BV = theory::BV<Mat>;
 
     fn real(op: impl Into<real::NRA<Mat>>) -> Op {
         Op::Real(op.into())
@@ -255,8 +256,12 @@ mod op {
         let ops: [(Op, Any); 5] = [
             (
                 real::NRA::from(
-                    real::broadcast::Ite::with_dom([c.try_into().unwrap(), r.into(), r.into()])
-                        .unwrap(),
+                    real::broadcast::Ite::with_dom([
+                        c.clone().try_into().unwrap(),
+                        r.into(),
+                        r.into(),
+                    ])
+                    .unwrap(),
                 )
                 .into(),
                 r.into(),
@@ -267,8 +272,12 @@ mod op {
             ),
             (
                 int::NIA::from(
-                    int::broadcast::Ite::with_dom([c.try_into().unwrap(), i.into(), i.into()])
-                        .unwrap(),
+                    int::broadcast::Ite::with_dom([
+                        c.clone().try_into().unwrap(),
+                        i.into(),
+                        i.into(),
+                    ])
+                    .unwrap(),
                 )
                 .into(),
                 i.into(),
@@ -283,15 +292,22 @@ mod op {
             ),
             (
                 word::BV::from(
-                    word::broadcast::Ite::with_dom([c.try_into().unwrap(), w.into(), w.into()])
-                        .unwrap(),
+                    word::broadcast::Ite::with_dom([
+                        c.clone().try_into().unwrap(),
+                        w.into(),
+                        w.into(),
+                    ])
+                    .unwrap(),
                 )
                 .into(),
                 w.into(),
             ),
         ];
         for (op, s) in ops {
-            assert_eq!(op.dom(), base::mono![c, s, s].into());
+            assert_eq!(
+                op.dom(),
+                base::mono![c.clone(), s.clone(), s.clone()].into()
+            );
             assert_eq!(op.cod(), base::mono![s].into());
         }
         assert_eq!(
@@ -311,11 +327,12 @@ mod op {
         // branches of different sorts
         let other = word::Word::new_unchecked(4, [4, 4]);
         assert!(
-            word::broadcast::Ite::with_dom([c.try_into().unwrap(), w.into(), other.into()])
+            word::broadcast::Ite::with_dom([c.clone().try_into().unwrap(), w.into(), other.into()])
                 .is_err()
         );
         assert!(
-            real::broadcast::Ite::with_dom([c.try_into().unwrap(), r.into(), dr.into()]).is_err()
+            real::broadcast::Ite::with_dom([c.clone().try_into().unwrap(), r.into(), dr.into()])
+                .is_err()
         );
     }
 
@@ -757,7 +774,7 @@ mod op {
     fn word_ops_have_their_boundary_in_sort() {
         let op = word(word::Add::with_dom([word::Word::new(8, [2, 3]).unwrap(); 2]).unwrap());
         let w: Any = word::Word::new_unchecked(8, [2, 3]).into();
-        let dom: Poly<Any> = base::mono![w, w].into();
+        let dom: Poly<Any> = base::mono![w.clone(), w.clone()].into();
         let cod: Poly<Any> = base::mono![w].into();
         assert_eq!(op.dom(), dom);
         assert_eq!(op.cod(), cod);
@@ -788,19 +805,19 @@ mod op {
     fn comparisons_read_numbers_and_write_booleans() {
         let op = int(int::Lt::with_dom([int::Int::new_unchecked([2, 3]); 2]).unwrap());
         let i: Any = int::Int::new_unchecked([2, 3]).into();
-        let dom: Poly<Any> = base::mono![i, i].into();
+        let dom: Poly<Any> = base::mono![i.clone(), i].into();
         let cod: Poly<Any> = base::mono![bool::Bool::new_unchecked([2, 3]).into()].into();
         assert_eq!(op.dom(), dom);
         assert_eq!(op.cod(), cod);
     }
 }
 
-/// Tests for `matrix::bool`.
+/// Tests for `bool`.
 mod bool {
     use base::boundary::{Boundary, Poly};
     use base::mono;
-    use theory::matrix::bool::Bool;
-    use theory::matrix::bool::*;
+    use theory::bool::Bool;
+    use theory::bool::*;
 
     fn one(s: Bool) -> Poly<Bool> {
         mono![s].into()
@@ -926,12 +943,12 @@ mod bool {
     }
 }
 
-/// Tests for `matrix::int`.
+/// Tests for `int`.
 mod int {
     use base::boundary::{Boundary, Poly};
     use base::mono;
-    use theory::matrix::int::*;
-    use theory::matrix::{bool::Bool, int::Int};
+    use theory::int::*;
+    use theory::{bool::Bool, int::Int};
 
     fn one(s: Int) -> Poly<Int> {
         mono![s].into()
@@ -1152,14 +1169,14 @@ mod int {
     }
 }
 
-/// Tests for `matrix::real`.
+/// Tests for `real`.
 mod real {
     use super::tangent;
     use base::boundary::{Boundary, Poly};
     use base::differentiable::T;
     use base::mono;
-    use theory::matrix::real::*;
-    use theory::matrix::{bool::Bool, real::Real};
+    use theory::real::*;
+    use theory::{bool::Bool, real::Real};
 
     fn one(s: Real) -> Poly<Real> {
         mono![s].into()
@@ -1467,12 +1484,12 @@ mod real {
     }
 }
 
-/// Tests for the sorts of `matrix`.
+/// Tests for the sorts of the matrix theories and their subsets.
 mod sort {
     use base::differentiable::T;
-    use theory::matrix::*;
-    use theory::matrix::{bool::Bool, int::Int, real::Real, word::Word};
     use theory::zero::Real0;
+    use theory::*;
+    use theory::{bool::Bool, int::Int, real::Real, word::Word};
 
     #[test]
     fn real_shape_and_display() {
@@ -1600,20 +1617,20 @@ mod sort {
             Any::Zero(Real0),
         ];
         for s in sorts {
-            if Bools::try_from(s).is_ok() {
-                assert!(Bools::try_from(T(s)).is_ok());
+            if Bools::try_from(s.clone()).is_ok() {
+                assert!(Bools::try_from(T(s.clone())).is_ok());
             }
-            if Reals::try_from(s).is_ok() {
-                assert!(Reals::try_from(T(s)).is_ok());
+            if Reals::try_from(s.clone()).is_ok() {
+                assert!(Reals::try_from(T(s.clone())).is_ok());
             }
-            if Ints::try_from(s).is_ok() {
-                assert!(Ints::try_from(T(s)).is_ok());
+            if Ints::try_from(s.clone()).is_ok() {
+                assert!(Ints::try_from(T(s.clone())).is_ok());
             }
-            if Nums::try_from(s).is_ok() {
-                assert!(Nums::try_from(T(s)).is_ok());
+            if Nums::try_from(s.clone()).is_ok() {
+                assert!(Nums::try_from(T(s.clone())).is_ok());
             }
-            if Words::try_from(s).is_ok() {
-                assert!(Words::try_from(T(s)).is_ok());
+            if Words::try_from(s.clone()).is_ok() {
+                assert!(Words::try_from(T(s.clone())).is_ok());
             }
         }
     }
@@ -1641,11 +1658,11 @@ mod sort {
 
         // every subset holds the booleans and `Real0`
         for s in [Any::Bool(b), Any::Zero(Real0)] {
-            assert!(Bools::try_from(s).is_ok());
-            assert!(Reals::try_from(s).is_ok());
-            assert!(Ints::try_from(s).is_ok());
-            assert!(Nums::try_from(s).is_ok());
-            assert!(Words::try_from(s).is_ok());
+            assert!(Bools::try_from(s.clone()).is_ok());
+            assert!(Reals::try_from(s.clone()).is_ok());
+            assert!(Ints::try_from(s.clone()).is_ok());
+            assert!(Nums::try_from(s.clone()).is_ok());
+            assert!(Words::try_from(s.clone()).is_ok());
         }
 
         // `Bools` holds only those
@@ -1655,12 +1672,12 @@ mod sort {
     }
 }
 
-/// Tests for `matrix::word`.
+/// Tests for `word`.
 mod word {
     use base::boundary::{Boundary, Poly};
     use base::mono;
-    use theory::matrix::word::*;
-    use theory::matrix::{bool::Bool, word::Word};
+    use theory::word::*;
+    use theory::{bool::Bool, word::Word};
 
     fn w(width: usize, shape: [usize; 2]) -> Sort {
         Word::new(width, shape).unwrap().into()
@@ -2002,8 +2019,8 @@ mod word {
 mod with_dom {
     use base::boundary::{Boundary, Mono, Poly};
     use base::differentiable::T;
-    use theory::matrix::*;
-    use theory::matrix::{bool::Bool, int::Int, real::Real, word::Word};
+    use theory::*;
+    use theory::{bool::Bool, int::Int, real::Real, word::Word};
 
     #[derive(Debug)]
     struct Mat([usize; 2]);
@@ -2149,8 +2166,8 @@ mod with_dom {
 mod with_cod {
     use base::boundary::{Boundary, Mono, Poly};
     use base::differentiable::T;
-    use theory::matrix::*;
-    use theory::matrix::{bool::Bool, int::Int, real::Real, word::Word};
+    use theory::*;
+    use theory::{bool::Bool, int::Int, real::Real, word::Word};
 
     #[derive(Debug)]
     struct Mat([usize; 2]);

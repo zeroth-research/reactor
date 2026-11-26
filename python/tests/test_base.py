@@ -1,11 +1,11 @@
 import pytest
 import torch
 from reactor import Wire, Term, Atom, Module, T, Var, X, d
-from reactor.matrix.bool import Bool
-from reactor.matrix.int import Int
-from reactor.matrix.real import Real
-from reactor import matrix
-from reactor.matrix import Skip
+import reactor as rr
+from reactor.bool import Bool
+from reactor.int import Int
+from reactor.real import Real
+from reactor import real, Skip
 
 
 def _bool_t(v):
@@ -27,13 +27,13 @@ def test_term_new():
     w5 = Wire(Int([1, 3]))
 
     # test `function` ctor
-    _ = Term.function(matrix.int.Add([Int([2, 3]), Int([2, 3])]), [xn], [x, y])
-    _ = Term.function(matrix.int.Num(torch.tensor([[3, 4, 5]]), Int([1, 3])), [w4], [])
-    _ = Term.function(matrix.int.Num(torch.tensor([[3, 4, 6]]), Int([1, 3])), [w5], [])
+    _ = Term.function(rr.int.Add([Int([2, 3]), Int([2, 3])]), [xn], [x, y])
+    _ = Term.function(rr.int.Num(torch.tensor([[3, 4, 5]]), Int([1, 3])), [w4], [])
+    _ = Term.function(rr.int.Num(torch.tensor([[3, 4, 6]]), Int([1, 3])), [w5], [])
 
     # comparisons are pointwise -> Bool of the operand shape
-    Term(matrix.int.Lt([Int([1, 3]), Int([1, 3])]), [Wire(Bool([1, 3]))], [w4, Wire(Int([1, 3]))])
-    Term.constant(matrix.int.Num(torch.tensor([[3, 2, 1]]), Int([1, 3])), [Wire(Int([1, 3]))])
+    Term(rr.int.Lt([Int([1, 3]), Int([1, 3])]), [Wire(Bool([1, 3]))], [w4, Wire(Int([1, 3]))])
+    Term.constant(rr.int.Num(torch.tensor([[3, 2, 1]]), Int([1, 3])), [Wire(Int([1, 3]))])
 
 
 def test_var_derefs_to_wire():
@@ -64,7 +64,7 @@ def test_var_derefs_to_wire():
 
 def test_module_sequential():
     x = Var(Bool([1, 1]))
-    init = [Term.constant(matrix.bool.Truth(_bool_t(True), Bool([1, 1])), [X(x)])]
+    init = [Term.constant(rr.bool.Truth(_bool_t(True), Bool([1, 1])), [X(x)])]
     update = [Term(Skip(Bool([1, 1])), [X(x)], [x])]
     _ = Module.sequential([x], init, update)
 
@@ -72,7 +72,7 @@ def test_module_sequential():
 def test_module_combinatorial():
     x = Var(Bool([1, 1]))
 
-    assign = [Term.constant(matrix.bool.Truth(_bool_t(False), Bool([1, 1])), [X(x)])]
+    assign = [Term.constant(rr.bool.Truth(_bool_t(False), Bool([1, 1])), [X(x)])]
     _ = Module.combinatorial([x], assign)
 
 
@@ -83,18 +83,18 @@ def test_module_parallel():
     w = Var(Bool([1, 1]))
     v = Var(Bool([1, 1]))
 
-    init = [Term.constant(matrix.bool.Truth(_bool_t(False), Bool([1, 1])), [X(x)])]
-    update = [Term(matrix.bool.And([Bool([1, 1]), Bool([1, 1])]), [X(x)], [x, X(y)])]
+    init = [Term.constant(rr.bool.Truth(_bool_t(False), Bool([1, 1])), [X(x)])]
+    update = [Term(rr.bool.And([Bool([1, 1]), Bool([1, 1])]), [X(x)], [x, X(y)])]
     p = Module.sequential([x, y], init, update)
 
     init = [
-        Term.constant(matrix.bool.Truth(_bool_t(False), Bool([1, 1])), [X(v)]),
-        Term.constant(matrix.bool.Truth(_bool_t(False), Bool([1, 1])), [X(y)]),
+        Term.constant(rr.bool.Truth(_bool_t(False), Bool([1, 1])), [X(v)]),
+        Term.constant(rr.bool.Truth(_bool_t(False), Bool([1, 1])), [X(y)]),
     ]
-    update = [Term(matrix.bool.And([Bool([1, 1]), Bool([1, 1])]), [X(v)], [v, x]), Term(Skip(Bool([1, 1])), [X(y)], [x])]
+    update = [Term(rr.bool.And([Bool([1, 1]), Bool([1, 1])]), [X(v)], [v, x]), Term(Skip(Bool([1, 1])), [X(y)], [x])]
     q = Module.sequential([x, y, v], init, update, hide=[v])
 
-    assign = [Term(matrix.bool.Or([Bool([1, 1]), Bool([1, 1])]), [X(z)], [X(y), X(w)])]
+    assign = [Term(rr.bool.Or([Bool([1, 1]), Bool([1, 1])]), [X(z)], [X(y), X(w)])]
     r = Module.combinatorial((z, y, w), assign)
 
     m = Module.compose(p, q, r)
@@ -118,8 +118,8 @@ def test_interface():
     x = Wire(Bool([1, 1]))
     y = Wire(Bool([1, 1]))
     xn = Wire(Bool([1, 1]))
-    f = Term(matrix.bool.And([Bool([1, 1]), Bool([1, 1])]), [xn], [x, y])
-    f2 = Term(matrix.bool.And([Bool([1, 1]), Bool([1, 1])]), [xn], [x, y])
+    f = Term(rr.bool.And([Bool([1, 1]), Bool([1, 1])]), [xn], [x, y])
+    f2 = Term(rr.bool.And([Bool([1, 1]), Bool([1, 1])]), [xn], [x, y])
 
     w = f.write
     r = f.read
@@ -143,10 +143,10 @@ def _stateful_blocks():
     zero = torch.tensor([[0.0]])
     x = Var(Real([1, 1]))
     p = Var(Real([1, 1]))
-    init = [Term(matrix.real.Num(zero, Real([1, 1])), [X(x)]), Term(matrix.real.Num(zero, Real([1, 1])), [X(p)])]
+    init = [Term(real.Num(zero, Real([1, 1])), [X(x)]), Term(real.Num(zero, Real([1, 1])), [X(p)])]
     update = [Term(Skip(Real([1, 1])), [X(x)], [x]), Term(Skip(Real([1, 1])), [X(p)], [p])]
     # the zero rate of change of a real: the zero matrix, of degree 1
-    rest = matrix.real.Zero(T(Real([1, 1])))
+    rest = real.Zero(T(Real([1, 1])))
     delay = [Term(rest, [d(x)]), Term(rest, [d(p)])]
     return x, p, init, update, delay
 
@@ -230,7 +230,7 @@ def test_module_new_positional_is_parallel():
     y = Var(Real([1, 1]))
 
     p1 = Module(init=init, update=update, vars=[x, p])
-    p2 = Module(init=[Term(matrix.real.Num(torch.tensor([[0.0]]), Real([1, 1])), [X(y)])], vars=[y])
+    p2 = Module(init=[Term(real.Num(torch.tensor([[0.0]]), Real([1, 1])), [X(y)])], vars=[y])
 
     m = Module(p1, p2)
     assert m.intf == [x, p, y]
@@ -254,12 +254,12 @@ def test_compose_hiding_coupled_variables():
 
     # m1 controls x and y, reading the shared input w; m2 reads y and w and
     # controls z: y couples the two, w is external on both sides
-    init = [Term(matrix.real.Num(zero, Real([1, 1])), [X(x)]), Term(matrix.real.Num(zero, Real([1, 1])), [X(y)])]
+    init = [Term(real.Num(zero, Real([1, 1])), [X(x)]), Term(real.Num(zero, Real([1, 1])), [X(y)])]
     update = [Term(Skip(Real([1, 1])), [X(x)], [w]), Term(Skip(Real([1, 1])), [X(y)], [y])]
     m1 = Module.sequential([x, y, w], init, update)
 
-    init = [Term(matrix.real.Num(zero, Real([1, 1])), [X(z)])]
-    update = [Term(matrix.real.Add([Real([1, 1]), Real([1, 1])]), [X(z)], [y, w])]
+    init = [Term(real.Num(zero, Real([1, 1])), [X(z)])]
+    update = [Term(real.Add([Real([1, 1]), Real([1, 1])]), [X(z)], [y, w])]
     m2 = Module.sequential([y, z, w], init, update)
 
     assert y in m1.intf and y in m2.extl
@@ -301,7 +301,7 @@ def test_module_new_positional_atoms():
     # several atoms compose into one module
     y = Var(Real([1, 1]))
     zero = torch.tensor([[0.0]])
-    other = Atom.constant([y], [Term(matrix.real.Num(zero, Real([1, 1])), [X(y)])])
+    other = Atom.constant([y], [Term(real.Num(zero, Real([1, 1])), [X(y)])])
     m = Module(atom, other)
     assert m.intf == [x, p, y]
     assert len(m.atoms) == 2
@@ -392,7 +392,7 @@ def test_atom_infers_awaited_variables():
     t = Var(Real([1, 1]))
 
     # x' = X(t): the atom awaits t rather than controlling it
-    init = [Term(matrix.real.Num(zero, Real([1, 1])), [X(x)])]
+    init = [Term(real.Num(zero, Real([1, 1])), [X(x)])]
     update = [Term(Skip(Real([1, 1])), [X(x)], [X(t)])]
     atom = Atom([x, t], init=init, update=update)
 
@@ -405,7 +405,7 @@ def test_atom_rejects_ill_formed_blocks():
     x = Var(Real([1, 1]))
 
     # the update writes the latched wire instead of the next wire
-    init = [Term(matrix.real.Num(zero, Real([1, 1])), [X(x)])]
+    init = [Term(real.Num(zero, Real([1, 1])), [X(x)])]
     update = [Term(Skip(Real([1, 1])), [x], [X(x)])]
     with pytest.raises(Exception):
         Atom.sequential([x], init, update)
@@ -452,15 +452,15 @@ def test_heterogeneous_composition():
     z = Var(Real([1, 1]))
 
     zero = torch.tensor([[0.0]])
-    init = [Term(matrix.real.Num(zero, Real([1, 1])), [X(x)])]
+    init = [Term(real.Num(zero, Real([1, 1])), [X(x)])]
     update = [Term(Skip(Real([1, 1])), [X(x)], [x])]
     P = Module.sequential([x], init, update)
 
-    init = [Term(matrix.real.Num(zero, Real([1, 1])), [X(y)])]
-    flow = [Term(matrix.real.Zero(T(Real([1, 1]))), [d(y)])]
+    init = [Term(real.Num(zero, Real([1, 1])), [X(y)])]
+    flow = [Term(real.Zero(T(Real([1, 1]))), [d(y)])]
     Q = Module.differential([y], init, flow)
 
-    comb = [Term(matrix.real.Add([Real([1, 1]), Real([1, 1])]), [X(z)], [X(x), X(y)])]
+    comb = [Term(real.Add([Real([1, 1]), Real([1, 1])]), [X(z)], [X(x), X(y)])]
     R = Module.combinatorial([x, y, z], comb)
 
     S = Module.compose(P, Q, R)

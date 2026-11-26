@@ -1,8 +1,8 @@
 import pytest
 import gymnasium as gym
 from reactor import Module, Wire, Term, Var, X
-from reactor.matrix.real import Real
-from reactor.matrix import Havoc
+from reactor.real import Real
+from reactor import Havoc
 from gymnasium import spaces
 
 

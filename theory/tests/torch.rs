@@ -1,13 +1,12 @@
-//! Tests for the torch backing of `matrix`.
+//! Tests for the torch backing of the matrix theories.
 
 #![cfg(feature = "torch")]
 
 use base::boundary::Boundary;
 use pyo3::prelude::*;
 use pyo3_tch::PyTensor;
-use theory::matrix;
-use theory::matrix::{bool::Bool, int::Int, real::Real, word::Word};
 use theory::torch::*;
+use theory::{bool::Bool, int::Int, real::Real, word::Word};
 
 /// Starts Python and imports `torch` once for all tests, before any of
 /// them holds the GIL: tests run in parallel threads, and importing
@@ -28,7 +27,7 @@ fn full(rows: i64, cols: i64, value: f64, kind: tch::Kind) -> tch::Tensor {
 }
 
 /// The Python object of the sort `s`.
-fn sort<'py>(py: Python<'py>, s: impl Into<matrix::Any>) -> Bound<'py, PyAny> {
+fn sort<'py>(py: Python<'py>, s: impl Into<theory::Any>) -> Bound<'py, PyAny> {
     s.into().into_pyobject(py).unwrap()
 }
 
@@ -47,16 +46,16 @@ fn torch_tensors_back_the_operations() {
     // `A` of shape `[4, 2]` and `B` of shape `[4, 3]` map `[2, 3]` to `[4, 3]`
     let a = full(4, 2, 0.0, tch::Kind::Float);
     let b = full(4, 3, 0.0, tch::Kind::Float);
-    let affine = matrix::real::Affine::with_dom(a, b, [Real::new_unchecked([2, 3])]).unwrap();
+    let affine = theory::real::Affine::with_dom(a, b, [Real::new_unchecked([2, 3])]).unwrap();
     assert_eq!(
         affine.dom(),
-        matrix::real::ReLU::with_dom([Real::new_unchecked([2, 3]); 1])
+        theory::real::ReLU::with_dom([Real::new_unchecked([2, 3]); 1])
             .unwrap()
             .dom()
     );
     assert_eq!(
         affine.cod(),
-        matrix::real::ReLU::with_dom([Real::new_unchecked([4, 3]); 1])
+        theory::real::ReLU::with_dom([Real::new_unchecked([4, 3]); 1])
             .unwrap()
             .cod()
     );
@@ -123,11 +122,11 @@ fn constants_extract_from_the_class_of_their_theory() {
             .call1((&floats, sort(py, Real::new_unchecked([2, 3]))))
             .unwrap();
         let op = constant
-            .extract::<matrix::real::Num<tch::Tensor>>()
+            .extract::<theory::real::Num<tch::Tensor>>()
             .unwrap();
         assert_eq!(
             op.cod(),
-            matrix::real::ReLU::with_dom([Real::new_unchecked([2, 3]); 1])
+            theory::real::ReLU::with_dom([Real::new_unchecked([2, 3]); 1])
                 .unwrap()
                 .cod()
         );
@@ -137,8 +136,8 @@ fn constants_extract_from_the_class_of_their_theory() {
         assert_eq!(op.tensor().data_ptr(), t.data_ptr());
 
         // the class decides the theory, not the tensor
-        assert!(constant.extract::<matrix::int::Num<tch::Tensor>>().is_err());
-        assert!(floats.extract::<matrix::real::Num<tch::Tensor>>().is_err());
+        assert!(constant.extract::<theory::int::Num<tch::Tensor>>().is_err());
+        assert!(floats.extract::<theory::real::Num<tch::Tensor>>().is_err());
 
         let ints = python(py, full(2, 3, 0.0, tch::Kind::Int64));
         let constant = py
@@ -146,7 +145,7 @@ fn constants_extract_from_the_class_of_their_theory() {
             .call1((&ints, sort(py, Word::new_unchecked(8, [2, 3]))))
             .unwrap();
         let op = constant
-            .extract::<matrix::word::Num<tch::Tensor>>()
+            .extract::<theory::word::Num<tch::Tensor>>()
             .unwrap();
         assert_eq!(op.width(), 8);
     });
@@ -208,17 +207,17 @@ fn linear_maps_extract_from_the_class_of_their_theory() {
             .call1((&a, &b, sort(py, Real::new_unchecked([2, 3]))))
             .unwrap();
         let linear = class
-            .extract::<matrix::real::Affine<tch::Tensor>>()
+            .extract::<theory::real::Affine<tch::Tensor>>()
             .unwrap();
         assert_eq!(
             linear.dom(),
-            matrix::real::ReLU::with_dom([Real::new_unchecked([2, 3]); 1])
+            theory::real::ReLU::with_dom([Real::new_unchecked([2, 3]); 1])
                 .unwrap()
                 .dom()
         );
         assert_eq!(
             linear.cod(),
-            matrix::real::ReLU::with_dom([Real::new_unchecked([4, 3]); 1])
+            theory::real::ReLU::with_dom([Real::new_unchecked([4, 3]); 1])
                 .unwrap()
                 .cod()
         );
@@ -228,11 +227,11 @@ fn linear_maps_extract_from_the_class_of_their_theory() {
         assert_eq!(linear.a().data_ptr(), ta.data_ptr());
 
         // the class decides the theory
-        assert!(class.extract::<matrix::int::Affine<tch::Tensor>>().is_err());
-        let any = class.extract::<matrix::Op<tch::Tensor>>().unwrap();
+        assert!(class.extract::<theory::int::Affine<tch::Tensor>>().is_err());
+        let any = class.extract::<theory::Op<tch::Tensor>>().unwrap();
         assert!(matches!(
             any,
-            matrix::Op::Real(matrix::real::NRA::Affine(_))
+            theory::Op::Real(theory::real::NRA::Affine(_))
         ));
     });
 }
@@ -244,17 +243,17 @@ fn any_extracts_constants_and_linear_maps_with_torch_tensors() {
         let ints = python(py, full(2, 3, 0.0, tch::Kind::Int64));
         let integers = sort(py, Int::new_unchecked([2, 3]));
         let constant = py.get_type::<int::Num>().call1((&ints, &integers)).unwrap();
-        let any = constant.extract::<matrix::Op<tch::Tensor>>().unwrap();
-        assert!(matches!(any, matrix::Op::Int(matrix::int::NIA::Num(_))));
+        let any = constant.extract::<theory::Op<tch::Tensor>>().unwrap();
+        assert!(matches!(any, theory::Op::Int(theory::int::NIA::Num(_))));
 
         let scale = py
             .get_type::<int::Scale>()
             .call1((&ints, &integers))
             .unwrap();
-        let any = scale.extract::<matrix::Op<tch::Tensor>>().unwrap();
-        assert!(matches!(any, matrix::Op::Int(matrix::int::NIA::Scale(_))));
+        let any = scale.extract::<theory::Op<tch::Tensor>>().unwrap();
+        assert!(matches!(any, theory::Op::Int(theory::int::NIA::Scale(_))));
         // the class decides the operation and the theory
-        assert!(scale.extract::<matrix::int::Num<tch::Tensor>>().is_err());
+        assert!(scale.extract::<theory::int::Num<tch::Tensor>>().is_err());
         let floats = python(py, full(2, 3, 0.0, tch::Kind::Float));
         let reals = sort(py, Real::new_unchecked([2, 3]));
         assert!(
@@ -273,10 +272,10 @@ fn any_extracts_constants_and_linear_maps_with_torch_tensors() {
             .get_type::<bool::Truth>()
             .call1((&bools, sort(py, Bool::new_unchecked([2, 3]))))
             .unwrap();
-        let any = constant.extract::<matrix::Op<tch::Tensor>>().unwrap();
+        let any = constant.extract::<theory::Op<tch::Tensor>>().unwrap();
         assert!(matches!(
             any,
-            matrix::Op::Bool(matrix::bool::Prop::Truth(_))
+            theory::Op::Bool(theory::bool::Prop::Truth(_))
         ));
 
         let a = python(py, full(4, 2, 1.0, tch::Kind::Int64));
@@ -285,14 +284,14 @@ fn any_extracts_constants_and_linear_maps_with_torch_tensors() {
             .get_type::<int::Affine>()
             .call1((&a, &b, sort(py, Int::new_unchecked([2, 1]))))
             .unwrap();
-        let any = linear.extract::<matrix::Op<tch::Tensor>>().unwrap();
-        assert!(matches!(any, matrix::Op::Int(matrix::int::NIA::Affine(_))));
+        let any = linear.extract::<theory::Op<tch::Tensor>>().unwrap();
+        assert!(matches!(any, theory::Op::Int(theory::int::NIA::Affine(_))));
     });
 }
 
 #[test]
 fn any_extracts_the_operations_of_each_theory() {
-    use matrix::{Op, bool, int, real, word};
+    use theory::{Op, bool, int, real, word};
 
     prepare_python_with_torch();
     Python::attach(|py| {
@@ -347,7 +346,7 @@ fn any_extracts_the_operations_of_each_theory() {
 
 #[test]
 fn each_theory_extracts_its_own_operations_only() {
-    use matrix::{bool, int, real, word};
+    use theory::{bool, int, real, word};
 
     prepare_python_with_torch();
     Python::attach(|py| {

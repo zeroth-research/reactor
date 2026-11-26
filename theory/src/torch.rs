@@ -3,7 +3,7 @@
 
 The torch backing of the operations of [`crate::matrix`]: [`tch::Tensor`]
 implements [`crate::Matrix`], so that the operations carrying tensors hold
-torch tensors directly, as `matrix::real::Num<tch::Tensor>`. The Python
+torch tensors directly, as `real::Num<tch::Tensor>`. The Python
 `torch.Tensor` objects convert to and from them through
 [`pyo3_tch::PyTensor`], sharing their storage.
 
@@ -25,7 +25,7 @@ determine. So are the affine maps, [`real::Affine`] and
 [`int::Affine`], each holding, in private fields, the [`tch::Tensor`]s `A`
 and `B` of its theory, of shapes `[m, n]` and `[m, k]`, checked on
 construction, and implementing `Sync` in the same way. The linear and
-affine maps of [`crate::matrix::real`] and [`crate::matrix::int`] extract
+affine maps of [`crate::real`] and [`crate::int`] extract
 from the class of their theory, sharing its tensors.
 */
 
@@ -93,14 +93,14 @@ fn check_affine(a: &tch::Tensor, b: &tch::Tensor) -> Result<(), crate::Error> {
 
 /// Converts an operation of any theory into its Python class, through the
 /// conversion of its theory; the structural operations are classes of their
-/// own.
-impl<'py> IntoPyObject<'py> for crate::matrix::Op<tch::Tensor> {
+/// own. The operations of the scalar theories have no Python classes yet.
+impl<'py> IntoPyObject<'py> for crate::Op<tch::Tensor> {
     type Target = PyAny;
     type Output = Bound<'py, PyAny>;
     type Error = PyErr;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-        use crate::matrix::Op;
+        use crate::Op;
 
         match self {
             Op::Real(op) => op.into_pyobject(py),
@@ -110,6 +110,9 @@ impl<'py> IntoPyObject<'py> for crate::matrix::Op<tch::Tensor> {
             Op::Havoc(op) => op.into_pyobject(py).map(Bound::into_any),
             Op::Skip(op) => op.into_pyobject(py).map(Bound::into_any),
             Op::Zero(op) => op.into_pyobject(py).map(Bound::into_any),
+            op @ (Op::Enum(_) | Op::Event(_)) => Err(pyo3::exceptions::PyTypeError::new_err(
+                format!("the operation {op} has no Python class yet"),
+            )),
         }
     }
 }

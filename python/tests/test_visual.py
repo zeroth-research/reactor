@@ -1,5 +1,5 @@
 from reactor import Var, X
-from reactor.matrix.int import Int
+from reactor.int import Int
 from reactor.sugar import Module
 from reactor.visual.server import _serialize_module
 

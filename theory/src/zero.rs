@@ -15,7 +15,7 @@ too. So it has no shape, and the matrix theories and the scalar theories
 share it. It is its own tangent.
 
 It is named after `ℝ⁰`, the real space of dimension 0, not after a degree:
-it is not a [`Real`](crate::matrix::real::Real) of degree 0, which is a plain
+it is not a [`Real`](crate::real::Real) of degree 0, which is a plain
 real. Nor is any `Real` the space `ℝ⁰`: the matrices of every sort have at
 least one row and one column, as a matrix of no entries, `ℝ^{0×n}` or
 `ℝ^{n×0}`, is `ℝ⁰` again, and `Real0` is its only sort, with neither a shape
@@ -23,7 +23,7 @@ nor a degree, so that it is its own tangent.
 
 The zero rate of change of a real is not the value of [`Real0`], but the
 zero matrix of the degree of the rate of change, written by
-[`matrix::real::Zero`](crate::matrix::real::Zero).
+[`real::Zero`](crate::real::Zero).
 */
 
 use base::boundary::{Boundary, Poly};
@@ -34,7 +34,7 @@ use std::fmt;
 
 /// `ℝ⁰`, the zero vector space, with exactly one value: the trivial tangent
 /// of the discrete sorts. Its own tangent is itself. Not a
-/// [`Real`](crate::matrix::real::Real) of degree 0.
+/// [`Real`](crate::real::Real) of degree 0.
 ///
 /// Python finds it in the namespace `zero`, as `zero.Real0`, with
 /// [`Zero`], the operation writing its only value.
@@ -124,6 +124,6 @@ impl Zero {
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 }

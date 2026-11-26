@@ -11,10 +11,10 @@ import torch
 
 import reactor
 from reactor import Module, Wire, sugar, Var, T, TheoryError
-from reactor.matrix.int import Int
-from reactor.matrix.real import Real
+from reactor.int import Int
+from reactor.real import Real
 from reactor.sugar import ite, d, X, Zero, expr
-from reactor.matrix import Skip
+from reactor import Skip
 from reactor.zero import Real0
 from reactor.eval import eval_itype
 

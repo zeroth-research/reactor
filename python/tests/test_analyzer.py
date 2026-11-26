@@ -12,10 +12,10 @@ from gymnasium import spaces
 
 from reactor.gym import Env
 from reactor import TheoryError
-from reactor.matrix.bool import Bool
-from reactor.matrix.real import Real
-from reactor.matrix.int import Int
-from reactor.matrix import Havoc
+from reactor.bool import Bool
+from reactor.real import Real
+from reactor.int import Int
+from reactor import Havoc
 
 
 # ── boilerplate ───────────────────────────────────────────────────

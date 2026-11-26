@@ -1,8 +1,8 @@
 /*!
 # Enumerations
 
-Defines one type per operation on the sort [`Enum`] of enumerations of
-symbolic constants, as in nuXmv, whose symbolic constants admit only
+Defines the sort [`Enum`] of enumerations of symbolic constants, and one
+type per operation on it, as in nuXmv, whose symbolic constants admit only
 equality and choice. Every operation carries the enumerations it reads or
 writes, and so enough information to compute its [`Boundary`]:
 
@@ -28,16 +28,141 @@ codomain, or the identity when all the symbolic constants of a model are of
 one datatype, each enumeration a constraint of membership.
 */
 
-use super::Enum;
 pub use crate::Any as Sort;
-use crate::matrix::bool::Bool;
+use crate::bool::Bool;
 use base::boundary::{Boundary, Poly};
 use base::mono;
 use derive_more::From;
 use std::fmt;
 // `Into`, the operation, shadows the trait of the prelude, whose `into` this
 // module still calls.
+use crate::zero::Real0;
+use base::differentiable::Differentiable;
 use std::convert::Into as _;
+
+/// An enumeration: the sort whose values are the symbolic constants it names,
+/// as nuXmv's symbolic enumeration types, such as `{idle, busy, done}`.
+///
+/// An enumeration is anonymous: it is identified by its values alone, as a
+/// set, so that two enumerations of the same values, in whatever order, are
+/// the same sort. It holds them sorted and without repetitions.
+#[derive(Clone, PartialEq, Debug, Eq, Hash)]
+pub struct Enum {
+    /// The values, strictly increasing: sorted, without repetitions, and never
+    /// empty. Membership, inclusion and union rely on it.
+    values: Vec<String>,
+}
+
+impl Enum {
+    /// The enumeration of the symbolic constants `values`, a set: their order
+    /// and repetitions do not matter. Fails when there are none, as a sort
+    /// with no values cannot be written.
+    pub fn new<I>(values: I) -> Result<Self, crate::Error>
+    where
+        I: IntoIterator,
+        I::Item: std::convert::Into<String>,
+    {
+        let mut values: Vec<String> = values.into_iter().map(std::convert::Into::into).collect();
+        values.sort();
+        values.dedup();
+        if values.is_empty() {
+            return Err(crate::Error(
+                "an enumeration must have at least one value".to_string(),
+            ));
+        }
+        Ok(Enum { values })
+    }
+
+    /// The symbolic constants of the enumeration, sorted.
+    pub fn values(&self) -> &[String] {
+        &self.values
+    }
+
+    /// Whether `value` is one of the symbolic constants of the enumeration.
+    pub fn contains(&self, value: &str) -> bool {
+        self.values
+            .binary_search_by(|v| v.as_str().cmp(value))
+            .is_ok()
+    }
+
+    /// The number of its values.
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    /// Whether `other` holds all the values of `self`: a single walk through
+    /// both, sorted.
+    pub fn is_subset(&self, other: &Enum) -> bool {
+        let mut theirs = other.values.iter();
+        self.values
+            .iter()
+            .all(|v| theirs.by_ref().find(|w| *w >= v) == Some(v))
+    }
+
+    /// The enumeration of the values of both `self` and `other`: the merge of
+    /// both, sorted, keeping one of the values they share.
+    pub fn union(&self, other: &Enum) -> Enum {
+        let (mut xs, mut ys) = (
+            self.values.iter().peekable(),
+            other.values.iter().peekable(),
+        );
+        let mut values = Vec::with_capacity(self.len() + other.len());
+        loop {
+            let next = match (xs.peek(), ys.peek()) {
+                (Some(x), Some(y)) if x < y => xs.next(),
+                (Some(x), Some(y)) if y < x => ys.next(),
+                (Some(_), Some(_)) => {
+                    ys.next();
+                    xs.next()
+                }
+                (Some(_), None) => xs.next(),
+                (None, Some(_)) => ys.next(),
+                (None, None) => break,
+            };
+            values.extend(next.cloned());
+        }
+        Enum { values }
+    }
+
+    /// Never: an enumeration has at least one value.
+    pub fn is_empty(&self) -> bool {
+        false
+    }
+}
+
+/// Writes it as it is built, with its values sorted: `Enum(["busy", "idle"])`.
+impl fmt::Display for Enum {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Enum([")?;
+        for (i, v) in self.values.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{v:?}")?;
+        }
+        write!(f, "])")
+    }
+}
+
+/// The enumerations are discrete, so their tangent is trivial: the singleton
+/// sort [`Real0`].
+impl Differentiable for Enum {
+    type Tangent = Real0;
+
+    fn tangent(self) -> Real0 {
+        Real0
+    }
+}
+
+/// The tangent of a borrowed enumeration, which is not `Copy`: that of the
+/// enumeration.
+impl Differentiable for &Enum {
+    type Tangent = Real0;
+
+    fn tangent(self) -> Real0 {
+        Real0
+    }
+}
 
 /// A symbolic constant of an enumeration: one of its values.
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
@@ -52,7 +177,7 @@ impl Sym {
     pub fn with_cod(value: &str, cod: [Enum; 1]) -> Result<Self, crate::Error> {
         let [sort] = cod;
         if !sort.contains(value) {
-            return Err(crate::matrix::unexpected_cod(
+            return Err(crate::unexpected_cod(
                 &format!("1 enumeration of the value {value:?}"),
                 &[sort],
             ));
@@ -118,10 +243,7 @@ pub struct Ite {
 fn same_enum(dom: [Enum; 2]) -> Result<Enum, crate::Error> {
     let [x, y] = dom;
     if x != y {
-        return Err(crate::matrix::unexpected_dom(
-            "2 equal enumerations",
-            &[x, y],
-        ));
+        return Err(crate::unexpected_dom("2 equal enumerations", &[x, y]));
     }
     Ok(x)
 }
@@ -151,15 +273,11 @@ impl Ite {
     /// fails unless the condition is a boolean of the shape `[1, 1]` and the
     /// branches of the same enumeration.
     pub fn with_dom(dom: [Sort; 3]) -> Result<Self, crate::Error> {
-        use super::Any as S;
-        use crate::matrix::Any as M;
         match dom {
-            [
-                Sort::Matrix(M::Bool(c)),
-                Sort::Scalar(S::Enum(x)),
-                Sort::Scalar(S::Enum(y)),
-            ] if c.shape() == [1, 1] && x == y => Ok(Ite { sort: x }),
-            _ => Err(crate::matrix::unexpected_dom(
+            [Sort::Bool(c), Sort::Enum(x), Sort::Enum(y)] if c.shape() == [1, 1] && x == y => {
+                Ok(Ite { sort: x })
+            }
+            _ => Err(crate::unexpected_dom(
                 "a condition Bool([1, 1]) and two branches of the same enumeration",
                 &dom,
             )),

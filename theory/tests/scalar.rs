@@ -1,10 +1,12 @@
-//! Tests for the operations of `scalar`, one module per module of `scalar`.
+//! Tests for the scalar theories, `enum` and `event`: their sorts, their
+//! operations, one module per theory, and those operations in `Op`.
 
-/// Tests for the sorts of `scalar`.
+/// Tests for the sorts of the scalar theories.
 mod sort {
     use base::differentiable::T;
-    use theory::scalar::*;
+    use theory::Any;
     use theory::zero::Real0;
+    use theory::{r#enum::Enum, event::Event};
 
     #[test]
     fn an_enumeration_is_the_set_of_its_values() {
@@ -66,15 +68,15 @@ mod sort {
     }
 }
 
-/// Tests for `scalar::enum`.
+/// Tests for `enum`.
 mod r#enum {
     use base::boundary::{Boundary, Poly};
     use base::mono;
-    use theory::scalar::r#enum::*;
+    use theory::r#enum::*;
     // `Into`, the operation, shadows the trait of the prelude
     use std::convert::Into as _;
-    use theory::matrix::bool::Bool;
-    use theory::scalar::Enum;
+    use theory::bool::Bool;
+    use theory::r#enum::Enum;
 
     /// The boolean of the shape `[1, 1]` that the comparisons write.
     fn b() -> Bool {
@@ -191,13 +193,13 @@ mod r#enum {
     }
 }
 
-/// Tests for `scalar::event`.
+/// Tests for `event`.
 mod event {
     use base::boundary::Boundary;
     use base::mono;
-    use theory::matrix::bool::Bool;
-    use theory::scalar::Event;
-    use theory::scalar::event::*;
+    use theory::bool::Bool;
+    use theory::event::Event;
+    use theory::event::*;
 
     #[test]
     fn comparisons_read_two_events_and_write_a_bool() {
@@ -245,22 +247,39 @@ mod event {
     }
 }
 
-/// Tests for `scalar::Op`, the operations of all the scalar theories.
+/// Tests for the operations of the scalar theories in `Op`, the operations of
+/// all theories.
 mod op {
     use base::boundary::{Boundary, Poly};
     use base::mono;
-    use theory::Any;
-    use theory::matrix::bool::Bool;
-    use theory::scalar;
-    use theory::scalar::{Enum, Event};
-    use theory::scalar::{r#enum, event};
+    use theory::bool::Bool;
+    use theory::{Any, Matrix};
+    use theory::{r#enum, r#enum::Enum, event, event::Event};
+
+    /// No matrix: the scalar operations carry none.
+    #[derive(Debug)]
+    struct Mat;
+
+    impl Matrix for Mat {
+        fn shape(&self) -> [usize; 2] {
+            [1, 1]
+        }
+    }
+
+    impl std::fmt::Display for Mat {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "Mat")
+        }
+    }
+
+    type Op = theory::Op<Mat>;
 
     #[test]
     fn the_operations_of_each_theory_keep_their_boundary_and_display() {
         let e = Enum::new(["idle", "busy"]).unwrap();
         let b = Bool::new_unchecked([1, 1]);
         let sym = r#enum::Sym::with_cod("idle", [e.clone()]).unwrap();
-        let cases: [(scalar::Op, Poly<Any>, Poly<Any>, &str); 3] = [
+        let cases: [(Op, Poly<Any>, Poly<Any>, &str); 3] = [
             (
                 r#enum::Op::from(sym).into(),
                 Poly::unit(),
@@ -289,10 +308,10 @@ mod op {
 
     #[test]
     fn the_comparisons_write_the_booleans_of_the_matrix_theories() {
-        let op: scalar::Op = event::Op::from(event::Ne).into();
+        let op: Op = event::Op::from(event::Ne).into();
         assert_eq!(
             op.cod(),
-            mono![Any::Matrix(Bool::new_unchecked([1, 1]).into())].into()
+            mono![Any::Bool(Bool::new_unchecked([1, 1]))].into()
         );
     }
 }

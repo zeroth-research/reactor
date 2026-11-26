@@ -1,10 +1,10 @@
 """Stateless Term factories, one per numeric sort family.
 
 ``TermBuilder`` is the abstract base: it builds the terms shared by every numeric sort, the
-structural ones and those on ``Bool`` values (``reactor.matrix.bool``), and raises
+structural ones and those on ``Bool`` values (``_rr.bool``), and raises
 ``TheoryError`` for the operations its numeric sort does not provide. Its subclasses,
 ``RealTermBuilder``, ``IntTermBuilder`` and ``WordTermBuilder``, provide the operations of
-``reactor.matrix.real``, ``.int`` and ``.word``, sized by their operands' sort. Constants
+``reactor.real``, ``.int`` and ``.word``, sized by their operands' sort. Constants
 are ``Bool`` for booleans, and otherwise of the builder's numeric sort, unless an output wire
 gives their sort. ``builder_for`` makes the builder of a numeric sort family.
 """
@@ -13,14 +13,15 @@ from functools import partial
 
 import torch
 
-from .reactor import Wire, Term, Var
-from .matrix import Skip, real, int as int_, bool as bool_, word
-from .matrix.word import signed, unsigned
+from .reactor import Wire, Term, Var, Skip
+from . import reactor
+from . import reactor as _rr
+from .word import signed, unsigned
 from .zero import Real0
-from .matrix.real import Real
-from .matrix.int import Int
-from .matrix.bool import Bool
-from .matrix.word import Word
+from .real import Real
+from .int import Int
+from .bool import Bool
+from .word import Word
 
 
 def _wire(t) -> Wire:
@@ -129,29 +130,29 @@ class TermBuilder:
 
     def ite(self, cond, a, b, output_wire=None) -> Term:
         if _is_bool(a):
-            return self._ite(bool_.Ite, cond, a, b, output_wire)
+            return self._ite(_rr.bool.Ite, cond, a, b, output_wire)
         self._unsupported(self.ite)
 
     def not_(self, a) -> Term:
-        return self._unary(bool_.Not, a)
+        return self._unary(_rr.bool.Not, a)
 
     def and_(self, a, b) -> Term:
-        return self._binary(bool_.And, a, b)
+        return self._binary(_rr.bool.And, a, b)
 
     def or_(self, a, b) -> Term:
-        return self._binary(bool_.Or, a, b)
+        return self._binary(_rr.bool.Or, a, b)
 
     def xor_(self, a, b) -> Term:
-        return self._binary(bool_.Xor, a, b)
+        return self._binary(_rr.bool.Xor, a, b)
 
     def eq(self, a, b) -> Term:
         if _is_bool(a):
-            return self._compare(bool_.Eq, a, b)
+            return self._compare(_rr.bool.Eq, a, b)
         self._unsupported(self.eq)
 
     def ne(self, a, b) -> Term:
         if _is_bool(a):
-            return self._compare(bool_.Ne, a, b)
+            return self._compare(_rr.bool.Ne, a, b)
         self._unsupported(self.ne)
 
     # --- numeric ops (abstract) ---
@@ -223,7 +224,7 @@ class TermBuilder:
         tensor = torch.atleast_2d(tensor)  # theory const ops require a 2-D initializer
         cod = output_wire.dtype if output_wire is not None else None
         if isinstance(cod, Bool) or (cod is None and tensor.dtype == torch.bool):
-            op = bool_.Truth(tensor.to(torch.bool), cod)
+            op = _rr.bool.Truth(tensor.to(torch.bool), cod)
         else:
             op = self._const(tensor, cod)
         return Term.constant(op, [output_wire or Wire(op.cod)])
@@ -258,7 +259,7 @@ class TermBuilder:
 
 
 class RealTermBuilder(TermBuilder):
-    """Real numbers, with the operations of `reactor.matrix.real`."""
+    """Real numbers, with the operations of `reactor.real`."""
 
     def number(self, shape: list) -> Real:
         return Real(shape)
@@ -266,7 +267,7 @@ class RealTermBuilder(TermBuilder):
     def ite(self, cond, a, b, output_wire=None) -> Term:
         if _is_bool(a):
             return super().ite(cond, a, b, output_wire)
-        return self._ite(real.Ite, cond, a, b, output_wire)
+        return self._ite(reactor.real.Ite, cond, a, b, output_wire)
 
     def _degree(self, a, b) -> int:
         """The degree of both `a` and `b`, which their sum, difference, extremum or choice
@@ -289,15 +290,15 @@ class RealTermBuilder(TermBuilder):
 
     def add(self, a, b) -> Term:
         self._degree(a, b)
-        return self._binary(real.Add, a, b)
+        return self._binary(reactor.real.Add, a, b)
 
     def sub(self, a, b) -> Term:
         self._degree(a, b)
-        return self._binary(real.Sub, a, b)
+        return self._binary(reactor.real.Sub, a, b)
 
     def mul(self, a, b) -> Term:
         # the degrees of the factors add up
-        return self._binary(real.Mul, a, b)
+        return self._binary(reactor.real.Mul, a, b)
 
     def div(self, a, b) -> Term:
         # the degree of the divisor is taken off that of the dividend, which it must not
@@ -306,60 +307,60 @@ class RealTermBuilder(TermBuilder):
         p, q = sa.degree, sb.degree
         if q > p:
             raise TheoryError(f"cannot divide a real of degree {p} by one of degree {q}")
-        return self._binary(real.Div, a, b)
+        return self._binary(reactor.real.Div, a, b)
 
     def neg(self, a) -> Term:
         # the negation keeps the degree
-        return self._unary(real.Neg, a)
+        return self._unary(reactor.real.Neg, a)
 
     def abs_(self, a) -> Term:
-        return self._unary(real.Abs, a)
+        return self._unary(reactor.real.Abs, a)
 
     def relu(self, a) -> Term:
-        return self._unary(real.ReLU, a)
+        return self._unary(reactor.real.ReLU, a)
 
     def argmax(self, a) -> Term:
         # the index is written as a plain [1, 1] real
-        return self._unary(real.Argmax, a)
+        return self._unary(reactor.real.Argmax, a)
 
     def transpose(self, a) -> Term:
-        return self._unary(real.Transpose, a)
+        return self._unary(reactor.real.Transpose, a)
 
     def matmul(self, a, b) -> Term:
         # the degrees of the factors add up, as for the pointwise product
-        return self._binary(real.MatMul, a, b)
+        return self._binary(reactor.real.MatMul, a, b)
 
     def _linear(self, weight, bias, dom):
-        return real.Affine(weight, bias, dom)
+        return reactor.real.Affine(weight, bias, dom)
 
     def lt(self, a, b) -> Term:
-        return self._compare(real.Lt, a, b)
+        return self._compare(reactor.real.Lt, a, b)
 
     def le(self, a, b) -> Term:
-        return self._compare(real.Le, a, b)
+        return self._compare(reactor.real.Le, a, b)
 
     def gt(self, a, b) -> Term:
-        return self._compare(real.Gt, a, b)
+        return self._compare(reactor.real.Gt, a, b)
 
     def ge(self, a, b) -> Term:
-        return self._compare(real.Ge, a, b)
+        return self._compare(reactor.real.Ge, a, b)
 
     def eq(self, a, b) -> Term:
         if _is_bool(a):
             return super().eq(a, b)
-        return self._compare(real.Eq, a, b)
+        return self._compare(reactor.real.Eq, a, b)
 
     def ne(self, a, b) -> Term:
         if _is_bool(a):
             return super().ne(a, b)
-        return self._compare(real.Ne, a, b)
+        return self._compare(reactor.real.Ne, a, b)
 
     def _const(self, tensor, cod):
-        return real.Num(tensor.to(torch.float32), cod)
+        return reactor.real.Num(tensor.to(torch.float32), cod)
 
 
 class IntTermBuilder(TermBuilder):
-    """Integers, with the operations of `reactor.matrix.int`."""
+    """Integers, with the operations of `_rr.int`."""
 
     def number(self, shape: list) -> Int:
         return Int(shape)
@@ -367,70 +368,70 @@ class IntTermBuilder(TermBuilder):
     def ite(self, cond, a, b, output_wire=None) -> Term:
         if _is_bool(a):
             return super().ite(cond, a, b, output_wire)
-        return self._ite(int_.Ite, cond, a, b, output_wire)
+        return self._ite(_rr.int.Ite, cond, a, b, output_wire)
 
     def add(self, a, b) -> Term:
-        return self._binary(int_.Add, a, b)
+        return self._binary(_rr.int.Add, a, b)
 
     def sub(self, a, b) -> Term:
-        return self._binary(int_.Sub, a, b)
+        return self._binary(_rr.int.Sub, a, b)
 
     def mul(self, a, b) -> Term:
-        return self._binary(int_.Mul, a, b)
+        return self._binary(_rr.int.Mul, a, b)
 
     def div(self, a, b) -> Term:
-        return self._binary(int_.Div, a, b)
+        return self._binary(_rr.int.Div, a, b)
 
     def neg(self, a) -> Term:
-        return self._unary(int_.Neg, a)
+        return self._unary(_rr.int.Neg, a)
 
     def abs_(self, a) -> Term:
-        return self._unary(int_.Abs, a)
+        return self._unary(_rr.int.Abs, a)
 
     def relu(self, a) -> Term:
-        return self._unary(int_.ReLU, a)
+        return self._unary(_rr.int.ReLU, a)
 
     def argmax(self, a) -> Term:
         # the index is written as a [1, 1] matrix of the operand's sort
-        return self._unary(int_.Argmax, a)
+        return self._unary(_rr.int.Argmax, a)
 
     def transpose(self, a) -> Term:
-        return self._unary(int_.Transpose, a)
+        return self._unary(_rr.int.Transpose, a)
 
     def matmul(self, a, b) -> Term:
-        return self._binary(int_.MatMul, a, b)
+        return self._binary(_rr.int.MatMul, a, b)
 
     def _linear(self, weight, bias, dom):
-        return int_.Affine(weight, bias, dom)
+        return _rr.int.Affine(weight, bias, dom)
 
     def lt(self, a, b) -> Term:
-        return self._compare(int_.Lt, a, b)
+        return self._compare(_rr.int.Lt, a, b)
 
     def le(self, a, b) -> Term:
-        return self._compare(int_.Le, a, b)
+        return self._compare(_rr.int.Le, a, b)
 
     def gt(self, a, b) -> Term:
-        return self._compare(int_.Gt, a, b)
+        return self._compare(_rr.int.Gt, a, b)
 
     def ge(self, a, b) -> Term:
-        return self._compare(int_.Ge, a, b)
+        return self._compare(_rr.int.Ge, a, b)
 
     def eq(self, a, b) -> Term:
         if _is_bool(a):
             return super().eq(a, b)
-        return self._compare(int_.Eq, a, b)
+        return self._compare(_rr.int.Eq, a, b)
 
     def ne(self, a, b) -> Term:
         if _is_bool(a):
             return super().ne(a, b)
-        return self._compare(int_.Ne, a, b)
+        return self._compare(_rr.int.Ne, a, b)
 
     def _const(self, tensor, cod):
-        return int_.Num(tensor.to(torch.int64), cod)
+        return _rr.int.Num(tensor.to(torch.int64), cod)
 
 
 class WordTermBuilder(TermBuilder):
-    """Words of `width` bits (32 by default), with the operations of `reactor.matrix.word`,
+    """Words of `width` bits (32 by default), with the operations of `reactor.word`,
     sized by the width of their operands too. Division and comparisons are unsigned,
     absolute values signed. On words, the logical operations are bitwise."""
 
@@ -443,34 +444,34 @@ class WordTermBuilder(TermBuilder):
     def ite(self, cond, a, b, output_wire=None) -> Term:
         if _is_bool(a):
             return super().ite(cond, a, b, output_wire)
-        return self._ite(word.Ite, cond, a, b, output_wire)
+        return self._ite(reactor.word.Ite, cond, a, b, output_wire)
 
     def not_(self, a) -> Term:
-        return super().not_(a) if _is_bool(a) else self._unary(word.Not, a)
+        return super().not_(a) if _is_bool(a) else self._unary(reactor.word.Not, a)
 
     def and_(self, a, b) -> Term:
-        return super().and_(a, b) if _is_bool(a) else self._binary(word.And, a, b)
+        return super().and_(a, b) if _is_bool(a) else self._binary(reactor.word.And, a, b)
 
     def or_(self, a, b) -> Term:
-        return super().or_(a, b) if _is_bool(a) else self._binary(word.Or, a, b)
+        return super().or_(a, b) if _is_bool(a) else self._binary(reactor.word.Or, a, b)
 
     def xor_(self, a, b) -> Term:
-        return super().xor_(a, b) if _is_bool(a) else self._binary(word.Xor, a, b)
+        return super().xor_(a, b) if _is_bool(a) else self._binary(reactor.word.Xor, a, b)
 
     def add(self, a, b) -> Term:
-        return self._binary(word.Add, a, b)
+        return self._binary(reactor.word.Add, a, b)
 
     def sub(self, a, b) -> Term:
-        return self._binary(word.Sub, a, b)
+        return self._binary(reactor.word.Sub, a, b)
 
     def mul(self, a, b) -> Term:
-        return self._binary(word.Mul, a, b)
+        return self._binary(reactor.word.Mul, a, b)
 
     def div(self, a, b) -> Term:
         return self._binary(unsigned.Div, a, b)
 
     def neg(self, a) -> Term:
-        return self._unary(word.Neg, a)
+        return self._unary(reactor.word.Neg, a)
 
     def abs_(self, a) -> Term:
         return self._unary(signed.Abs, a)
@@ -490,15 +491,15 @@ class WordTermBuilder(TermBuilder):
     def eq(self, a, b) -> Term:
         if _is_bool(a):
             return super().eq(a, b)
-        return self._compare(word.Eq, a, b)
+        return self._compare(reactor.word.Eq, a, b)
 
     def ne(self, a, b) -> Term:
         if _is_bool(a):
             return super().ne(a, b)
-        return self._compare(word.Ne, a, b)
+        return self._compare(reactor.word.Ne, a, b)
 
     def bit_select(self, a, high: int, low: int) -> Term:
-        return self._apply(word.Extract(high, low, _dtype(a)), a)
+        return self._apply(reactor.word.Extract(high, low, _dtype(a)), a)
 
     def extend(self, a, extra: int) -> Term:
         return self._apply(unsigned.Extend(extra, _dtype(a)), a)
@@ -507,7 +508,7 @@ class WordTermBuilder(TermBuilder):
         # the tensor does not tell the width of its words: the codomain is required
         if cod is None:
             cod = self.number(list(tensor.shape))
-        return word.Num(tensor.to(torch.int64), cod)
+        return reactor.word.Num(tensor.to(torch.int64), cod)
 
 
 def builder_for(number=Real) -> TermBuilder:

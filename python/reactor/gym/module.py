@@ -5,10 +5,10 @@ import gymnasium as gym
 
 from ..reactor import Module, Wire, X, Var
 from ..zero import Real0
-from ..matrix.real import Real
-from ..matrix.int import Int
-from ..matrix.bool import Bool
-from ..matrix.word import Word
+from ..real import Real
+from ..int import Int
+from ..bool import Bool
+from ..word import Word
 from ..builder import builder_for, number_sort
 from ..analyzer import (
     convert_method,

@@ -1,11 +1,11 @@
 use crate::wire::Wire;
 use crate::*;
 use pyo3::exceptions::{PyException, PyIndexError};
-use theory::matrix;
+use theory::Any;
 
 #[pyclass(module = "reactor", frozen)]
 pub(crate) struct Term {
-    base: dataflow::diagram::Term<Op, matrix::Any>,
+    base: dataflow::diagram::Term<Op, Any>,
 }
 
 // SAFETY: the operations of the term may hold `tch::Tensor`s, which are not
@@ -77,7 +77,7 @@ impl Term {
 }
 
 impl Term {
-    pub(crate) fn base(&self) -> &dataflow::diagram::Term<Op, matrix::Any> {
+    pub(crate) fn base(&self) -> &dataflow::diagram::Term<Op, Any> {
         &self.base
     }
 
@@ -90,8 +90,8 @@ impl Term {
     }
 }
 
-impl From<dataflow::diagram::Term<Op, matrix::Any>> for Term {
-    fn from(base: dataflow::diagram::Term<Op, matrix::Any>) -> Self {
+impl From<dataflow::diagram::Term<Op, Any>> for Term {
+    fn from(base: dataflow::diagram::Term<Op, Any>) -> Self {
         Self { base }
     }
 }
@@ -108,7 +108,7 @@ struct TermInterface {
 }
 
 impl TermInterface {
-    fn base(&self) -> &[dataflow::diagram::Wire<matrix::Any>] {
+    fn base(&self) -> &[dataflow::diagram::Wire<Any>] {
         let base = &self.term.get().base;
         match self.interface {
             TermInterfaceType::Read => base.read(),

@@ -4,10 +4,10 @@ from pathlib import Path
 import pytest
 
 from reactor import Wire, Module, parse_smv, Var, X
-from reactor.matrix.word import Word
-from reactor.matrix.bool import Bool
-from reactor import matrix
-from reactor.matrix import Skip
+import reactor as rr
+from reactor.word import Word
+from reactor.bool import Bool
+from reactor import word, Skip
 from reactor.eval import eval_itype
 
 FIXTURES = Path(__file__).parent / "smv_fixtures"
@@ -50,7 +50,7 @@ def test_counter_init_terms():
     # At least one init term should be a zero-valued word constant for x.
     def _is_const_zero(itype):
         match itype:
-            case matrix.word.Num(data):
+            case word.Num(data):
                 return int(data.item()) == 0
         return False
 
@@ -179,8 +179,8 @@ def test_boolean_vars_are_bool():
     """)
     assert name_map["b"].dtype == Bool([1, 1])
     init = module.atoms[0].init
-    assert any(isinstance(t.itype, matrix.bool.Truth) for t in init)
-    assert any(isinstance(t.itype, matrix.bool.Not) for t in module.atoms[0].update)
+    assert any(isinstance(t.itype, rr.bool.Truth) for t in init)
+    assert any(isinstance(t.itype, rr.bool.Not) for t in module.atoms[0].update)
 
 
 def test_comparisons_write_bool_and_respect_sign():
@@ -190,8 +190,8 @@ def test_comparisons_write_bool_and_respect_sign():
     ASSIGN next(b) := x < 0sd8_1; next(c) := y < 0ud8_1;
     """)
     kinds = {type(t.itype) for t in update}
-    assert matrix.word.signed.Lt in kinds and matrix.word.unsigned.Lt in kinds
-    cmps = [t for t in update if isinstance(t.itype, (matrix.word.signed.Lt, matrix.word.unsigned.Lt))]
+    assert word.signed.Lt in kinds and word.unsigned.Lt in kinds
+    cmps = [t for t in update if isinstance(t.itype, (word.signed.Lt, word.unsigned.Lt))]
     assert all(t.write[0].dtype == Bool([1, 1]) for t in cmps)
 
 
@@ -202,9 +202,9 @@ def test_literal_takes_the_width_of_its_operand():
     VAR x : unsigned word[8];
     ASSIGN next(x) := x + 1;
     """)
-    consts = [t for t in update if isinstance(t.itype, matrix.word.Num)]
+    consts = [t for t in update if isinstance(t.itype, word.Num)]
     assert consts and all(t.write[0].dtype == Word(8, [1, 1]) for t in consts)
-    assert any(isinstance(t.itype, matrix.word.Add) and t.itype.width == 8 for t in update)
+    assert any(isinstance(t.itype, word.Add) and t.itype.width == 8 for t in update)
 
 
 def test_word_constants_add_modulo_their_width():
@@ -215,9 +215,9 @@ def test_word_constants_add_modulo_their_width():
     ASSIGN next(x) := 0ud8_200 + 0ud8_100;
     """)
     terms = list(update)
-    consts = [t for t in terms if isinstance(t.itype, matrix.word.Num)]
+    consts = [t for t in terms if isinstance(t.itype, word.Num)]
     assert len(consts) == 2 and all(t.write[0].dtype == Word(8, [1, 1]) for t in consts)
-    assert any(isinstance(t.itype, matrix.word.Add) and t.itype.width == 8 for t in terms)
+    assert any(isinstance(t.itype, word.Add) and t.itype.width == 8 for t in terms)
     state = {}
     for t in terms:
         state.update(zip(t.write, eval_itype(t.itype, [state[w] for w in t.read], t.write[0].dtype)))
@@ -232,7 +232,7 @@ def test_bool_of_word1_uses_extract():
     ASSIGN next(b) := bool(w);
     """)
     kinds = [type(t.itype) for t in update]
-    assert matrix.word.Extract in kinds and matrix.word.Eq in kinds
+    assert word.Extract in kinds and word.Eq in kinds
 
 
 def test_case_lowers_to_ite_with_bool_condition():
@@ -241,5 +241,5 @@ def test_case_lowers_to_ite_with_bool_condition():
     VAR x : unsigned word[4]; b : boolean;
     ASSIGN next(x) := case b : x + 1; TRUE : x; esac;
     """)
-    ites = [t for t in update if isinstance(t.itype, matrix.word.Ite)]
+    ites = [t for t in update if isinstance(t.itype, word.Ite)]
     assert ites and all(t.read[0].dtype == Bool([1, 1]) for t in ites)

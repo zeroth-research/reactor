@@ -65,14 +65,7 @@ use std::fmt;
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(
-        frozen,
-        from_py_object,
-        eq,
-        str,
-        get_all,
-        module = "reactor.matrix.word"
-    )
+    pyo3::pyclass(frozen, from_py_object, eq, str, get_all, module = "reactor.word")
 )]
 pub struct Word {
     width: usize,
@@ -113,7 +106,7 @@ impl Word {
     #[cfg_attr(feature = "pyo3", new)]
     pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
         check_width(width)?;
-        super::check_shape(shape)?;
+        crate::matrix::check_shape(shape)?;
         Ok(Word { width, shape })
     }
 
@@ -152,9 +145,9 @@ impl Differentiable for Word {
 /// The sorts of the theory, as in the signature of SMT-LIB2's
 /// FixedSizeBitVectors: words, and the booleans of the Core theory, which
 /// comparisons write, together with [`Real0`], the tangent of both. It is
-/// the subset [`matrix::Words`](crate::matrix::Words) of the sorts of all
+/// the subset [`Words`](crate::Words) of the sorts of all
 /// theories.
-pub use super::Words as Sort;
+pub use crate::Words as Sort;
 
 /// A constant matrix literal of `width`-bit words, as `Num(tensor, width)`, held
 /// in a tensor of type `T`.
@@ -172,7 +165,7 @@ impl<T: Matrix> Num<T> {
     pub fn with_cod(tensor: T, cod: [Word; 1]) -> Result<Self, crate::Error> {
         let [x] = cod;
         if tensor.shape() != x.shape() {
-            return Err(crate::matrix::unexpected_cod(
+            return Err(crate::unexpected_cod(
                 &format!("1 sort of the shape {:?} of the constant", tensor.shape()),
                 &cod,
             ));
@@ -204,7 +197,7 @@ impl<T> Num<T> {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
 )]
 pub struct Concat {
     /// The widths `[u, v]` of the words read, high bits first.
@@ -224,7 +217,7 @@ pub struct Concat {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
 )]
 pub struct Extract {
     i: usize,
@@ -240,7 +233,7 @@ pub struct Extract {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
 )]
 pub struct Repeat {
     i: usize,
@@ -254,7 +247,7 @@ pub struct Repeat {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
 )]
 pub struct Not {
     width: usize,
@@ -267,7 +260,7 @@ pub struct Not {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
 )]
 pub struct And {
     width: usize,
@@ -280,7 +273,7 @@ pub struct And {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
 )]
 pub struct Or {
     width: usize,
@@ -293,7 +286,7 @@ pub struct Or {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
 )]
 pub struct Xor {
     width: usize,
@@ -306,7 +299,7 @@ pub struct Xor {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
 )]
 pub struct Nand {
     width: usize,
@@ -319,7 +312,7 @@ pub struct Nand {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
 )]
 pub struct Nor {
     width: usize,
@@ -333,7 +326,7 @@ pub struct Nor {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
 )]
 pub struct Xnor {
     width: usize,
@@ -347,7 +340,7 @@ pub struct Xnor {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
 )]
 pub struct Neg {
     width: usize,
@@ -361,7 +354,7 @@ pub struct Neg {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
 )]
 pub struct Ite {
     width: usize,
@@ -374,7 +367,7 @@ pub struct Ite {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
 )]
 pub struct Add {
     width: usize,
@@ -387,7 +380,7 @@ pub struct Add {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
 )]
 pub struct Sub {
     width: usize,
@@ -400,7 +393,7 @@ pub struct Sub {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
 )]
 pub struct Mul {
     width: usize,
@@ -413,7 +406,7 @@ pub struct Mul {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
 )]
 pub struct Shl {
     width: usize,
@@ -427,7 +420,7 @@ pub struct Shl {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
 )]
 pub struct RotateLeft {
     i: usize,
@@ -442,7 +435,7 @@ pub struct RotateLeft {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
 )]
 pub struct RotateRight {
     i: usize,
@@ -456,7 +449,7 @@ pub struct RotateRight {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
 )]
 pub struct Eq {
     width: usize,
@@ -469,7 +462,7 @@ pub struct Eq {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
 )]
 pub struct Ne {
     width: usize,
@@ -1064,7 +1057,7 @@ impl fmt::Display for Ne {
 /// signedness; the others are in the parent module.
 pub mod signed {
     use super::{Sort, Word};
-    use crate::matrix::bool::Bool;
+    use crate::bool::Bool;
     use base::boundary::{Boundary, Poly};
     use base::mono;
     #[cfg(feature = "pyo3")]
@@ -1079,7 +1072,7 @@ pub mod signed {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word.signed")
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.signed")
     )]
     pub struct Div {
         width: usize,
@@ -1092,7 +1085,7 @@ pub mod signed {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word.signed")
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.signed")
     )]
     pub struct Abs {
         width: usize,
@@ -1106,7 +1099,7 @@ pub mod signed {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word.signed")
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.signed")
     )]
     pub struct Rem {
         width: usize,
@@ -1120,7 +1113,7 @@ pub mod signed {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word.signed")
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.signed")
     )]
     pub struct Mod {
         width: usize,
@@ -1134,7 +1127,7 @@ pub mod signed {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word.signed")
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.signed")
     )]
     pub struct Shr {
         width: usize,
@@ -1148,7 +1141,7 @@ pub mod signed {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word.signed")
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.signed")
     )]
     pub struct Extend {
         i: usize,
@@ -1162,7 +1155,7 @@ pub mod signed {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word.signed")
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.signed")
     )]
     pub struct Lt {
         width: usize,
@@ -1175,7 +1168,7 @@ pub mod signed {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word.signed")
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.signed")
     )]
     pub struct Le {
         width: usize,
@@ -1188,7 +1181,7 @@ pub mod signed {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word.signed")
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.signed")
     )]
     pub struct Gt {
         width: usize,
@@ -1201,7 +1194,7 @@ pub mod signed {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.word.signed")
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.signed")
     )]
     pub struct Ge {
         width: usize,
@@ -1371,7 +1364,7 @@ pub mod signed {
     impl Div {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-            let s = crate::matrix::same_sort(dom)?;
+            let s = crate::same_sort(dom)?;
             Ok(Div {
                 width: s.width(),
                 shape: s.shape(),
@@ -1398,7 +1391,7 @@ pub mod signed {
         #[new]
         #[pyo3(signature = (dom, cod = None))]
         fn py_new(dom: [Word; 2], cod: Option<Word>) -> Result<Self, crate::Error> {
-            crate::matrix::check_cod(Self::with_dom(dom), cod)
+            crate::check_cod(Self::with_dom(dom), cod)
         }
 
         /// The parameters that its boundary does not determine, then its domain, when it
@@ -1416,7 +1409,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::dom(self))
+            crate::py_sorts(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -1426,7 +1419,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::cod(self))
+            crate::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1443,7 +1436,7 @@ pub mod signed {
     impl Abs {
         /// The operation reading the words of `dom`.
         pub fn with_dom(dom: [Word; 1]) -> Result<Self, crate::Error> {
-            let s = crate::matrix::same_sort(dom)?;
+            let s = crate::same_sort(dom)?;
             Ok(Abs {
                 width: s.width(),
                 shape: s.shape(),
@@ -1469,7 +1462,7 @@ pub mod signed {
         #[new]
         #[pyo3(signature = (dom, cod = None))]
         fn py_new(dom: Word, cod: Option<Word>) -> Result<Self, crate::Error> {
-            crate::matrix::check_cod(Self::with_dom([dom]), cod)
+            crate::check_cod(Self::with_dom([dom]), cod)
         }
 
         /// The parameters that its boundary does not determine, then its domain, when it
@@ -1487,7 +1480,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::dom(self))
+            crate::py_sorts(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -1497,7 +1490,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::cod(self))
+            crate::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1514,7 +1507,7 @@ pub mod signed {
     impl Rem {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-            let s = crate::matrix::same_sort(dom)?;
+            let s = crate::same_sort(dom)?;
             Ok(Rem {
                 width: s.width(),
                 shape: s.shape(),
@@ -1540,7 +1533,7 @@ pub mod signed {
         #[new]
         #[pyo3(signature = (dom, cod = None))]
         fn py_new(dom: [Word; 2], cod: Option<Word>) -> Result<Self, crate::Error> {
-            crate::matrix::check_cod(Self::with_dom(dom), cod)
+            crate::check_cod(Self::with_dom(dom), cod)
         }
 
         /// The parameters that its boundary does not determine, then its domain, when it
@@ -1558,7 +1551,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::dom(self))
+            crate::py_sorts(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -1568,7 +1561,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::cod(self))
+            crate::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1585,7 +1578,7 @@ pub mod signed {
     impl Mod {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-            let s = crate::matrix::same_sort(dom)?;
+            let s = crate::same_sort(dom)?;
             Ok(Mod {
                 width: s.width(),
                 shape: s.shape(),
@@ -1611,7 +1604,7 @@ pub mod signed {
         #[new]
         #[pyo3(signature = (dom, cod = None))]
         fn py_new(dom: [Word; 2], cod: Option<Word>) -> Result<Self, crate::Error> {
-            crate::matrix::check_cod(Self::with_dom(dom), cod)
+            crate::check_cod(Self::with_dom(dom), cod)
         }
 
         /// The parameters that its boundary does not determine, then its domain, when it
@@ -1629,7 +1622,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::dom(self))
+            crate::py_sorts(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -1639,7 +1632,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::cod(self))
+            crate::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1656,7 +1649,7 @@ pub mod signed {
     impl Shr {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-            let s = crate::matrix::same_sort(dom)?;
+            let s = crate::same_sort(dom)?;
             Ok(Shr {
                 width: s.width(),
                 shape: s.shape(),
@@ -1682,7 +1675,7 @@ pub mod signed {
         #[new]
         #[pyo3(signature = (dom, cod = None))]
         fn py_new(dom: [Word; 2], cod: Option<Word>) -> Result<Self, crate::Error> {
-            crate::matrix::check_cod(Self::with_dom(dom), cod)
+            crate::check_cod(Self::with_dom(dom), cod)
         }
 
         /// The parameters that its boundary does not determine, then its domain, when it
@@ -1700,7 +1693,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::dom(self))
+            crate::py_sorts(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -1710,7 +1703,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::cod(self))
+            crate::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1752,7 +1745,7 @@ pub mod signed {
                     width,
                     shape: s.shape(),
                 }),
-                _ => Err(crate::matrix::unexpected_cod(
+                _ => Err(crate::unexpected_cod(
                     &format!("1 sort of more than {i} bits"),
                     &cod,
                 )),
@@ -1769,7 +1762,7 @@ pub mod signed {
         #[new]
         #[pyo3(signature = (i, /, dom, cod = None))]
         fn py_new(i: usize, dom: Word, cod: Option<Word>) -> Result<Self, crate::Error> {
-            crate::matrix::check_cod(Self::with_dom(i, [dom]), cod)
+            crate::check_cod(Self::with_dom(i, [dom]), cod)
         }
 
         /// The parameters that its boundary does not determine, then its domain, when it
@@ -1787,7 +1780,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::dom(self))
+            crate::py_sorts(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -1797,7 +1790,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::cod(self))
+            crate::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1819,7 +1812,7 @@ pub mod signed {
     impl Lt {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-            let s = crate::matrix::same_sort(dom)?;
+            let s = crate::same_sort(dom)?;
             Ok(Lt {
                 width: s.width(),
                 shape: s.shape(),
@@ -1836,7 +1829,7 @@ pub mod signed {
         #[new]
         #[pyo3(signature = (dom, cod = None))]
         fn py_new(dom: [Word; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
-            crate::matrix::check_cod(Self::with_dom(dom), cod)
+            crate::check_cod(Self::with_dom(dom), cod)
         }
 
         /// The parameters that its boundary does not determine, then its domain, when it
@@ -1854,7 +1847,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::dom(self))
+            crate::py_sorts(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -1864,7 +1857,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::cod(self))
+            crate::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1881,7 +1874,7 @@ pub mod signed {
     impl Le {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-            let s = crate::matrix::same_sort(dom)?;
+            let s = crate::same_sort(dom)?;
             Ok(Le {
                 width: s.width(),
                 shape: s.shape(),
@@ -1898,7 +1891,7 @@ pub mod signed {
         #[new]
         #[pyo3(signature = (dom, cod = None))]
         fn py_new(dom: [Word; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
-            crate::matrix::check_cod(Self::with_dom(dom), cod)
+            crate::check_cod(Self::with_dom(dom), cod)
         }
 
         /// The parameters that its boundary does not determine, then its domain, when it
@@ -1916,7 +1909,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::dom(self))
+            crate::py_sorts(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -1926,7 +1919,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::cod(self))
+            crate::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1943,7 +1936,7 @@ pub mod signed {
     impl Gt {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-            let s = crate::matrix::same_sort(dom)?;
+            let s = crate::same_sort(dom)?;
             Ok(Gt {
                 width: s.width(),
                 shape: s.shape(),
@@ -1960,7 +1953,7 @@ pub mod signed {
         #[new]
         #[pyo3(signature = (dom, cod = None))]
         fn py_new(dom: [Word; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
-            crate::matrix::check_cod(Self::with_dom(dom), cod)
+            crate::check_cod(Self::with_dom(dom), cod)
         }
 
         /// The parameters that its boundary does not determine, then its domain, when it
@@ -1978,7 +1971,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::dom(self))
+            crate::py_sorts(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -1988,7 +1981,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::cod(self))
+            crate::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2005,7 +1998,7 @@ pub mod signed {
     impl Ge {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-            let s = crate::matrix::same_sort(dom)?;
+            let s = crate::same_sort(dom)?;
             Ok(Ge {
                 width: s.width(),
                 shape: s.shape(),
@@ -2022,7 +2015,7 @@ pub mod signed {
         #[new]
         #[pyo3(signature = (dom, cod = None))]
         fn py_new(dom: [Word; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
-            crate::matrix::check_cod(Self::with_dom(dom), cod)
+            crate::check_cod(Self::with_dom(dom), cod)
         }
 
         /// The parameters that its boundary does not determine, then its domain, when it
@@ -2040,7 +2033,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::dom(self))
+            crate::py_sorts(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -2050,7 +2043,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::cod(self))
+            crate::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2069,7 +2062,7 @@ pub mod signed {
 /// signedness; the others are in the parent module.
 pub mod unsigned {
     use super::{Sort, Word};
-    use crate::matrix::bool::Bool;
+    use crate::bool::Bool;
     use base::boundary::{Boundary, Poly};
     use base::mono;
     #[cfg(feature = "pyo3")]
@@ -2083,13 +2076,7 @@ pub mod unsigned {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(
-            frozen,
-            from_py_object,
-            eq,
-            str,
-            module = "reactor.matrix.word.unsigned"
-        )
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.unsigned")
     )]
     pub struct Div {
         width: usize,
@@ -2102,13 +2089,7 @@ pub mod unsigned {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(
-            frozen,
-            from_py_object,
-            eq,
-            str,
-            module = "reactor.matrix.word.unsigned"
-        )
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.unsigned")
     )]
     pub struct Rem {
         width: usize,
@@ -2122,13 +2103,7 @@ pub mod unsigned {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(
-            frozen,
-            from_py_object,
-            eq,
-            str,
-            module = "reactor.matrix.word.unsigned"
-        )
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.unsigned")
     )]
     pub struct Shr {
         width: usize,
@@ -2142,13 +2117,7 @@ pub mod unsigned {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(
-            frozen,
-            from_py_object,
-            eq,
-            str,
-            module = "reactor.matrix.word.unsigned"
-        )
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.unsigned")
     )]
     pub struct Extend {
         i: usize,
@@ -2162,13 +2131,7 @@ pub mod unsigned {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(
-            frozen,
-            from_py_object,
-            eq,
-            str,
-            module = "reactor.matrix.word.unsigned"
-        )
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.unsigned")
     )]
     pub struct Lt {
         width: usize,
@@ -2181,13 +2144,7 @@ pub mod unsigned {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(
-            frozen,
-            from_py_object,
-            eq,
-            str,
-            module = "reactor.matrix.word.unsigned"
-        )
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.unsigned")
     )]
     pub struct Le {
         width: usize,
@@ -2200,13 +2157,7 @@ pub mod unsigned {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(
-            frozen,
-            from_py_object,
-            eq,
-            str,
-            module = "reactor.matrix.word.unsigned"
-        )
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.unsigned")
     )]
     pub struct Gt {
         width: usize,
@@ -2219,13 +2170,7 @@ pub mod unsigned {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(
-            frozen,
-            from_py_object,
-            eq,
-            str,
-            module = "reactor.matrix.word.unsigned"
-        )
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.unsigned")
     )]
     pub struct Ge {
         width: usize,
@@ -2363,7 +2308,7 @@ pub mod unsigned {
     impl Div {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-            let s = crate::matrix::same_sort(dom)?;
+            let s = crate::same_sort(dom)?;
             Ok(Div {
                 width: s.width(),
                 shape: s.shape(),
@@ -2390,7 +2335,7 @@ pub mod unsigned {
         #[new]
         #[pyo3(signature = (dom, cod = None))]
         fn py_new(dom: [Word; 2], cod: Option<Word>) -> Result<Self, crate::Error> {
-            crate::matrix::check_cod(Self::with_dom(dom), cod)
+            crate::check_cod(Self::with_dom(dom), cod)
         }
 
         /// The parameters that its boundary does not determine, then its domain, when it
@@ -2408,7 +2353,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::dom(self))
+            crate::py_sorts(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -2418,7 +2363,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::cod(self))
+            crate::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2435,7 +2380,7 @@ pub mod unsigned {
     impl Rem {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-            let s = crate::matrix::same_sort(dom)?;
+            let s = crate::same_sort(dom)?;
             Ok(Rem {
                 width: s.width(),
                 shape: s.shape(),
@@ -2461,7 +2406,7 @@ pub mod unsigned {
         #[new]
         #[pyo3(signature = (dom, cod = None))]
         fn py_new(dom: [Word; 2], cod: Option<Word>) -> Result<Self, crate::Error> {
-            crate::matrix::check_cod(Self::with_dom(dom), cod)
+            crate::check_cod(Self::with_dom(dom), cod)
         }
 
         /// The parameters that its boundary does not determine, then its domain, when it
@@ -2479,7 +2424,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::dom(self))
+            crate::py_sorts(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -2489,7 +2434,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::cod(self))
+            crate::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2506,7 +2451,7 @@ pub mod unsigned {
     impl Shr {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-            let s = crate::matrix::same_sort(dom)?;
+            let s = crate::same_sort(dom)?;
             Ok(Shr {
                 width: s.width(),
                 shape: s.shape(),
@@ -2532,7 +2477,7 @@ pub mod unsigned {
         #[new]
         #[pyo3(signature = (dom, cod = None))]
         fn py_new(dom: [Word; 2], cod: Option<Word>) -> Result<Self, crate::Error> {
-            crate::matrix::check_cod(Self::with_dom(dom), cod)
+            crate::check_cod(Self::with_dom(dom), cod)
         }
 
         /// The parameters that its boundary does not determine, then its domain, when it
@@ -2550,7 +2495,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::dom(self))
+            crate::py_sorts(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -2560,7 +2505,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::cod(self))
+            crate::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2602,7 +2547,7 @@ pub mod unsigned {
                     width,
                     shape: s.shape(),
                 }),
-                _ => Err(crate::matrix::unexpected_cod(
+                _ => Err(crate::unexpected_cod(
                     &format!("1 sort of more than {i} bits"),
                     &cod,
                 )),
@@ -2619,7 +2564,7 @@ pub mod unsigned {
         #[new]
         #[pyo3(signature = (i, /, dom, cod = None))]
         fn py_new(i: usize, dom: Word, cod: Option<Word>) -> Result<Self, crate::Error> {
-            crate::matrix::check_cod(Self::with_dom(i, [dom]), cod)
+            crate::check_cod(Self::with_dom(i, [dom]), cod)
         }
 
         /// The parameters that its boundary does not determine, then its domain, when it
@@ -2637,7 +2582,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::dom(self))
+            crate::py_sorts(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -2647,7 +2592,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::cod(self))
+            crate::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2669,7 +2614,7 @@ pub mod unsigned {
     impl Lt {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-            let s = crate::matrix::same_sort(dom)?;
+            let s = crate::same_sort(dom)?;
             Ok(Lt {
                 width: s.width(),
                 shape: s.shape(),
@@ -2686,7 +2631,7 @@ pub mod unsigned {
         #[new]
         #[pyo3(signature = (dom, cod = None))]
         fn py_new(dom: [Word; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
-            crate::matrix::check_cod(Self::with_dom(dom), cod)
+            crate::check_cod(Self::with_dom(dom), cod)
         }
 
         /// The parameters that its boundary does not determine, then its domain, when it
@@ -2704,7 +2649,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::dom(self))
+            crate::py_sorts(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -2714,7 +2659,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::cod(self))
+            crate::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2731,7 +2676,7 @@ pub mod unsigned {
     impl Le {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-            let s = crate::matrix::same_sort(dom)?;
+            let s = crate::same_sort(dom)?;
             Ok(Le {
                 width: s.width(),
                 shape: s.shape(),
@@ -2748,7 +2693,7 @@ pub mod unsigned {
         #[new]
         #[pyo3(signature = (dom, cod = None))]
         fn py_new(dom: [Word; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
-            crate::matrix::check_cod(Self::with_dom(dom), cod)
+            crate::check_cod(Self::with_dom(dom), cod)
         }
 
         /// The parameters that its boundary does not determine, then its domain, when it
@@ -2766,7 +2711,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::dom(self))
+            crate::py_sorts(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -2776,7 +2721,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::cod(self))
+            crate::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2793,7 +2738,7 @@ pub mod unsigned {
     impl Gt {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-            let s = crate::matrix::same_sort(dom)?;
+            let s = crate::same_sort(dom)?;
             Ok(Gt {
                 width: s.width(),
                 shape: s.shape(),
@@ -2810,7 +2755,7 @@ pub mod unsigned {
         #[new]
         #[pyo3(signature = (dom, cod = None))]
         fn py_new(dom: [Word; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
-            crate::matrix::check_cod(Self::with_dom(dom), cod)
+            crate::check_cod(Self::with_dom(dom), cod)
         }
 
         /// The parameters that its boundary does not determine, then its domain, when it
@@ -2828,7 +2773,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::dom(self))
+            crate::py_sorts(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -2838,7 +2783,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::cod(self))
+            crate::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2855,7 +2800,7 @@ pub mod unsigned {
     impl Ge {
         /// The operation reading the words of `dom`; fails unless they are equal.
         pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-            let s = crate::matrix::same_sort(dom)?;
+            let s = crate::same_sort(dom)?;
             Ok(Ge {
                 width: s.width(),
                 shape: s.shape(),
@@ -2872,7 +2817,7 @@ pub mod unsigned {
         #[new]
         #[pyo3(signature = (dom, cod = None))]
         fn py_new(dom: [Word; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
-            crate::matrix::check_cod(Self::with_dom(dom), cod)
+            crate::check_cod(Self::with_dom(dom), cod)
         }
 
         /// The parameters that its boundary does not determine, then its domain, when it
@@ -2890,7 +2835,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::dom(self))
+            crate::py_sorts(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -2900,7 +2845,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::cod(self))
+            crate::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -3061,10 +3006,7 @@ impl Concat {
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
         let [x, y] = dom;
         if x.shape() != y.shape() {
-            return Err(crate::matrix::unexpected_dom(
-                "2 sorts of the same shape",
-                &dom,
-            ));
+            return Err(crate::unexpected_dom("2 sorts of the same shape", &dom));
         }
         let [u, v] = [x.width(), y.width()];
         if u.checked_add(v).is_none() {
@@ -3091,7 +3033,7 @@ impl Concat {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Word; 2], cod: Option<Word>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -3106,14 +3048,14 @@ impl Concat {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     /// The widths `[u, v]` of the words read, high bits first.
@@ -3156,7 +3098,7 @@ impl Extract {
     #[new]
     #[pyo3(signature = (i, j, /, dom, cod = None))]
     fn py_new(i: usize, j: usize, dom: Word, cod: Option<Word>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(i, j, [dom]), cod)
+        crate::check_cod(Self::with_dom(i, j, [dom]), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -3171,14 +3113,14 @@ impl Extract {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3228,7 +3170,7 @@ impl Repeat {
     pub fn with_cod(i: usize, cod: [Word; 1]) -> Result<Self, crate::Error> {
         let [s] = cod;
         if i == 0 || s.width() % i != 0 {
-            return Err(crate::matrix::unexpected_cod(
+            return Err(crate::unexpected_cod(
                 &format!("1 sort of a width that {i} divides"),
                 &cod,
             ));
@@ -3250,7 +3192,7 @@ impl Repeat {
     #[new]
     #[pyo3(signature = (i, /, dom, cod = None))]
     fn py_new(i: usize, dom: Word, cod: Option<Word>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(i, [dom]), cod)
+        crate::check_cod(Self::with_dom(i, [dom]), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -3265,14 +3207,14 @@ impl Repeat {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3294,7 +3236,7 @@ impl Repeat {
 impl Not {
     /// The operation reading the words of `dom`.
     pub fn with_dom(dom: [Word; 1]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Not {
             width: s.width(),
             shape: s.shape(),
@@ -3320,7 +3262,7 @@ impl Not {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: Word, cod: Option<Word>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom([dom]), cod)
+        crate::check_cod(Self::with_dom([dom]), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -3335,14 +3277,14 @@ impl Not {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3359,7 +3301,7 @@ impl Not {
 impl And {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(And {
             width: s.width(),
             shape: s.shape(),
@@ -3385,7 +3327,7 @@ impl And {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Word; 2], cod: Option<Word>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -3400,14 +3342,14 @@ impl And {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3424,7 +3366,7 @@ impl And {
 impl Or {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Or {
             width: s.width(),
             shape: s.shape(),
@@ -3450,7 +3392,7 @@ impl Or {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Word; 2], cod: Option<Word>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -3465,14 +3407,14 @@ impl Or {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3489,7 +3431,7 @@ impl Or {
 impl Xor {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Xor {
             width: s.width(),
             shape: s.shape(),
@@ -3515,7 +3457,7 @@ impl Xor {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Word; 2], cod: Option<Word>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -3530,14 +3472,14 @@ impl Xor {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3554,7 +3496,7 @@ impl Xor {
 impl Nand {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Nand {
             width: s.width(),
             shape: s.shape(),
@@ -3580,7 +3522,7 @@ impl Nand {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Word; 2], cod: Option<Word>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -3595,14 +3537,14 @@ impl Nand {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3619,7 +3561,7 @@ impl Nand {
 impl Nor {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Nor {
             width: s.width(),
             shape: s.shape(),
@@ -3645,7 +3587,7 @@ impl Nor {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Word; 2], cod: Option<Word>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -3660,14 +3602,14 @@ impl Nor {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3684,7 +3626,7 @@ impl Nor {
 impl Xnor {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Xnor {
             width: s.width(),
             shape: s.shape(),
@@ -3710,7 +3652,7 @@ impl Xnor {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Word; 2], cod: Option<Word>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -3725,14 +3667,14 @@ impl Xnor {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3749,7 +3691,7 @@ impl Xnor {
 impl Neg {
     /// The operation reading the words of `dom`.
     pub fn with_dom(dom: [Word; 1]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Neg {
             width: s.width(),
             shape: s.shape(),
@@ -3775,7 +3717,7 @@ impl Neg {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: Word, cod: Option<Word>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom([dom]), cod)
+        crate::check_cod(Self::with_dom([dom]), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -3790,14 +3732,14 @@ impl Neg {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3823,7 +3765,7 @@ impl Ite {
                     shape: x.shape(),
                 })
             }
-            _ => Err(crate::matrix::unexpected_dom(
+            _ => Err(crate::unexpected_dom(
                 "a condition Bool and two branches Word of its shape",
                 &dom,
             )),
@@ -3849,7 +3791,7 @@ impl Ite {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Sort; 3], cod: Option<Word>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -3864,14 +3806,14 @@ impl Ite {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3888,7 +3830,7 @@ impl Ite {
 impl Add {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Add {
             width: s.width(),
             shape: s.shape(),
@@ -3914,7 +3856,7 @@ impl Add {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Word; 2], cod: Option<Word>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -3929,14 +3871,14 @@ impl Add {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3953,7 +3895,7 @@ impl Add {
 impl Sub {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Sub {
             width: s.width(),
             shape: s.shape(),
@@ -3979,7 +3921,7 @@ impl Sub {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Word; 2], cod: Option<Word>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -3994,14 +3936,14 @@ impl Sub {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -4018,7 +3960,7 @@ impl Sub {
 impl Mul {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Mul {
             width: s.width(),
             shape: s.shape(),
@@ -4044,7 +3986,7 @@ impl Mul {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Word; 2], cod: Option<Word>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -4059,14 +4001,14 @@ impl Mul {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -4083,7 +4025,7 @@ impl Mul {
 impl Shl {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Shl {
             width: s.width(),
             shape: s.shape(),
@@ -4109,7 +4051,7 @@ impl Shl {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Word; 2], cod: Option<Word>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -4124,14 +4066,14 @@ impl Shl {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -4176,7 +4118,7 @@ impl RotateLeft {
     #[new]
     #[pyo3(signature = (i, /, dom, cod = None))]
     fn py_new(i: usize, dom: Word, cod: Option<Word>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(i, [dom]), cod)
+        crate::check_cod(Self::with_dom(i, [dom]), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -4191,14 +4133,14 @@ impl RotateLeft {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -4248,7 +4190,7 @@ impl RotateRight {
     #[new]
     #[pyo3(signature = (i, /, dom, cod = None))]
     fn py_new(i: usize, dom: Word, cod: Option<Word>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(i, [dom]), cod)
+        crate::check_cod(Self::with_dom(i, [dom]), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -4263,14 +4205,14 @@ impl RotateRight {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -4292,7 +4234,7 @@ impl RotateRight {
 impl Eq {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Eq {
             width: s.width(),
             shape: s.shape(),
@@ -4309,7 +4251,7 @@ impl Eq {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Word; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -4324,14 +4266,14 @@ impl Eq {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -4348,7 +4290,7 @@ impl Eq {
 impl Ne {
     /// The operation reading the words of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Word; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Ne {
             width: s.width(),
             shape: s.shape(),
@@ -4365,7 +4307,7 @@ impl Ne {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Word; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -4380,14 +4322,14 @@ impl Ne {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -4415,13 +4357,7 @@ pub mod broadcast {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(
-            frozen,
-            from_py_object,
-            eq,
-            str,
-            module = "reactor.matrix.word.broadcast"
-        )
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.broadcast")
     )]
     pub struct Ite {
         width: usize,
@@ -4461,7 +4397,7 @@ pub mod broadcast {
                         shape: x.shape(),
                     })
                 }
-                _ => Err(crate::matrix::unexpected_dom(
+                _ => Err(crate::unexpected_dom(
                     "a condition Bool([1, 1]) and two branches Word of the same sort",
                     &dom,
                 )),
@@ -4487,7 +4423,7 @@ pub mod broadcast {
         #[new]
         #[pyo3(signature = (dom, cod = None))]
         fn py_new(dom: [Sort; 3], cod: Option<Word>) -> Result<Self, crate::Error> {
-            crate::matrix::check_cod(Self::with_dom(dom), cod)
+            crate::check_cod(Self::with_dom(dom), cod)
         }
 
         /// The parameters that its boundary does not determine, then its domain, when it
@@ -4505,7 +4441,7 @@ pub mod broadcast {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::dom(self))
+            crate::py_sorts(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -4515,7 +4451,7 @@ pub mod broadcast {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::cod(self))
+            crate::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]

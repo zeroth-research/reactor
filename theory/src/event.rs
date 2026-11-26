@@ -1,7 +1,7 @@
 /*!
 # Events
 
-Defines one type per operation on the sort [`Event`] of events. An event is
+Defines the sort [`Event`] of events, and one type per operation on it. An event is
 encoded as a boolean whose change signals that the event happened, so its
 state alone means nothing: it is only compared, flipped or kept.
 
@@ -19,13 +19,43 @@ an event is a `Bool`, and its operations `=`, `distinct`, `not`, the
 identity and `ite`.
 */
 
-use super::Event;
 pub use crate::Any as Sort;
-use crate::matrix::bool::Bool;
+use crate::bool::Bool;
+use crate::zero::Real0;
 use base::boundary::{Boundary, Poly};
+use base::differentiable::Differentiable;
 use base::mono;
 use derive_more::From;
 use std::fmt;
+
+/// The sort of events: a value that, as a boolean, has two states, but is only
+/// ever compared, flipped, to signal an event, or kept, to signal none. An
+/// event happens when its value changes, so that only the change, not the
+/// state, means anything.
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash, Default)]
+pub struct Event;
+
+impl Event {
+    pub fn new() -> Self {
+        Event
+    }
+}
+
+impl fmt::Display for Event {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Event()")
+    }
+}
+
+/// Events are discrete, so their tangent is trivial: the singleton sort
+/// [`Real0`].
+impl Differentiable for Event {
+    type Tangent = Real0;
+
+    fn tangent(self) -> Real0 {
+        Real0
+    }
+}
 
 /// Whether two events `x` and `y` are in the same state.
 ///

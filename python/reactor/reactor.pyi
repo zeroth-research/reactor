@@ -4,63 +4,95 @@ They support type checking (mypy) and editor hints only, with no runtime effect,
 are maintained by hand: PyO3 does not generate stubs (see
 https://pyo3.rs/v0.29.0/python-typing-hints).
 
-The extension holds the structural layer `Wire` / `Var` / `Term` / `Atom` / `Module`,
-and the namespaces of the sorts and operations, mirroring the `theory` crate: `zero`
+The extension holds the structural layer `Wire` / `Var` / `Term` / `Atom` / `Module`;
+the structural operations `Havoc` and `Skip`, which belong to no theory; and the
+namespaces of the sorts and the other operations, mirroring the `theory` crate: `zero`
 holds the singleton sort `Real0`, shared by all theories, and the operation `Zero`
-writing its only value; `matrix` holds the structural operations
-`Havoc` and `Skip`, and the namespaces `matrix.real`, `.int`, `.bool`, `.word` (with
-`.signed` and `.unsigned`, and each with `.broadcast`, the choice of whole matrices by a
-scalar condition) hold the sort of each theory (`matrix.real.Real([rows, cols])`,
-`matrix.word.Word(width, [rows, cols])`) and its operations, each built from the
-parameters its sorts do not determine, then its domain, a single sort bare and several
-as a list, and optionally its codomain, which must agree (`matrix.real.Add([x, y])`,
-`matrix.word.Extract(i, j, x)`); an operation that reads nothing is built from its
-codomain (`matrix.real.Zero(x)`), except `zero.Zero()`, whose codomain, the singleton
-sort, carries no information. The sorts and operations of the namespaces are typed loosely
+writing its only value; `real`, `int`, `bool` and `word` (with `word.signed` and
+`word.unsigned`, and each with `.broadcast`, the choice of whole matrices by a scalar
+condition) hold the sort of each theory (`real.Real([rows, cols])`,
+`word.Word(width, [rows, cols])`) and its operations, each built from the parameters
+its sorts do not determine, then its domain, a single sort bare and several as a list,
+and optionally its codomain, which must agree (`real.Add([x, y])`,
+`word.Extract(i, j, x)`); an operation that reads nothing is built from its codomain
+(`real.Zero(x)`, `Havoc(x)`), except `zero.Zero()`, whose codomain, the singleton sort,
+carries no information. The sorts and operations of the namespaces are typed loosely
 here, as `Sort` and `Op`: a stub file cannot describe the nested namespaces of a single
 extension module. A `Var` bundles the latched, next (`X(v)`), and derivative (`d(v)`)
 wires of a state variable and stands for its latched wire wherever a wire is expected.
 """
 
+import builtins
 from types import ModuleType
 from typing import Any, Callable, Iterable, Mapping, Sequence, override
 
 # A `hide` argument selects the variables to make private: a predicate over
 # variables, or any iterable of them (preferably a set); None hides nothing.
-type Hide = Callable[[Var], bool] | Iterable[Var] | None
+type Hide = Callable[[Var], builtins.bool] | Iterable[Var] | None
 
-# A sort, of `zero` or of a namespace of `matrix`, and an operation, of `zero` or of
-# `matrix` or of one of its namespaces.
+# A sort, of one of the namespaces, and an operation, `Havoc`, `Skip` or of one of the
+# namespaces.
 type Sort = Any
 type Op = Any
 
-# The namespaces of the sorts and operations.
+# The namespaces of the sorts and operations; `int` and `bool` shadow the builtins here,
+# which this stub names `builtins.int` and `builtins.bool`.
 zero: ModuleType
-matrix: ModuleType
+real: ModuleType
+int: ModuleType
+bool: ModuleType
+word: ModuleType
+
+
+class Havoc:
+    """The nondeterministic choice of a value of the sort `cod`, reading nothing."""
+
+    def __init__(self, cod: Sort) -> None: ...
+
+    @property
+    def cod(self) -> Sort: ...
+
+    @property
+    def sort(self) -> Sort: ...
+
+
+class Skip:
+    """The identity of the sort `dom`, whose codomain `cod`, when given, must be it."""
+
+    def __init__(self, dom: Sort, cod: Sort | None = None) -> None: ...
+
+    @property
+    def dom(self) -> Sort: ...
+
+    @property
+    def cod(self) -> Sort: ...
+
+    @property
+    def sort(self) -> Sort: ...
 
 
 class Wire:
     def __init__(self, dtype: Sort) -> None: ...
 
     @property
-    def id(self) -> int: ...
+    def id(self) -> builtins.int: ...
 
     @property
     def dtype(self) -> Sort: ...
 
     @override
-    def __eq__(self, other: object) -> bool: ...
+    def __eq__(self, other: object) -> builtins.bool: ...
 
-    def __lt__(self, other: Wire) -> bool: ...
+    def __lt__(self, other: Wire) -> builtins.bool: ...
 
-    def __le__(self, other: Wire) -> bool: ...
+    def __le__(self, other: Wire) -> builtins.bool: ...
 
-    def __gt__(self, other: Wire) -> bool: ...
+    def __gt__(self, other: Wire) -> builtins.bool: ...
 
-    def __ge__(self, other: Wire) -> bool: ...
+    def __ge__(self, other: Wire) -> builtins.bool: ...
 
     @override
-    def __hash__(self) -> int: ...
+    def __hash__(self) -> builtins.int: ...
 
     @override
     def __repr__(self) -> str: ...
@@ -77,24 +109,24 @@ class Var:
     def __init__(self, dtype: Sort) -> None: ...
 
     @property
-    def id(self) -> int: ...
+    def id(self) -> builtins.int: ...
 
     @property
     def dtype(self) -> Sort: ...
 
     @override
-    def __eq__(self, other: object) -> bool: ...
+    def __eq__(self, other: object) -> builtins.bool: ...
 
-    def __lt__(self, other: Var | Wire) -> bool: ...
+    def __lt__(self, other: Var | Wire) -> builtins.bool: ...
 
-    def __le__(self, other: Var | Wire) -> bool: ...
+    def __le__(self, other: Var | Wire) -> builtins.bool: ...
 
-    def __gt__(self, other: Var | Wire) -> bool: ...
+    def __gt__(self, other: Var | Wire) -> builtins.bool: ...
 
-    def __ge__(self, other: Var | Wire) -> bool: ...
+    def __ge__(self, other: Var | Wire) -> builtins.bool: ...
 
     @override
-    def __hash__(self) -> int: ...
+    def __hash__(self) -> builtins.int: ...
 
     @override
     def __str__(self) -> str: ...
@@ -341,9 +373,9 @@ class Module:
     @property
     def ctrl(self) -> Sequence[Var]: ...
 
-    def closed(self) -> bool: ...
+    def closed(self) -> builtins.bool: ...
 
-    def open(self) -> bool: ...
+    def open(self) -> builtins.bool: ...
 
     def with_varnames(self, names: Mapping[Var, str]) -> str: ...
 

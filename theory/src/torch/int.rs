@@ -1,15 +1,15 @@
 //! The Python classes of the operations of integer arithmetic carrying
 //! tensors.
 
-use crate::matrix::int;
-use crate::matrix::int::Int;
+use crate::int;
+use crate::int::Int;
 use pyo3::prelude::*;
 use pyo3_tch::PyTensor;
 
 /// The linear map `x ↦ A·x` of integer matrices: `A` a torch tensor of
 /// integer elements, held with the sort the map reads, as `A` does not
 /// determine its columns.
-#[pyclass(frozen, name = "Linear", module = "reactor.matrix.int")]
+#[pyclass(frozen, name = "Linear", module = "reactor.int")]
 pub struct Linear(tch::Tensor, Int);
 
 // SAFETY: the tensor is private to this module, which only reads its
@@ -36,7 +36,7 @@ impl Linear {
             )));
         }
         let op = match (dom, cod) {
-            (Some(dom), cod) => crate::matrix::check_cod(int::Linear::with_dom(a.0, [dom]), cod)?,
+            (Some(dom), cod) => crate::check_cod(int::Linear::with_dom(a.0, [dom]), cod)?,
             (None, Some(cod)) => int::Linear::with_cod(a.0, [cod])?,
             (None, None) => {
                 return Err(crate::Error(
@@ -63,25 +63,25 @@ impl Linear {
     /// The sorts it reads: the sort alone when it reads one, else their list.
     #[getter]
     fn dom<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
-        let op: crate::matrix::int::Linear<tch::Tensor> = slf.extract()?;
-        crate::matrix::py_sorts(slf.py(), base::boundary::Boundary::dom(&op))
+        let op: crate::int::Linear<tch::Tensor> = slf.extract()?;
+        crate::py_sorts(slf.py(), base::boundary::Boundary::dom(&op))
     }
 
     /// The sort it writes.
     #[getter]
     fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
-        let op: crate::matrix::int::Linear<tch::Tensor> = slf.extract()?;
-        crate::matrix::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
+        let op: crate::int::Linear<tch::Tensor> = slf.extract()?;
+        crate::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
     }
 }
 
-impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::int::Linear<tch::Tensor> {
+impl<'a, 'py> FromPyObject<'a, 'py> for crate::int::Linear<tch::Tensor> {
     type Error = PyErr;
 
     /// Fails when `ob` is not a [`Linear`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let linear = ob.cast::<Linear>()?.get();
-        Ok(crate::matrix::int::Linear::with_dom(
+        Ok(crate::int::Linear::with_dom(
             linear.0.shallow_clone(),
             [linear.1],
         )?)
@@ -90,17 +90,17 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::int::Linear<tch::Tensor> 
 
 /// A clone shares the tensor of the original: `tch::Tensor` is not `Clone`,
 /// so this takes a shallow clone of it, as libtorch counts its references.
-impl Clone for crate::matrix::int::Linear<tch::Tensor> {
+impl Clone for crate::int::Linear<tch::Tensor> {
     fn clone(&self) -> Self {
         let dom = super::sole(base::boundary::Boundary::dom(self));
-        crate::matrix::int::Linear::with_dom(self.a().shallow_clone(), [dom])
+        crate::int::Linear::with_dom(self.a().shallow_clone(), [dom])
             .expect("a clone has the shapes of the original")
     }
 }
 
 /// The affine map `x ↦ A·x + B` of integer matrices: torch tensors of
 /// integer elements.
-#[pyclass(frozen, name = "Affine", module = "reactor.matrix.int")]
+#[pyclass(frozen, name = "Affine", module = "reactor.int")]
 pub struct Affine(tch::Tensor, tch::Tensor);
 
 // SAFETY: the tensors are private to this module, which only reads their
@@ -135,7 +135,7 @@ impl Affine {
             let ([_, n], [_, k]) = (crate::Matrix::shape(&a.0), crate::Matrix::shape(&b.0));
             Int::new_unchecked([n, k])
         });
-        let op = crate::matrix::check_cod(int::Affine::with_dom(a.0, b.0, [dom]), cod)?;
+        let op = crate::check_cod(int::Affine::with_dom(a.0, b.0, [dom]), cod)?;
         Ok(Affine(op.a().shallow_clone(), op.b().shallow_clone()))
     }
 
@@ -159,26 +159,26 @@ impl Affine {
     /// The sorts it reads: the sort alone when it reads one, else their list.
     #[getter]
     fn dom<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
-        let op: crate::matrix::int::Affine<tch::Tensor> = slf.extract()?;
-        crate::matrix::py_sorts(slf.py(), base::boundary::Boundary::dom(&op))
+        let op: crate::int::Affine<tch::Tensor> = slf.extract()?;
+        crate::py_sorts(slf.py(), base::boundary::Boundary::dom(&op))
     }
 
     /// The sort it writes.
     #[getter]
     fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
-        let op: crate::matrix::int::Affine<tch::Tensor> = slf.extract()?;
-        crate::matrix::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
+        let op: crate::int::Affine<tch::Tensor> = slf.extract()?;
+        crate::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
     }
 }
 
-impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::int::Affine<tch::Tensor> {
+impl<'a, 'py> FromPyObject<'a, 'py> for crate::int::Affine<tch::Tensor> {
     type Error = PyErr;
 
     /// Fails when `ob` is not an [`Affine`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let affine = ob.cast::<Affine>()?.get();
         let cod = Int::new_unchecked(crate::Matrix::shape(&affine.1));
-        Ok(crate::matrix::int::Affine::with_cod(
+        Ok(crate::int::Affine::with_cod(
             affine.0.shallow_clone(),
             affine.1.shallow_clone(),
             [cod],
@@ -187,7 +187,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::int::Affine<tch::Tensor> 
 }
 
 /// A constant integer matrix: a `torch.Tensor` of integer elements.
-#[pyclass(frozen, name = "Num", module = "reactor.matrix.int")]
+#[pyclass(frozen, name = "Num", module = "reactor.int")]
 pub struct Num(tch::Tensor);
 
 // SAFETY: the tensor is private to this module, which only reads its
@@ -233,19 +233,19 @@ impl Num {
     /// The sort it writes.
     #[getter]
     fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
-        let op: crate::matrix::int::Num<tch::Tensor> = slf.extract()?;
-        crate::matrix::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
+        let op: crate::int::Num<tch::Tensor> = slf.extract()?;
+        crate::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
     }
 }
 
-impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::int::Num<tch::Tensor> {
+impl<'a, 'py> FromPyObject<'a, 'py> for crate::int::Num<tch::Tensor> {
     type Error = PyErr;
 
     /// Fails when `ob` is not an [`Num`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let constant = ob.cast::<Num>()?.get();
         let cod = Int::new_unchecked(crate::Matrix::shape(&constant.0));
-        Ok(crate::matrix::int::Num::with_cod(
+        Ok(crate::int::Num::with_cod(
             constant.0.shallow_clone(),
             [cod],
         )?)
@@ -254,17 +254,17 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::int::Num<tch::Tensor> {
 
 /// A clone shares the tensor of the original: `tch::Tensor` is not `Clone`,
 /// so this takes a shallow clone of it, as libtorch counts its references.
-impl Clone for crate::matrix::int::Num<tch::Tensor> {
+impl Clone for crate::int::Num<tch::Tensor> {
     fn clone(&self) -> Self {
         let cod = Int::new_unchecked(crate::Matrix::shape(self.tensor()));
-        crate::matrix::int::Num::with_cod(self.tensor().shallow_clone(), [cod])
+        crate::int::Num::with_cod(self.tensor().shallow_clone(), [cod])
             .expect("a clone has the shape of the original")
     }
 }
 
 /// The pointwise product `x ↦ C ⊙ x` with a constant integer matrix `C`: a
 /// `torch.Tensor` of integer elements.
-#[pyclass(frozen, name = "Scale", module = "reactor.matrix.int")]
+#[pyclass(frozen, name = "Scale", module = "reactor.int")]
 pub struct Scale(tch::Tensor);
 
 // SAFETY: the tensor is private to this module, which only reads its
@@ -292,7 +292,7 @@ impl Scale {
             Some(dom) => dom,
             None => Int::new(crate::Matrix::shape(&tensor.0))?,
         };
-        let op = crate::matrix::check_cod(int::Scale::with_dom(tensor.0, [dom]), cod)?;
+        let op = crate::check_cod(int::Scale::with_dom(tensor.0, [dom]), cod)?;
         Ok(Scale(op.tensor().shallow_clone()))
     }
 
@@ -311,66 +311,59 @@ impl Scale {
     /// The sorts it reads: the sort alone when it reads one, else their list.
     #[getter]
     fn dom<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
-        let op: crate::matrix::int::Scale<tch::Tensor> = slf.extract()?;
-        crate::matrix::py_sorts(slf.py(), base::boundary::Boundary::dom(&op))
+        let op: crate::int::Scale<tch::Tensor> = slf.extract()?;
+        crate::py_sorts(slf.py(), base::boundary::Boundary::dom(&op))
     }
 
     /// The sort it writes.
     #[getter]
     fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
-        let op: crate::matrix::int::Scale<tch::Tensor> = slf.extract()?;
-        crate::matrix::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
+        let op: crate::int::Scale<tch::Tensor> = slf.extract()?;
+        crate::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
     }
 }
 
-impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::int::Scale<tch::Tensor> {
+impl<'a, 'py> FromPyObject<'a, 'py> for crate::int::Scale<tch::Tensor> {
     type Error = PyErr;
 
     /// Fails when `ob` is not an [`Scale`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let scale = ob.cast::<Scale>()?.get();
         let dom = Int::new_unchecked(crate::Matrix::shape(&scale.0));
-        Ok(crate::matrix::int::Scale::with_dom(
-            scale.0.shallow_clone(),
-            [dom],
-        )?)
+        Ok(crate::int::Scale::with_dom(scale.0.shallow_clone(), [dom])?)
     }
 }
 
 /// A clone shares the tensor of the original: `tch::Tensor` is not `Clone`,
 /// so this takes a shallow clone of it, as libtorch counts its references.
-impl Clone for crate::matrix::int::Scale<tch::Tensor> {
+impl Clone for crate::int::Scale<tch::Tensor> {
     fn clone(&self) -> Self {
         let dom = Int::new_unchecked(crate::Matrix::shape(self.tensor()));
-        crate::matrix::int::Scale::with_dom(self.tensor().shallow_clone(), [dom])
+        crate::int::Scale::with_dom(self.tensor().shallow_clone(), [dom])
             .expect("a clone has the shape of the original")
     }
 }
 
 /// A clone shares the tensor of the original: `tch::Tensor` is not `Clone`,
 /// so this takes a shallow clone of it, as libtorch counts its references.
-impl Clone for crate::matrix::int::Affine<tch::Tensor> {
+impl Clone for crate::int::Affine<tch::Tensor> {
     fn clone(&self) -> Self {
         let cod = Int::new_unchecked(crate::Matrix::shape(self.b()));
-        crate::matrix::int::Affine::with_cod(
-            self.a().shallow_clone(),
-            self.b().shallow_clone(),
-            [cod],
-        )
-        .expect("a clone has the shapes of the original")
+        crate::int::Affine::with_cod(self.a().shallow_clone(), self.b().shallow_clone(), [cod])
+            .expect("a clone has the shapes of the original")
     }
 }
 
 /// Converts an operation of the theory into its Python class: the
 /// operations carrying tensors into the classes of this module, holding the
 /// same tensors, and the others into their own classes.
-impl<'py> IntoPyObject<'py> for crate::matrix::int::NIA<tch::Tensor> {
+impl<'py> IntoPyObject<'py> for crate::int::NIA<tch::Tensor> {
     type Target = PyAny;
     type Output = Bound<'py, PyAny>;
     type Error = PyErr;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-        use crate::matrix::int::NIA;
+        use crate::int::NIA;
 
         match self {
             NIA::Num(op) => Num(op.tensor().shallow_clone())

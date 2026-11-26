@@ -51,14 +51,7 @@ use subenum::subenum;
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(
-        frozen,
-        from_py_object,
-        eq,
-        str,
-        get_all,
-        module = "reactor.matrix.real"
-    )
+    pyo3::pyclass(frozen, from_py_object, eq, str, get_all, module = "reactor.real")
 )]
 pub struct Real {
     degree: u8,
@@ -96,7 +89,7 @@ impl Real {
     /// shape has at least one row and one column.
     #[cfg_attr(feature = "pyo3", new)]
     pub fn new(shape: [usize; 2]) -> Result<Self, crate::Error> {
-        super::check_shape(shape)?;
+        crate::matrix::check_shape(shape)?;
         Ok(Real { degree: 0, shape })
     }
 
@@ -145,8 +138,8 @@ impl Differentiable for Real {
 /// The sorts of the theory, as in the signature of SMT-LIB2's `Reals`:
 /// real matrices, and the booleans of the Core theory, which comparisons
 /// write, together with [`Zero`](crate::zero::Real0). It is the subset
-/// [`matrix::Reals`](crate::matrix::Reals) of the sorts of all theories.
-pub use super::Reals as Sort;
+/// [`Reals`](crate::Reals) of the sorts of all theories.
+pub use crate::Reals as Sort;
 
 /// A constant real matrix literal, held in a tensor of type `T`, of a
 /// degree: a constant rate of change, such as the `1` of `ẋ = 1`, is of
@@ -163,7 +156,7 @@ impl<T: Matrix> Num<T> {
     pub fn with_cod(tensor: T, cod: [Real; 1]) -> Result<Self, crate::Error> {
         let [x] = cod;
         if tensor.shape() != x.shape() {
-            return Err(crate::matrix::unexpected_cod(
+            return Err(crate::unexpected_cod(
                 &format!("1 sort of the shape {:?} of the constant", tensor.shape()),
                 &cod,
             ));
@@ -205,7 +198,7 @@ impl<T: Matrix> Scale<T> {
     pub fn with_dom(tensor: T, dom: [Real; 1]) -> Result<Self, crate::Error> {
         let [x] = dom;
         if tensor.shape() != x.shape() {
-            return Err(crate::matrix::unexpected_dom(
+            return Err(crate::unexpected_dom(
                 &format!("1 sort of the shape {:?} of C", tensor.shape()),
                 &dom,
             ));
@@ -221,7 +214,7 @@ impl<T: Matrix> Scale<T> {
     pub fn with_cod(tensor: T, cod: [Real; 1]) -> Result<Self, crate::Error> {
         let [x] = cod;
         if tensor.shape() != x.shape() {
-            return Err(crate::matrix::unexpected_cod(
+            return Err(crate::unexpected_cod(
                 &format!("1 sort of the shape {:?} of C", tensor.shape()),
                 &cod,
             ));
@@ -250,7 +243,7 @@ impl<T> Scale<T> {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.real")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
 )]
 pub struct Add {
     shape: [usize; 2],
@@ -262,7 +255,7 @@ pub struct Add {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.real")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
 )]
 pub struct Sub {
     shape: [usize; 2],
@@ -276,7 +269,7 @@ pub struct Sub {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.real")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
 )]
 pub struct Mul {
     shape: [usize; 2],
@@ -300,7 +293,7 @@ pub struct Mul {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.real")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
 )]
 pub struct Div {
     shape: [usize; 2],
@@ -328,10 +321,10 @@ impl<T: Matrix> Linear<T> {
     /// shape `[n, k]`.
     pub fn with_dom(a: T, dom: [Real; 1]) -> Result<Self, crate::Error> {
         let [x] = dom;
-        super::check_shape(a.shape())?;
+        crate::matrix::check_shape(a.shape())?;
         let ([_, n], [rows, k]) = (a.shape(), x.shape());
         if rows != n {
-            return Err(crate::matrix::unexpected_dom(
+            return Err(crate::unexpected_dom(
                 &format!("1 sort of shape [{n}, k]"),
                 &dom,
             ));
@@ -348,10 +341,10 @@ impl<T: Matrix> Linear<T> {
     /// matrix of shape `[m, k]`.
     pub fn with_cod(a: T, cod: [Real; 1]) -> Result<Self, crate::Error> {
         let [x] = cod;
-        super::check_shape(a.shape())?;
+        crate::matrix::check_shape(a.shape())?;
         let ([m, _], [rows, k]) = (a.shape(), x.shape());
         if rows != m {
-            return Err(crate::matrix::unexpected_cod(
+            return Err(crate::unexpected_cod(
                 &format!("1 sort of shape [{m}, k]"),
                 &cod,
             ));
@@ -391,7 +384,7 @@ impl<T: Matrix> Affine<T> {
     /// `[m, n]` and `[m, k]`, and `x` of shape `[n, k]`.
     pub fn with_dom(a: T, b: T, dom: [Real; 1]) -> Result<Self, crate::Error> {
         let [x] = dom;
-        super::check_affine(a.shape(), b.shape())?;
+        crate::matrix::check_affine(a.shape(), b.shape())?;
         let op = Affine {
             a,
             b,
@@ -399,7 +392,7 @@ impl<T: Matrix> Affine<T> {
         };
         let ([_, n], [_, k]) = (op.a.shape(), op.b.shape());
         if x.shape() != [n, k] {
-            return Err(crate::matrix::unexpected_dom(
+            return Err(crate::unexpected_dom(
                 &format!("1 sort of shape {:?}", [n, k]),
                 &dom,
             ));
@@ -412,14 +405,14 @@ impl<T: Matrix> Affine<T> {
     /// that matrix of shape `[m, k]`.
     pub fn with_cod(a: T, b: T, cod: [Real; 1]) -> Result<Self, crate::Error> {
         let [x] = cod;
-        super::check_affine(a.shape(), b.shape())?;
+        crate::matrix::check_affine(a.shape(), b.shape())?;
         let op = Affine {
             a,
             b,
             degree: x.degree(),
         };
         if x.shape() != op.b.shape() {
-            return Err(crate::matrix::unexpected_cod(
+            return Err(crate::unexpected_cod(
                 &format!("1 sort of shape {:?}", op.b.shape()),
                 &cod,
             ));
@@ -450,7 +443,7 @@ impl<T> Affine<T> {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.real")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
 )]
 pub struct Zero {
     shape: [usize; 2],
@@ -464,7 +457,7 @@ pub struct Zero {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.real")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
 )]
 pub struct Neg {
     shape: [usize; 2],
@@ -478,7 +471,7 @@ pub struct Neg {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.real")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
 )]
 pub struct Abs {
     shape: [usize; 2],
@@ -492,7 +485,7 @@ pub struct Abs {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.real")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
 )]
 pub struct ReLU {
     shape: [usize; 2],
@@ -506,7 +499,7 @@ pub struct ReLU {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.real")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
 )]
 pub struct Argmax {
     shape: [usize; 2],
@@ -519,7 +512,7 @@ pub struct Argmax {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.real")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
 )]
 pub struct Min {
     shape: [usize; 2],
@@ -532,7 +525,7 @@ pub struct Min {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.real")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
 )]
 pub struct Max {
     shape: [usize; 2],
@@ -545,7 +538,7 @@ pub struct Max {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.real")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
 )]
 pub struct Transpose {
     shape: [usize; 2],
@@ -557,7 +550,7 @@ pub struct Transpose {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.real")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
 )]
 pub struct MatMul {
     /// The shapes `[[m, n], [n, k]]` of the factors.
@@ -580,7 +573,7 @@ pub struct MatMul {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.real")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
 )]
 pub struct Lt {
     shape: [usize; 2],
@@ -596,7 +589,7 @@ pub struct Lt {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.real")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
 )]
 pub struct Ite {
     shape: [usize; 2],
@@ -612,7 +605,7 @@ pub struct Ite {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.real")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
 )]
 pub struct Le {
     shape: [usize; 2],
@@ -628,7 +621,7 @@ pub struct Le {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.real")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
 )]
 pub struct Gt {
     shape: [usize; 2],
@@ -644,7 +637,7 @@ pub struct Gt {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.real")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
 )]
 pub struct Ge {
     shape: [usize; 2],
@@ -660,7 +653,7 @@ pub struct Ge {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.real")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
 )]
 pub struct Eq {
     shape: [usize; 2],
@@ -676,7 +669,7 @@ pub struct Eq {
 #[derive(Clone, Copy, PartialEq, Debug, Eq)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.matrix.real")
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
 )]
 pub struct Ne {
     shape: [usize; 2],
@@ -1523,7 +1516,7 @@ where
 impl Add {
     /// The operation reading the real matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Add {
             shape: s.shape(),
             degree: s.degree(),
@@ -1549,7 +1542,7 @@ impl Add {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Real; 2], cod: Option<Real>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -1564,14 +1557,14 @@ impl Add {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1588,7 +1581,7 @@ impl Add {
 impl Sub {
     /// The operation reading the real matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Sub {
             shape: s.shape(),
             degree: s.degree(),
@@ -1614,7 +1607,7 @@ impl Sub {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Real; 2], cod: Option<Real>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -1629,14 +1622,14 @@ impl Sub {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1660,10 +1653,7 @@ impl Mul {
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
         let [x, y] = dom;
         if x.shape() != y.shape() {
-            return Err(crate::matrix::unexpected_dom(
-                "2 sorts of the same shape",
-                &dom,
-            ));
+            return Err(crate::unexpected_dom("2 sorts of the same shape", &dom));
         }
         let [p, q] = [x.degree(), y.degree()];
         if p.checked_add(q).is_none() {
@@ -1687,7 +1677,7 @@ impl Mul {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Real; 2], cod: Option<Real>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -1702,14 +1692,14 @@ impl Mul {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1736,10 +1726,7 @@ impl Div {
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
         let [x, y] = dom;
         if x.shape() != y.shape() {
-            return Err(crate::matrix::unexpected_dom(
-                "2 sorts of the same shape",
-                &dom,
-            ));
+            return Err(crate::unexpected_dom("2 sorts of the same shape", &dom));
         }
         let [p, q] = [x.degree(), y.degree()];
         if q > p {
@@ -1763,7 +1750,7 @@ impl Div {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Real; 2], cod: Option<Real>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The degrees of the dividend and the divisor, as a list: pyo3 would
@@ -1786,14 +1773,14 @@ impl Div {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1836,7 +1823,7 @@ impl Zero {
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1853,7 +1840,7 @@ impl Zero {
 impl Neg {
     /// The operation reading the real matrix of `dom`.
     pub fn with_dom(dom: [Real; 1]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Neg {
             shape: s.shape(),
             degree: s.degree(),
@@ -1879,7 +1866,7 @@ impl Neg {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: Real, cod: Option<Real>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom([dom]), cod)
+        crate::check_cod(Self::with_dom([dom]), cod)
     }
 
     /// The parameters that its boundary does not determine, then its domain, when it
@@ -1894,14 +1881,14 @@ impl Neg {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1918,7 +1905,7 @@ impl Neg {
 impl Abs {
     /// The operation reading the real matrix of `dom`.
     pub fn with_dom(dom: [Real; 1]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Abs {
             shape: s.shape(),
             degree: s.degree(),
@@ -1944,7 +1931,7 @@ impl Abs {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: Real, cod: Option<Real>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom([dom]), cod)
+        crate::check_cod(Self::with_dom([dom]), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1964,14 +1951,14 @@ impl Abs {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -1983,7 +1970,7 @@ impl Abs {
 impl ReLU {
     /// The operation reading the real matrix of `dom`.
     pub fn with_dom(dom: [Real; 1]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(ReLU {
             shape: s.shape(),
             degree: s.degree(),
@@ -2009,7 +1996,7 @@ impl ReLU {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: Real, cod: Option<Real>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom([dom]), cod)
+        crate::check_cod(Self::with_dom([dom]), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2029,14 +2016,14 @@ impl ReLU {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2048,7 +2035,7 @@ impl ReLU {
 impl Argmax {
     /// The operation reading the real matrix of `dom`.
     pub fn with_dom(dom: [Real; 1]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Argmax {
             shape: s.shape(),
             degree: s.degree(),
@@ -2065,7 +2052,7 @@ impl Argmax {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: Real, cod: Option<Real>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom([dom]), cod)
+        crate::check_cod(Self::with_dom([dom]), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2085,14 +2072,14 @@ impl Argmax {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2104,7 +2091,7 @@ impl Argmax {
 impl Min {
     /// The operation reading the real matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Min {
             shape: s.shape(),
             degree: s.degree(),
@@ -2130,7 +2117,7 @@ impl Min {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Real; 2], cod: Option<Real>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2150,14 +2137,14 @@ impl Min {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2169,7 +2156,7 @@ impl Min {
 impl Max {
     /// The operation reading the real matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Max {
             shape: s.shape(),
             degree: s.degree(),
@@ -2195,7 +2182,7 @@ impl Max {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Real; 2], cod: Option<Real>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2215,14 +2202,14 @@ impl Max {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2234,7 +2221,7 @@ impl Max {
 impl Transpose {
     /// The operation reading the real matrix of `dom`.
     pub fn with_dom(dom: [Real; 1]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Transpose {
             shape: s.shape(),
             degree: s.degree(),
@@ -2261,7 +2248,7 @@ impl Transpose {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: Real, cod: Option<Real>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom([dom]), cod)
+        crate::check_cod(Self::with_dom([dom]), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2281,14 +2268,14 @@ impl Transpose {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2335,7 +2322,7 @@ impl MatMul {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Real; 2], cod: Option<Real>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     /// The degrees of the factors, as a list: pyo3 would make `[u8; 2]`
@@ -2358,14 +2345,14 @@ impl MatMul {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     /// The shapes of the factors, `[[m, n], [n, k]]`.
@@ -2378,7 +2365,7 @@ impl MatMul {
 impl Lt {
     /// The operation reading the real matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Lt {
             shape: s.shape(),
             degree: s.degree(),
@@ -2395,7 +2382,7 @@ impl Lt {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Real; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2415,14 +2402,14 @@ impl Lt {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2443,7 +2430,7 @@ impl Ite {
                     degree: x.degree(),
                 })
             }
-            _ => Err(crate::matrix::unexpected_dom(
+            _ => Err(crate::unexpected_dom(
                 "a condition Bool and two branches Real of its shape",
                 &dom,
             )),
@@ -2469,7 +2456,7 @@ impl Ite {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Sort; 3], cod: Option<Real>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2489,14 +2476,14 @@ impl Ite {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2508,7 +2495,7 @@ impl Ite {
 impl Le {
     /// The operation reading the real matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Le {
             shape: s.shape(),
             degree: s.degree(),
@@ -2525,7 +2512,7 @@ impl Le {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Real; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2545,14 +2532,14 @@ impl Le {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2564,7 +2551,7 @@ impl Le {
 impl Gt {
     /// The operation reading the real matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Gt {
             shape: s.shape(),
             degree: s.degree(),
@@ -2581,7 +2568,7 @@ impl Gt {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Real; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2601,14 +2588,14 @@ impl Gt {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2620,7 +2607,7 @@ impl Gt {
 impl Ge {
     /// The operation reading the real matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Ge {
             shape: s.shape(),
             degree: s.degree(),
@@ -2637,7 +2624,7 @@ impl Ge {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Real; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2657,14 +2644,14 @@ impl Ge {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2676,7 +2663,7 @@ impl Ge {
 impl Eq {
     /// The operation reading the real matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Eq {
             shape: s.shape(),
             degree: s.degree(),
@@ -2693,7 +2680,7 @@ impl Eq {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Real; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2713,14 +2700,14 @@ impl Eq {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2732,7 +2719,7 @@ impl Eq {
 impl Ne {
     /// The operation reading the real matrices of `dom`; fails unless they are equal.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
-        let s = crate::matrix::same_sort(dom)?;
+        let s = crate::same_sort(dom)?;
         Ok(Ne {
             shape: s.shape(),
             degree: s.degree(),
@@ -2749,7 +2736,7 @@ impl Ne {
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Real; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
-        crate::matrix::check_cod(Self::with_dom(dom), cod)
+        crate::check_cod(Self::with_dom(dom), cod)
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2769,14 +2756,14 @@ impl Ne {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::dom(self))
+        crate::py_sorts(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::matrix::py_sorts(py, Boundary::cod(self))
+        crate::py_sorts(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2801,13 +2788,7 @@ pub mod broadcast {
     #[derive(Clone, Copy, PartialEq, Debug, Eq)]
     #[cfg_attr(
         feature = "pyo3",
-        pyo3::pyclass(
-            frozen,
-            from_py_object,
-            eq,
-            str,
-            module = "reactor.matrix.real.broadcast"
-        )
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real.broadcast")
     )]
     pub struct Ite {
         shape: [usize; 2],
@@ -2847,7 +2828,7 @@ pub mod broadcast {
                         degree: x.degree(),
                     })
                 }
-                _ => Err(crate::matrix::unexpected_dom(
+                _ => Err(crate::unexpected_dom(
                     "a condition Bool([1, 1]) and two branches Real of the same sort",
                     &dom,
                 )),
@@ -2873,7 +2854,7 @@ pub mod broadcast {
         #[new]
         #[pyo3(signature = (dom, cod = None))]
         fn py_new(dom: [Sort; 3], cod: Option<Real>) -> Result<Self, crate::Error> {
-            crate::matrix::check_cod(Self::with_dom(dom), cod)
+            crate::check_cod(Self::with_dom(dom), cod)
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2896,7 +2877,7 @@ pub mod broadcast {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::dom(self))
+            crate::py_sorts(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -2906,7 +2887,7 @@ pub mod broadcast {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::matrix::py_sorts(py, Boundary::cod(self))
+            crate::py_sorts(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]

@@ -4,11 +4,11 @@ use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
 use pyo3::types::{PyDict, PyTuple};
 use std::borrow::Cow;
 use std::collections::HashMap;
-use theory::matrix;
+use theory::Any;
 
 #[pyclass(module = "reactor", subclass, frozen)]
 pub(crate) struct Module {
-    pub(crate) base: reactive::Module<Op, Op, Op, matrix::Any>,
+    pub(crate) base: reactive::Module<Op, Op, Op, Any>,
 }
 
 // SAFETY: the operations of the module may hold `tch::Tensor`s, which are not
@@ -20,7 +20,7 @@ unsafe impl Sync for Module {}
 impl Module {
     fn partially_observable<A>(atoms: A, hide: &Bound<'_, PyAny>) -> PyResult<Self>
     where
-        A: IntoIterator<Item = reactive::Atom<Op, Op, Op, matrix::Any>>,
+        A: IntoIterator<Item = reactive::Atom<Op, Op, Op, Any>>,
     {
         let hide = Hide::try_from(hide)?;
         let module = reactive::Module::partially_observable(atoms, hide.as_fn());
@@ -30,7 +30,7 @@ impl Module {
 
     fn observable<A>(atoms: A) -> PyResult<Self>
     where
-        A: IntoIterator<Item = reactive::Atom<Op, Op, Op, matrix::Any>>,
+        A: IntoIterator<Item = reactive::Atom<Op, Op, Op, Any>>,
     {
         let module = reactive::Module::observable(atoms);
         module.map(Into::into).map_err(PyException::new_err)
@@ -379,8 +379,8 @@ impl Module {
     }
 }
 
-impl From<reactive::Module<Op, Op, Op, matrix::Any>> for Module {
-    fn from(base: reactive::Module<Op, Op, Op, matrix::Any>) -> Self {
+impl From<reactive::Module<Op, Op, Op, Any>> for Module {
+    fn from(base: reactive::Module<Op, Op, Op, Any>) -> Self {
         Self { base }
     }
 }
@@ -411,7 +411,7 @@ struct ModuleInterface {
 }
 
 impl ModuleInterface {
-    fn base(&self) -> &reactive::Interface<matrix::Any> {
+    fn base(&self) -> &reactive::Interface<Any> {
         let module = &self.module.get().base;
         match self.interface {
             ModuleInterfaceType::Extl => module.extl(),
@@ -431,7 +431,7 @@ impl ModuleInterface {
     fn __getitem__(&self, index: usize) -> PyResult<Var> {
         self.base()
             .nth(index)
-            .map(|v| Var::from(*v))
+            .map(|v| Var::from(v.clone()))
             .ok_or(PyIndexError::new_err("index out of bounds"))
     }
 

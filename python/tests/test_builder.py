@@ -3,9 +3,9 @@
 import pytest
 import torch
 
-from reactor import T, Wire, TheoryError, matrix
-from reactor.matrix.real import Real
-from reactor.matrix.int import Int
+from reactor import T, Wire, TheoryError, real
+from reactor.real import Real
+from reactor.int import Int
 from reactor.builder import builder_for, RealTermBuilder
 from reactor.eval import eval_itype
 
@@ -49,7 +49,7 @@ def test_mul_adds_the_degrees_of_reals(p, q):
 
     term = builder.mul(x, y)
 
-    assert term.itype == matrix.real.Mul([_real(p), _real(q)])
+    assert term.itype == real.Mul([_real(p), _real(q)])
     assert term.write[0].dtype == _real(p + q)
 
 
@@ -69,7 +69,7 @@ def test_add_keeps_the_degree_of_reals():
 
     term = builder.add(x, y)
 
-    assert term.itype == matrix.real.Add([T(Real([2, 3]))] * 2)
+    assert term.itype == real.Add([T(Real([2, 3]))] * 2)
     assert term.write[0].dtype == T(Real([2, 3]))
 
 
