@@ -173,9 +173,6 @@ def _domain(ctx: LeanContext, ty) -> _Domain:
     with no external inputs still gets the binder written out rather than
     dropped — the call sites are built from the same lists.
     """
-    update_groups = ctx.update_groups
-    extl_groups = update_groups[1:]
-
     def binders(groups):
         return " ".join(f"({p} : {ty(w)})" for p, w in groups)
 
@@ -184,10 +181,10 @@ def _domain(ctx: LeanContext, ty) -> _Domain:
 
     return _Domain(
         state_ty=ty(ctx.ctrl_next),
-        update_binders=binders(update_groups),
-        update_args=args(update_groups),
-        extl_binders=binders(extl_groups),
-        extl_args=args(extl_groups),
+        update_binders=binders(ctx.update_groups),
+        update_args=args(ctx.update_groups),
+        extl_binders=binders(ctx.extl_groups),
+        extl_args=args(ctx.extl_groups),
         init_binders=binders(ctx.init_groups),
         init_args=args(ctx.init_groups),
     )
@@ -404,7 +401,7 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
             f"new = Scalar.update old {dom.extl_args}",
         )
         old_unpack = scalar_unpack("ctrl", ctx.ctrl_latched)
-        extl_unpacks = " ".join(scalar_unpack(p, w) for p, w in ctx.update_groups[1:])
+        extl_unpacks = " ".join(scalar_unpack(p, w) for p, w in ctx.extl_groups)
         lines += _pack_bridge_theorem(
             "TransRel_func_eq",
             f"(ctrl ctrl' : {product_type(ctx.ctrl_latched)}) {mat.extl_binders}",

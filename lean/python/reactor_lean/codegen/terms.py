@@ -179,10 +179,13 @@ def _output_expr(wire_expr: dict[int, str], w: Wire) -> str:
     certificate's proofs, a prover's to write.
     """
     if w.id not in wire_expr:
-        raise Refused(
-            f"block output wire #{w.id} is written by no term and is not an input"
-        )
+        raise _unwritten(w)
     return wire_expr[w.id]
+
+
+def _unwritten(w: Wire) -> Refused:
+    return Refused(f"block output wire #{w.id} is written by no term and is "
+                   "not an input")
 
 
 def product_type_scalar(wires: list[Wire]) -> str:
@@ -310,15 +313,13 @@ def translate_terms_scalar(
         let_lines.append(f"  let {var} : {ty} := {expr}")
 
     # The codomain every caller declares has one component per element
-    # (`product_type_scalar`): an output with flat slots contributes them;
-    # one without (no element was bound) contributes the matrix the terms
-    # built.
+    # (`product_type_scalar`): each output contributes its slots, which
+    # every wire bound or written has.
     out_exprs: list[str] = []
     for w in block_outputs:
-        if w.id in flat_slots:
-            out_exprs.extend(flat_slots[w.id])
-        else:
-            out_exprs.append(_output_expr(wire_expr, w))
+        if w.id not in flat_slots:
+            raise _unwritten(w)
+        out_exprs.extend(flat_slots[w.id])
     result_line = f"  {build_tuple(out_exprs)}"
 
     return "\n".join(let_lines + [result_line])

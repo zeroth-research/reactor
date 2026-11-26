@@ -56,14 +56,17 @@ class LeanContext:
         # What each block reads, in the order and under the names every
         # encoding binds it: `init` the inputs awaited in the first round,
         # `update` the state and the inputs latched before the round and
-        # awaited in it.
+        # awaited in it (`extl_groups`).
         self.init_groups: list[tuple[str, list[Wire]]] = [
+            ("extl_n", self.extl_next),
+        ]
+        self.extl_groups: list[tuple[str, list[Wire]]] = [
+            ("extl_l", self.extl_latched),
             ("extl_n", self.extl_next),
         ]
         self.update_groups: list[tuple[str, list[Wire]]] = [
             ("ctrl", self.ctrl_latched),
-            ("extl_l", self.extl_latched),
-            ("extl_n", self.extl_next),
+            *self.extl_groups,
         ]
         self.init_wire_names = bind_wires(self.init_groups)
         self.update_wire_names = bind_wires(self.update_groups)

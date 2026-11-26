@@ -4,8 +4,8 @@
 (`args`); `parse.load` reads the module, and `claim_from_flags` what is
 to be proved of it; `codegen.context.lean_context` checks that the module
 has a Lean form, and `proof.render.lean_certificate` renders the
-certificate; `generate` writes the project, or `standalone` the one file
-asked for. Each stage refuses what it cannot carry out (`Refused`), and
+certificate; `generate` writes the project, or `standalone` the
+certificate file asked for and the encodings beside it. Each stage refuses what it cannot carry out (`Refused`), and
 `main` prints that as one `error:` line.
 
 The certificate states its obligations and proves each by `sorry`: the

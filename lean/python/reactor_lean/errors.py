@@ -28,11 +28,10 @@ class PredicateRefused(Refused):
     """A refusal about one of the claim's predicates, named by its `role`:
     "property" (of `kind` "safety" or "buchi"), "invariant", "ranking",
     or an assumption on the inputs: "extl-assume" (of both blocks),
-    "extl-assume-init" or "extl-assume-update" -- or any other label, for a
-    term made up along the way.
-    The layers that raise it know predicates by role; a claim's predicate
-    is shown as the command-line flag it came from, which is where a user
-    can act on it, and this is the one place that spelling lives."""
+    "extl-assume-init" or "extl-assume-update".
+    The layers that raise it know predicates by role; the refusal shows the
+    command-line flag the predicate came from, which is where a user can
+    act on it."""
 
     def __init__(self, role: str, message: str, *, kind: str = "buchi"):
         super().__init__(message)
@@ -40,12 +39,7 @@ class PredicateRefused(Refused):
 
     @property
     def flag(self) -> str:
-        if self.role == "property":
-            return f"--{self.kind}"
-        if self.role in ("invariant", "ranking", "extl-assume",
-                         "extl-assume-init", "extl-assume-update"):
-            return f"--{self.role}"
-        return self.role
+        return f"--{self.kind}" if self.role == "property" else f"--{self.role}"
 
     def __str__(self) -> str:
         return f"{self.flag}: {self.message}"

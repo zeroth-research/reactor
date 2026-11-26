@@ -36,6 +36,20 @@ from .formula import SCALAR, Builder, Formula, element, family
 from .sexpr import Atom, read, show
 
 
+def _theory(sort) -> "tuple[object, tuple[int, ...]]":
+    """The namespace of `reactor.tensor` whose ops are on `sort`'s
+    elements, and what those ops take ahead of their shape: a word's
+    width."""
+    match sort:
+        case Word(w, _):
+            return tensor.word, (w,)
+        case Real(_):
+            return tensor.real, ()
+        case Bool(_):
+            return tensor.bool, ()
+    return tensor.int, ()
+
+
 @dataclass(frozen=True)
 class Lit:
     """A numeral or a decimal not yet given a sort: what it becomes depends
@@ -182,16 +196,8 @@ class Elaborator:
             raise Unreadable(f"a {m.rows}×{m.cols} matrix has no element {k}")
         row, col = divmod(k, m.cols)
         elem = element(m.wire.dtype)
-        shape = [m.rows, m.cols]
-        match elem:
-            case Word(w, _):
-                op = tensor.word.Get(row, col, w, shape)
-            case Real(_):
-                op = tensor.real.Get(row, col, shape)
-            case Bool(_):
-                op = tensor.bool.Get(row, col, shape)
-            case _:
-                op = tensor.int.Get(row, col, shape)
+        theory, width = _theory(elem)
+        op = theory.Get(row, col, *width, [m.rows, m.cols])
         return self.b.apply(op, [m.wire], elem)
 
     # --- sorts -----------------------------------------------------------------
@@ -365,15 +371,8 @@ class Elaborator:
         if family(wt.dtype) != family(we.dtype):
             raise Unreadable(f"`{what}`: the branches are {family(wt.dtype)} "
                              f"and {family(we.dtype)}")
-        match wt.dtype:
-            case Word(w, _):
-                op = tensor.word.Ite(w, SCALAR)
-            case Real(_):
-                op = tensor.real.Ite(SCALAR)
-            case Bool(_):
-                op = tensor.bool.Ite(SCALAR)
-            case _:
-                op = tensor.int.Ite(SCALAR)
+        theory, width = _theory(wt.dtype)
+        op = theory.Ite(*width, SCALAR)
         return self.b.apply(op, [cond, wt, we], wt.dtype)
 
     # --- chains ------------------------------------------------------------------

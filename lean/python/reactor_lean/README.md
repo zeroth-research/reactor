@@ -449,8 +449,8 @@ def update(old_x):
 
 def module() -> Module:
     state = Var(Int([1, 1]))
-    init_terms   = convert_method(init,   {},               [X(state)])
-    update_terms = convert_method(update, {"old_x": state}, [X(state)])
+    init_terms   = convert_method(init,   {},               [X(state)], number=Int)
+    update_terms = convert_method(update, {"old_x": state}, [X(state)], number=Int)
     return Module.sequential([state], init_terms, update_terms)
 ```
 
