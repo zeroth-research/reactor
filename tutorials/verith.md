@@ -238,7 +238,6 @@ Wrote /tmp/verith-tutorial.noindex/Rea/lakefile.toml
 Wrote /tmp/verith-tutorial.noindex/Rea/lean-toolchain
 Wrote root module /tmp/verith-tutorial.noindex/Rea/System.lean
 ++ Generated /tmp/verith-tutorial.noindex/Rea/System/System.lean ++
-++ Generated /tmp/verith-tutorial.noindex/Rea/System/Circ.lean ++
 ++ Generated /tmp/verith-tutorial.noindex/Rea/System/Rel.lean ++
 ++ Generated /tmp/verith-tutorial.noindex/Rea/System/Scalar.lean ++
 ++ Generated /tmp/verith-tutorial.noindex/Rea/System/ScalarRel.lean ++
@@ -275,7 +274,6 @@ find "$OUT/$PROJ" -maxdepth 2 -not -path '*/.lake*' -not -path '*/artifacts*' | 
 ./lean-toolchain
 ./System
 ./System.lean
-./System/Circ.lean
 ./System/Rel.lean
 ./System/Scalar.lean
 ./System/ScalarRel.lean
@@ -354,7 +352,8 @@ cat "$OUT/$PROJ"/*/Data.lean
 ```
 
 ```lean
-import Relational.Basic
+import Relational.ReactiveTS
+import Relational.ProofRules
 
 set_option linter.unusedVariables false
 set_option linter.unusedSimpArgs false
@@ -376,7 +375,7 @@ instance : DecidablePred P := fun s => by unfold P; first | infer_instance | dsi
 `Certificate/Certificate.lean` is what Lean checks: the three obligations
 as theorems, and the `rule_globally` application that turns them into the
 property. It is the same text for every safety certificate, and
-`Module.lean`, the module as a `ReactiveModule` and its transition system
+`Module.lean`, the module as a `ReactiveTS` and its transition system
 `lts`, for every certificate. The proofs are in `Proofs.lean`, which states
 each obligation again with `_proof` after its name. `reactor` proved each by
 `sorry`; `verith` wrote it again, proving each with tactics generated from

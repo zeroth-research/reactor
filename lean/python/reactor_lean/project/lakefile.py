@@ -22,13 +22,14 @@ LEAN_TOOLCHAIN = f"leanprover/lean4:{MATHLIB_REV}"
 # The Lean libraries the generated files import come in two Lake packages,
 # each in its own directory of the ReactLib repository, which is also
 # what each package is named: `ReactLib`, whose libraries are
-# `Relational.*`, which the encodings and the certificate are stated in,
-# and `Spec.*`, the LTL their proof rules are stated in; and `LeanAI`, the
+# `Relational.*`, which the encodings and the certificate are stated in
+# (`Relational.ReactiveTS` the module, `Relational.ProofRules` its proof
+# rules), and `Spec.*`, the LTL their proof rules are stated in; and `LeanAI`, the
 # `ai_solve` tactic.
 REACTLIB_URL = "https://github.com/zeroth-research/ReactLib"
 # A commit rather than a branch, so a project cannot drift from the
 # generator that wrote it.
-REACTLIB_REV = "97144c6538db206fdefa10825d850219901c673b"
+REACTLIB_REV = "01cb44e77112a6b5a0e6e793723885d42c303a50"  # compositional
 REACTLIB_PACKAGES = ("ReactLib", "LeanAI")
 # A ReactLib checkout to require by path instead of from git, to work on
 # the libraries and the generator together.

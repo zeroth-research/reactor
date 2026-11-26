@@ -8,7 +8,7 @@ record at the commit before and after, then `diff -r`. Run from `lean/`:
     uv run python scripts/encoding_snapshots.py OUTDIR
 
 OUTDIR/<fixture>/ gets one file per `project.scaffold.ENCODINGS` row (`System.lean`,
-`SystemCirc.lean`, ...; printed by one `ModuleToLean4`, in table order, as
+`SystemRel.lean`, ...; printed by one `ModuleToLean4`, in table order, as
 `create_project` does), each row again from a fresh `ModuleToLean4`
 (`alone/`, which is what shows state carried between producers), and
 `Cert.lean` (the standalone certificate with no claim). A stage that refuses

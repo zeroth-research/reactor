@@ -272,7 +272,7 @@ def atom_to_lean_fbk_bridge(
         "theorem start_maps (s : CtrlNative) :",
         "    RM.toTS.start s → Definition.INIT (toSlots s) = true := by",
         "  intro hs",
-        "  simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_init] at hs",
+        "  simp only [RM, ReactiveTS.toTS, ReactiveTS.TS_init] at hs",
         # The `rfl` pattern substitutes `s := init l.2` rather than rewriting
         # under an equation that stays in scope: the arms below reason from
         # the hypotheses, and `init l.2 = s` left in context is a rewrite
@@ -302,7 +302,7 @@ def atom_to_lean_fbk_bridge(
         "theorem step_maps (s : CtrlNative) (l : " + extl_native + ") (s' : CtrlNative) :",
         "    RM.toTS.Tr s l s' → Definition.TRANS (toSlots s) (toSlots s') = true := by",
         "  intro hstep",
-        "  simp only [RM, ReactiveModule.toTS, ReactiveModule.TS_update] at hstep",
+        "  simp only [RM, ReactiveTS.toTS, ReactiveTS.TS_update] at hstep",
         "  rw [← hstep.2]",
         # `effect_k_fn` is unfolded only when the module has inputs, and it
         # has to be: `bridge_k` is then not a rewrite `simp` can apply,

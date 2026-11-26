@@ -136,12 +136,11 @@ def test_matrix_module_uses_matvecaffine():
     m = _make_matrix_module()
     lean = ModuleToLean4(m).to_lean()
 
-    # Linear is emitted in the reflected form over list literals: matVecAffine
-    # on the native path, Box.linear on the circuit path — neither uses the
-    # (unreduced) affineLinear/MatMul the prover would have to expand.
+    # Linear is emitted in the reflected form over list literals,
+    # matVecAffine, not as the (unreduced) affineLinear/MatMul the prover
+    # would have to expand.
     assert "affineLinear" not in lean
     assert "matVecAffine" in lean
-    assert "Box.linear" in lean
     assert "[[(0 : Int), (0 : Int)], [(1 : Int), (0 : Int)], [(0 : Int), (1 : Int)]]" in lean  # A of init, as a list literal
 
 
@@ -217,7 +216,7 @@ def test_certificate_bool_has_rm():
     """`RM` names no type: Lean reads them off the definitions it is built
     from, which carry the module's."""
     cert = _cert_for(_make_twobitcounter)
-    assert "} : ReactiveModule _ _)" in cert
+    assert "} : ReactiveTS _ _)" in cert
     assert "(Matrix (Fin 1) (Fin 1) Bool)" in cert
     assert "(Matrix (Fin 1) (Fin 1) Bool) × (Matrix (Fin 1) (Fin 1) Bool)" in cert
 
@@ -247,7 +246,7 @@ def test_data_lean_has_sorry_when_no_property():
 
 def test_certificate_matrix_has_rm():
     cert = _cert_for(_make_matrix_module)
-    assert "} : ReactiveModule _ _)" in cert
+    assert "} : ReactiveTS _ _)" in cert
     assert "Matrix (Fin 2) (Fin 1) Int" in cert
     assert "Matrix (Fin 3) (Fin 1) Int" in cert
 
@@ -534,19 +533,15 @@ def test_unbound_block_output_raises():
 
 @pytest.mark.parametrize("mod", ["m_countdown", "m_argmax"])
 def test_an_equivalence_theorem_alone_is_the_one_its_encoding_prints(mod):
-    """`to_lean_equiv_theorems` and `to_lean_scalar_equiv` read what their
-    encoding computed (layer names, argmax variants). Called first, on a
-    fresh `ModuleToLean4`, they print what the full producer prints rather
-    than silently dropping the theorems or the argmax lemmas."""
+    """`to_lean_scalar_equiv` reads what its encoding computed (argmax
+    variants). Called first, on a fresh `ModuleToLean4`, it prints what the
+    full producer prints rather than silently dropping the argmax
+    lemmas."""
     from reactor_lean.codegen.encodings import ModuleToLean4
     from reactor_lean.inputs.python import load_module
     from testdata import MODS
 
     module = load_module(MODS / f"{mod}.py")
-
-    circ_alone = ModuleToLean4(module).to_lean_equiv_theorems()
-    assert "init_circ_eq" in circ_alone
-    assert ModuleToLean4(module).to_lean_circ().endswith(circ_alone)
 
     scalar_alone = ModuleToLean4(module).to_lean_scalar_equiv()
     assert ModuleToLean4(module).to_lean_scalar().endswith(scalar_alone)

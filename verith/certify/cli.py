@@ -100,12 +100,10 @@ examples:
 """
 
 
-# The encodings a `certify` project carries: every one but the circuit
-# encoding, which neither the certificate nor any route reads (`reads` on a
+# The encodings a `certify` project carries: every one (`reads` on a
 # route's row; fbk-proveit's bridge imports the scalar one). `reactor`'s
 # `--encodings`, fixed: `certify` has no such flag.
-CERTIFY_ENCODINGS: tuple[str, ...] = tuple(
-    n for n in ENCODING_NAMES if n != "circuit")
+CERTIFY_ENCODINGS: tuple[str, ...] = ENCODING_NAMES
 
 
 @dataclass

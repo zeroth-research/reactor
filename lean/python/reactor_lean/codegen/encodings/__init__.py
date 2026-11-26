@@ -1,7 +1,7 @@
 """The module's Lean encodings: ``ModuleToLean4``, one submodule per encoding.
 
-`functional`, `circuit`, `scalar` and `relational` (the matrix and the
-scalar relational ones) are the encodings; `skeleton` is the shape every
+`functional`, `scalar` and `relational` (the matrix and the scalar
+relational ones) are the encodings; `skeleton` is the shape every
 relational encoding has, and `common` what the scalar ones share.
 """
 
@@ -11,10 +11,6 @@ from reactor_lean.codegen.context import LeanContext
 from reactor import Module
 
 from reactor_lean.codegen.encodings.functional import atom_to_lean_functional, constants_block
-from reactor_lean.codegen.encodings.circuit import (
-    atom_to_lean_circuit as _atom_to_lean_circuit,
-    to_lean_equiv_theorems as _to_lean_equiv_theorems,
-)
 from reactor_lean.codegen.encodings.scalar import (
     atom_to_lean_scalar as _atom_to_lean_scalar,
     to_lean_scalar_equiv as _to_lean_scalar_equiv,
@@ -32,17 +28,12 @@ class ModuleToLean4:
     Accepts a Module for convenience; in that case builds a fresh context.
 
     Every method stands alone: what an equivalence theorem needs of its
-    encoding (the circuit's layer names, the scalar encoding's argmax
-    variants) is computed once, by whichever method asks first.
+    encoding (the scalar encoding's argmax variants) is computed once, by
+    whichever method asks first.
     """
 
     def __init__(self, src: "LeanContext | Module"):
         self.ctx = src if isinstance(src, LeanContext) else LeanContext(src)
-
-    @cached_property
-    def _circuit(self) -> "tuple[str, list[str], list[str]]":
-        """The circuit encoding, and its init and update layer names."""
-        return _atom_to_lean_circuit(self.ctx)
 
     @cached_property
     def _scalar(self) -> "tuple[str, list[tuple[str, int]]]":
@@ -61,22 +52,6 @@ class ModuleToLean4:
         """Generate the functional init/update definitions (plus constants)."""
         return "{}\n\n{}".format(
             constants_block(self.ctx), atom_to_lean_functional(self.ctx)
-        )
-
-    # ------------------------------------------------------------------
-    # Circuit encoding
-    # ------------------------------------------------------------------
-
-    def to_lean_equiv_theorems(self) -> str:
-        """Generate theorems proving circuit ≡ functional."""
-        _, init_names, update_names = self._circuit
-        return _to_lean_equiv_theorems(self.ctx, init_names, update_names)
-
-    def to_lean_circ(self) -> str:
-        """The module as a combinational circuit, and circuit ≡ functional."""
-        return "{}\n\n{}".format(
-            self._circuit[0],
-            self.to_lean_equiv_theorems(),
         )
 
     # ------------------------------------------------------------------
@@ -112,21 +87,16 @@ class ModuleToLean4:
     # Combined output
     # ------------------------------------------------------------------
 
-    def to_lean(
-        self, circuit: bool = True, scalar: bool = True, rel: bool = True
-    ) -> str:
+    def to_lean(self, scalar: bool = True, rel: bool = True) -> str:
         """Return all enabled encodings joined by blank lines.
 
-        ``circuit=True`` appends the circuit (Box algebra) encoding and its
-        equivalence theorems.  ``scalar=True`` appends the scalar namespace
+        ``scalar=True`` appends the scalar namespace
         (``Scalar.init``/``update``, ``unpack_*``, ``pack``) and the
         composition theorems.  ``rel=True`` appends the relational namespace
         (``ScalarRel.effect_i``, ``ScalarRel.R_i``, ``ScalarRel.TransRel``, ``ScalarRel.InitCond``).
         All default to True; pass ``False`` to omit.
         """
         parts = [self.to_lean_functional()]
-        if circuit:
-            parts.append(self.to_lean_circ())
         if scalar:
             parts.append(self.to_lean_scalar())
         if rel:

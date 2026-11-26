@@ -12,5 +12,5 @@ FUNCTIONAL = "functional"
 
 # In the table's order.
 ENCODING_NAMES: tuple[str, ...] = (
-    FUNCTIONAL, "circuit", "relational", "scalar", "scalar-relational",
+    FUNCTIONAL, "relational", "scalar", "scalar-relational",
 )

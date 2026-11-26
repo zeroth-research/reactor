@@ -312,7 +312,7 @@ def _lean_shown(wire, element: str) -> str:
 def lean_script(module, rounds: list, ns: str) -> "tuple[str, dict[str, str]]":
     """Lean that `#eval`s `module`'s functional encoding on `rounds`, and
     the line each `#eval` should print. The text imports nothing: a file
-    of several states `import Relational.Circ` once, above them all.
+    of several states `import Relational.Mat` once, above them all.
 
     Each round is a `def` in namespace `ns` -- `init` at the round's awaited
     inputs, or `update` at the reference's state before it -- and one

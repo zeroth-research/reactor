@@ -1,7 +1,7 @@
 """The op table: every op covered, every gap named.
 
 `reactor_lean/lowering/ops.py` holds one row per op and one column per backend
-(`mat`, `scalar`, `box`, `smt`). These tests are the other half of that: they
+(`mat`, `scalar`, `smt`). These tests are the other half of that: they
 check the table against what the namespaces of `reactor.tensor` actually
 expose, in both directions.
 
@@ -14,7 +14,7 @@ backend: a module using one passed `--pre-check` and `--infer ai-cegis`, then
 failed at project generation.
 
 So: an op added to a theory fails `test_every_op_has_a_row` until someone
-writes its row, and writing that row means saying what all four backends do
+writes its row, and writing that row means saying what all three backends do
 with it — an emitter, or the reason there is none.
 """
 
@@ -34,7 +34,6 @@ from reactor_lean.lowering.ops import (
     Op,
     Unsupported,
     ViaMat,
-    box_for,
     cell_of,
     mat_emitter,
     op_for,
@@ -131,25 +130,17 @@ def test_every_cell_is_an_emitter_or_says_why(column):
             assert cell.site.strip(), f"{op.name}.{column}: empty site"
         elif isinstance(cell, ViaMat):
             assert cell.note.strip(), f"{op.name}.{column}: empty note"
-        elif column == "box":
-            assert isinstance(cell, str) and cell.startswith("Box.")
         else:
             assert callable(cell), f"{op.name}.{column}: not an emitter"
 
 
-def test_the_lean_columns_are_all_emitters_or_all_refusals():
+def test_the_lean_columns_are_both_emitters_or_both_refusals():
     """A module is refused before any of its encodings is generated
-    (`lean_gaps`) only if no row has one Lean column refusing while another
-    writes: otherwise the circuit encoding would fail half way through a
-    project the functional one was generated for. `All` alone has no Box
-    where it has the other forms: the circuit encoding is optional, and of a
-    module with an `All` it is a file saying why."""
+    (`lean_gaps`) only if no row has one Lean column refusing while the
+    other writes: otherwise an encoding would fail half way through a
+    project the functional one was generated for."""
     for op in OPS:
-        lean = [cell_of(op, c) for c in ("mat", "scalar", "box")]
-        refusals = [isinstance(c, Unsupported) for c in lean]
-        if op.name == "All":
-            assert refusals == [False, False, True]
-            continue
+        refusals = [isinstance(cell_of(op, c), Unsupported) for c in _LEAN]
         assert all(refusals) or not any(refusals), f"{op.theories} {op.name}"
 
 
@@ -176,7 +167,7 @@ def test_the_smt_column_is_emitters_and_refusals_only():
 #  The gaps, pinned
 # ══════════════════════════════════════════════════════════════════════
 
-_LEAN = ("mat", "scalar", "box")
+_LEAN = ("mat", "scalar")
 
 # Every (theory, op, column) with no emitter. Closing one of these is a line
 # removed here; opening a new one is a line added, which is the point —
@@ -189,10 +180,8 @@ _KNOWN_GAPS = {
     # `Xor` reaches Lean only through the NA route, which prints the cvc5
     # term rather than using a Lean emitter.
     *(("bool", "Xor", c) for c in _LEAN),
-    # No `Box` in `Relational.Circ`: the pointwise `Abs`, and the reduction
-    # `All`, which has the other two Lean forms.
+    # The pointwise `Abs`: nothing has asked for its Lean form.
     *((t, "Abs", c) for t in ("int", "real") for c in _LEAN),
-    ("bool", "All", "box"),
     # Encoded for cvc5, never for Lean.
     *(("word", name, c)
       for name in ("Concat", "Extract", "Nand", "Nor", "Repeat", "RotateLeft",
@@ -204,8 +193,8 @@ _KNOWN_GAPS = {
     *(("word.unsigned", name, c)
       for name in ("Div", "Extend", "Ge", "Gt", "Le", "Lt", "Shr")
       for c in _LEAN),
-    # The transcendental functions of reals: no `Box` in `Relational.Circ`,
-    # and cvc5 has no logarithm.
+    # The transcendental functions of reals: nothing has asked for their
+    # Lean forms, and cvc5 has no logarithm.
     *(("real", name, c)
       for name in ("Sqrt", "Exp", "Log", "Sin", "Cos", "Tan", "Asin", "Acos",
                    "Atan", "Atan2", "Sinh", "Cosh", "Tanh")
@@ -315,9 +304,7 @@ def test_an_op_only_cvc5_has_still_encodes_for_cvc5():
     assert "bvult" in str(state[1])
 
 
-@pytest.mark.parametrize(
-    "encoding", ["to_lean_functional", "to_lean_scalar", "to_lean_circ"]
-)
+@pytest.mark.parametrize("encoding", ["to_lean_functional", "to_lean_scalar"])
 def test_a_missing_lean_form_is_refused_with_the_recorded_reason(encoding):
     """The cell says whether the op was forgotten, is unimplementable, or is
     handled somewhere else, and that reason is what reaches the caller."""
@@ -368,32 +355,30 @@ def test_an_unreachable_term_is_not_a_gap():
     assert lean_gaps(LeanContext(_havoc_module(read_it=False))) == []
 
 
-def _cells(mat, scalar, box) -> ops.Op:
+def _cells(mat, scalar) -> ops.Op:
     """A row of the shape under test. No theory claims it, so nothing can
     reach it through `op_for`; `gap_of` is asked about it directly."""
-    return ops.Op("Fake", (), mat=mat, scalar=scalar, box=box,
+    return ops.Op("Fake", (), mat=mat, scalar=scalar,
                   smt=ops.Unsupported("not the question here"))
 
 
-def test_a_gap_is_asked_of_every_lean_column_not_only_the_matrix_one():
-    """Every row with no matrix form has no other Lean form either, so
-    reading `mat` alone gets the right answer for all of them. That is a
-    fact about the table's contents, and this check refuses a *module* on
-    the strength of it -- so the day a row has a `Box` and no matrix form,
-    reading `mat` alone would refuse a module the circuit encoding builds.
+def test_a_gap_is_asked_of_both_lean_columns_not_only_the_matrix_one():
+    """Every row with no matrix form has no scalar form either, so reading
+    `mat` alone gets the right answer for all of them. That is a fact about
+    the table's contents, and this check refuses a *module* on the strength
+    of it.
     """
     unsupported = ops.Unsupported("no matrix form")
     see_mat = ops.Unsupported("see the matrix column")
 
-    assert ops.gap_of(_cells(unsupported, see_mat, see_mat)) == "no matrix form"
-    assert ops.gap_of(_cells(unsupported, see_mat, "Box.fake")) is None
-    assert ops.gap_of(_cells(unsupported, lambda a: a[0], see_mat)) is None
+    assert ops.gap_of(_cells(unsupported, see_mat)) == "no matrix form"
+    assert ops.gap_of(_cells(unsupported, lambda a: a[0])) is None
     # `ViaMat` is served by the matrix form, which is the gap -- so it is
     # not an escape from one, unlike `Inline`, whose branch is reached
     # before the table is asked at all.
-    assert ops.gap_of(_cells(unsupported, ops.ViaMat("folds to 1x1"), see_mat)) \
+    assert ops.gap_of(_cells(unsupported, ops.ViaMat("folds to 1x1"))) \
         == "no matrix form"
-    assert ops.gap_of(_cells(unsupported, ops.Inline("codegen.terms._special"), see_mat)) is None
+    assert ops.gap_of(_cells(unsupported, ops.Inline("codegen.terms._special"))) is None
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -407,7 +392,6 @@ def test_ne_is_dispatchable():
     assert itype_name(op) == "Ne"
     assert callable(mat_emitter(op))
     assert callable(scalar_emitter(op))
-    assert box_for(op) == "Box.neq"
 
 
 def _make_ne_module():
@@ -439,11 +423,6 @@ def test_ne_emits_in_scalar_encoding():
     assert "≠" in lean, "Ne did not reach the scalar encoding"
 
 
-def test_ne_emits_in_circuit_encoding():
-    lean = ModuleToLean4(_make_ne_module()).to_lean_circ()
-    assert "Box.neq" in lean, "Ne did not reach the circuit (Box) encoding"
-
-
 # ──────────────────────────────────────────────────────────────
 # Words: BitVec operators for the bitwise ops, Bool for the rest
 # ──────────────────────────────────────────────────────────────
@@ -461,7 +440,6 @@ def test_word_bitwise_ops_get_their_own_row(name):
     assert row is not _row("bool", name)
     for column in _LEAN:
         assert not isinstance(cell_of(row, column), Unsupported)
-    assert box_for(getattr(tensor.word, name)(8, S)).startswith("Box.bv")
 
 
 @pytest.mark.parametrize("name", ["Ite", "Eq", "Ne"])
@@ -503,34 +481,17 @@ def test_word_module_emits_bitvec_operators_not_boolean_ones():
         assert boolean not in lean, f"Boolean form {boolean!r} emitted for words"
 
 
-def test_word_module_emits_bitvec_boxes():
-    lean = ModuleToLean4(_word_bits_module()).to_lean_circ()
-    assert "Box.bvNot" in lean and "Box.bvAnd" in lean
-    # Only the composed layers matter: `_LAYER_SIMP` lists every Box name as a
-    # simp lemma regardless of which ones this module uses.
-    layers = [l for l in lean.splitlines() if "⊗" in l or ("Box." in l and ":=" in l)]
-    assert layers, "no composed layers emitted"
-    for line in layers:
-        for boolean in ("Box.not", "Box.and", "Box.or"):
-            assert f"{boolean} " not in line and not line.rstrip().endswith(boolean), (
-                f"Boolean box {boolean} emitted for words in: {line.strip()[:90]}"
-            )
-
-
 @pytest.mark.parametrize(
-    "op,box",
-    [(tensor.word.unsigned.Rem(8, S), "Box.bvUMod"), (tensor.word.signed.Mod(8, S), "Box.bvSMod")],
+    "op", [tensor.word.unsigned.Rem(8, S), tensor.word.signed.Mod(8, S)],
 )
-def test_word_modulo_is_dispatchable(op, box):
+def test_word_modulo_is_dispatchable(op):
     """Words have an unsigned remainder and a signed modulo, each with a Lean
     form; `int`'s Euclidean `Mod` is a row of its own."""
     assert callable(mat_emitter(op)) and callable(scalar_emitter(op))
-    assert box_for(op) == box
     assert _row("int", "Mod") is not op_for(op)
 
 
 def test_add_is_one_row_for_every_number():
-    assert box_for(tensor.word.Add(8, S)) == "Box.add"
     assert _row("word", "Add") is _row("int", "Add") is _row("real", "Add")
 
 
@@ -597,11 +558,9 @@ def _ite_module(n: int, *, by_all: bool = False):
 
 @pytest.mark.parametrize("n", [1, 2])
 def test_an_ite_picks_whole_matrices_by_a_1x1_condition(n):
-    """The form, and the `Box`, of an `Ite`, whatever the shape of its
-    branches."""
+    """The form of an `Ite`, whatever the shape of its branches."""
     m2l = ModuleToLean4(_ite_module(n))
     assert " 0 0 then " in m2l.to_lean_functional()
-    assert "Box.ite" in m2l.to_lean_circ()
 
 
 def test_all_reduces_a_comparison_of_vectors_to_the_condition_of_an_ite():
@@ -611,21 +570,6 @@ def test_all_reduces_a_comparison_of_vectors_to_the_condition_of_an_ite():
     assert "(decide (" in lean and " i j) < (" in lean
     assert "decide (∀ p : _ × _, " in lean
     assert " 0 0 then " in lean
-
-
-def test_all_has_no_box():
-    """Of the booleans of a variable, so that no comparison is refused first."""
-    b, holds = Var(Bool([2, 1])), Var(Bool([1, 1]))
-    init = [Term(tensor.bool.Const(torch.zeros(s, dtype=torch.bool)), [X(v)])
-            for v, s in ((b, (2, 1)), (holds, (1, 1)))]
-    update = [
-        Term(Skip(Bool([2, 1])), [X(b)], [b]),
-        Term(tensor.bool.All([2, 1]), [X(holds)], [b]),
-    ]
-    m2l = ModuleToLean4(Module.sequential([b, holds], init, update))
-    assert "decide (∀ p : _ × _, " in m2l.to_lean_functional()
-    with pytest.raises(ValueError, match=r"All \(Box\) — no `Box` in `Relational.Circ`"):
-        m2l.to_lean_circ()
 
 
 def test_a_comparison_wider_than_1x1_compares_every_entry():
@@ -650,7 +594,6 @@ def test_scale_is_written_as_the_affine_map_diag_c():
     update = [Term(tensor.int.Scale(torch.tensor([[2], [3]])), [X(x)], [x])]
     lean = ModuleToLean4(Module.sequential([x], init, update)).to_lean()
     assert "matVecAffine 2 ([[(2 : Int), (0 : Int)], [(0 : Int), (3 : Int)]]" in lean
-    assert "Box.linear 2" in lean
 
 
 def test_scale_by_rows_of_two_numbers_has_no_lean_form():

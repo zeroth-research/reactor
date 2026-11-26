@@ -105,10 +105,10 @@ def lean_outputs():
 
 
 @pytest.fixture(scope="session")
-def relational_circ() -> None:
-    """`Relational.Circ` built, once a session: what the files the tests
+def relational_mat() -> None:
+    """`Relational.Mat` built, once a session: what the files the tests
     compile with `lean_outputs` import."""
-    built = _lake_build("Relational.Circ", timeout=1800)
+    built = _lake_build("Relational.Mat", timeout=1800)
     assert built.returncode == 0, built.stdout[-2000:] + built.stderr[-2000:]
 
 
@@ -380,7 +380,7 @@ def generate_lean_files() -> None:
         cert = render(module, Claim(prp=prop, kind="safety"))
         (CERTS / f"Bridge{name}.lean").write_text(
             "\n".join([
-                "import Relational.Basic", "import Relational.Circ", "import Relational.Mat",
+                "import Relational.ReactiveTS", "import Relational.ProofRules",
                 "import Smt", "", LINTERS_OFF, "",
                 t.to_lean_functional(), "",
                 t.to_lean_scalar(), "",

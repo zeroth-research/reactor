@@ -69,14 +69,14 @@ LINTERS_OFF = "\n".join(
 
 
 def rm_def(extl_type: str, ctrl_type: str, noncomputable: bool = False) -> str:
-    """`RM`, the module as a `ReactiveModule` over the functional
+    """`RM`, the module as a `ReactiveTS` over the functional
     encoding's `init`/`update` and the certificate's preconditions, with
     its types spelled out: for a proof about the module that prints its own
     in its own namespace. The certificate's `Module.lean` defines the same
     one with its types left to Lean, so that its text names none of the
     module's."""
     return "\n".join([
-        f"{'noncomputable ' if noncomputable else ''}def RM : ReactiveModule "
+        f"{'noncomputable ' if noncomputable else ''}def RM : ReactiveTS "
         f"({extl_type}) ({ctrl_type}) := {{",
         "    init := fun e => init e.2",
         "    update := fun x e => update x e.1 e.2",

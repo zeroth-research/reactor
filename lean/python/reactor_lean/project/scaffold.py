@@ -61,10 +61,6 @@ class Encoding:
     needs: tuple[str, ...]      # suffixes of the sibling encodings it imports
     producer: Callable[[ModuleToLean4], str]    # prints it
     cert_file: bool = True      # also written by the `--cert-file` route
-    # A module may have no form in it: the file then says why, in place of
-    # its definitions, and the project builds without it. Only an encoding
-    # no certificate reads can be optional.
-    optional: bool = False
     # Written for a module of several atoms too; the rest are written over
     # the module's one atom (`LeanContext.atom`).
     composes_atoms: bool = False
@@ -74,12 +70,10 @@ ENCODINGS: tuple[Encoding, ...] = (
     # The functional encoding is the base every other row imports. The
     # `--cert-file` route gets its own copy inlined into the standalone
     # certificate by `generate_standalone_cert_lean`, so it is not written
-    # again there; `Circ` has no consumer on that route at all.
-    Encoding(FUNCTIONAL, "", "Functional encoding", "Relational.Circ", (),
+    # again there.
+    Encoding(FUNCTIONAL, "", "Functional encoding", "Relational.Mat", (),
              ModuleToLean4.to_lean_functional, cert_file=False,
              composes_atoms=True),
-    Encoding("circuit", "Circ", "Circuit encoding", "Relational.Circ", ("",),
-             ModuleToLean4.to_lean_circ, cert_file=False, optional=True),
     Encoding("relational", "Rel", "Matrix-domain relational encoding",
              "Relational.Basic", ("",), ModuleToLean4.to_lean_mat_rel),
     Encoding("scalar", "Scalar", "Scalar encoding", "Relational.Basic", ("",),
@@ -130,21 +124,13 @@ def selected_encodings(
 def write_encoding(
     enc: Encoding, m2l: "ModuleToLean4", layout: Layout, module_name: str
 ) -> Path:
-    """Print one encoding and write it where `layout` says it goes. An
-    optional one the module has no form in is written with the reason, as a
-    comment, in place of its definitions."""
+    """Print one encoding and write it where `layout` says it goes."""
     imports = [enc.core] + [layout.lean_module(s) for s in enc.needs]
-    try:
-        body = enc.producer(m2l)
-    except Refused as e:
-        if not enc.optional:
-            raise
-        body = f"-- No {enc.title.lower()} of this module: {e}"
     path = layout.path(enc.suffix)
     path.write_text(
         f"/- {enc.title} of reactive module `{module_name}` -/\n"
         + "".join(f"import {i}\n" for i in imports)
-        + f"\n{LINTERS_OFF}\n\n{body}\n"
+        + f"\n{LINTERS_OFF}\n\n{enc.producer(m2l)}\n"
     )
     return path
 

@@ -32,7 +32,7 @@ macro "simp_defs" : tactic =>
 
 macro "mat_collapse" : tactic =>
   `(tactic| simp only [Matrix_1_1_lt_iff, Matrix_1_1_le_iff, Matrix_1_1_eq_iff, Matrix_1_1_ne_iff,
-                        ite_fun_apply, decide_eq_true_eq, Bool.or_eq_true,
+                        ite_apply, decide_eq_true_eq, Bool.or_eq_true,
                         Bool.and_eq_true, Bool.not_eq_true'] at *)
 
 -- ──────────────────────────────────────────────────────────────

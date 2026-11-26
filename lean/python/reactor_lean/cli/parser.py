@@ -96,8 +96,7 @@ def add_encodings(parser: argparse.ArgumentParser) -> None:
             "ones it imports with it (scalar-relational, scalar). A module "
             f"of several atoms has the {FUNCTIONAL} encoding alone, so it "
             f"needs `--encodings {FUNCTIONAL}`. With --cert-file the "
-            f"{FUNCTIONAL} encoding is inlined in the certificate and there "
-            "is no circuit one."
+            f"{FUNCTIONAL} encoding is inlined in the certificate."
         ),
     )
 

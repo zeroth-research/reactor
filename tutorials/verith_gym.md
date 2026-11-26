@@ -123,11 +123,10 @@ This prints the extracted module (wires and SSA terms) and creates
 ```
 out/ChainCert/
 ├── lakefile.toml, lean-toolchain    # Lean package pinned to a toolchain
-├── Core/                            # library: matrices, Box, LTL, ReactiveModule
+├── Core/                            # library: matrices, LTL, ReactiveTS
 ├── System.lean                      # root import
 ├── System/
 │   ├── System.lean                  # functional encoding of init/update
-│   ├── Circ.lean                    # circuit (Box) encoding + equivalence
 │   ├── Scalar.lean, ScalarRel.lean  # scalar encoding + relational form
 │   └── Rel.lean, FBK.lean           # matrix-domain relational encodings
 ├── Certificate/
@@ -232,12 +231,8 @@ an unsolved goal — open the file in a Lean editor and finish the proof by
 hand, or refine the invariant and re-run `reactor`.
 
 `lake build` (no target) additionally builds the auxiliary encodings
-(`System/Circ.lean`, `System/ScalarRel.lean`, …). These are not needed for the
-certificate, and currently do not compile for gym modules that use `argmax`
-over real-valued wires: the circuit encoding types `argmax_1d` as
-integer-valued while the functional encoding treats it as real. Until those
-translator bugs are fixed, build the
-`Certificate` target.
+(`System/Rel.lean`, `System/ScalarRel.lean`, …). These are not needed for the
+certificate; build the `Certificate` target to check the proof alone.
 
 ## Step 6 — An integer-only environment
 
@@ -245,8 +240,7 @@ The chain example above lives in real arithmetic because of two encoding
 rules: a `Discrete` *action* space always becomes a one-hot real vector
 (read back with `argmax`), and rewards default to real-valued. Real-typed
 modules work, but they cost you: every Lean definition becomes
-`noncomputable`, the auxiliary circuit encoding currently rejects `argmax`,
-and the proofs lean on `linarith` instead of the more robust `omega`.
+`noncomputable`, and the proofs lean on `linarith` instead of the more robust `omega`.
 
 If the dynamics are genuinely discrete, design the environment so the
 extraction stays in integer arithmetic:

@@ -773,7 +773,7 @@ def plan_for(ctx, pred_text: str, facts=None, hints=None,
     # tracks the term count rather than the state width.
     max_rec_depth = max(4096, 1500 * f.n_terms)
     # 2000000, which is what every other generated file carries
-    # (`codegen/encodings/scalar.py`, `codegen/encodings/circuit.py`).
+    # (`codegen/encodings/scalar.py`).
     # This file used to start at 400000 and
     # climb to 2M wherever the shape was known to be slow -- finite state, a
     # bitvector, more than 8 slots or 32 terms, a branchy Real predicate,

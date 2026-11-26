@@ -26,7 +26,7 @@ CASES = [
     (FIXTURES, "svcomp_twovars"),
 ]
 
-ENCODINGS = ["to_lean_functional", "to_lean_scalar", "to_lean_circ", "to_lean_rel"]
+ENCODINGS = ["to_lean_functional", "to_lean_scalar", "to_lean_rel"]
 
 _SCRIPT = """
 import hashlib, importlib, json, sys

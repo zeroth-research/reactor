@@ -1,6 +1,7 @@
 {#- The proofs of the obligations: see `_proofs.lean.j2`. What the prover's
     scripts need is imported after what the statements need. -#}
-import Relational.Basic
+import Relational.ReactiveTS
+import Relational.ProofRules
 import Certificate.Module
 {% for module in proofs.imports %}
 import {{ module }}

@@ -1,6 +1,5 @@
 import Mathlib.Algebra.BigOperators.Fin
-import Relational.Basic
-import Relational.Circ
+import Relational.ProofRules
 import ZerothHammer
 
 /-!
@@ -42,7 +41,7 @@ def cd_rank   : Matrix (Fin 1) (Fin 1) Int → Nat  := fun s => (if s 0 0 = 0 th
 
 macro "cd_simp_mat" : tactic =>
   `(tactic| simp [cd_init, cd_update, cd_inv, cd_P, cd_rank,
-      Bool.or_eq_true, decide_eq_true_eq, ite_fun_apply, Pi.sub_apply,
+      Bool.or_eq_true, decide_eq_true_eq, ite_apply, Pi.sub_apply,
       Fin.isValue, Matrix_1_1_le_iff, Matrix_1_1_eq_iff])
 
 macro "cd_simp_defs" : tactic =>
@@ -78,7 +77,7 @@ def col_rank : Matrix (Fin 1) (Fin 1) Int → Nat  := fun s => (if s 0 0 = 1 the
 
 macro "col_simp_mat" : tactic =>
   `(tactic| simp [col_update, col_inv, col_P, col_rank,
-      Bool.or_eq_true, decide_eq_true_eq, ite_fun_apply, Pi.sub_apply, Fin.isValue])
+      Bool.or_eq_true, decide_eq_true_eq, ite_apply, Pi.sub_apply, Fin.isValue])
 
 macro "col_simp_defs" : tactic =>
   `(tactic| (simp only [col_update, col_inv, col_P, col_rank] at *; try dsimp at *))
@@ -109,7 +108,8 @@ def tv_rank : Matrix (Fin 1) (Fin 1) Int × Matrix (Fin 1) (Fin 1) Int → Nat  
 
 macro "tv_simp_mat" : tactic =>
   `(tactic| simp [tv_update, tv_inv, tv_P, tv_rank,
-      Bool.or_eq_true, decide_eq_true_eq, ite_fun_apply, Pi.add_apply, Fin.isValue])
+      Bool.or_eq_true, decide_eq_true_eq, ite_apply, apply_ite Prod.fst, apply_ite Prod.snd,
+      Pi.add_apply, Fin.isValue])
 
 macro "tv_simp_defs" : tactic =>
   `(tactic| (simp only [tv_update, tv_inv, tv_P, tv_rank] at *; try dsimp at *))
@@ -177,10 +177,9 @@ theorem precontract_eq_affineLinear (x : Matrix (Fin 3) (Fin 1) Int) :
     simp [affineLinear, ceqA, ceqb, Fin.sum_univ_succ, Fin.sum_univ_zero] <;> ring
 
 -- Verbatim codegen output for the LIA.Linear matrix module: the reflected form
--- over list literals — matVecAffine on the native path, Box.linear on the Circ
--- path. Compilation regression guard for both emitted forms.
+-- over list literals, matVecAffine. Compilation regression guard for the
+-- emitted form.
 namespace GenLinearCompileCheck
-open Box
 
 @[simp] def init (extl_n: (Matrix (Fin 2) (Fin 1) Int)) : (Matrix (Fin 3) (Fin 1) Int) :=
   let x0 : (Matrix (Fin 3) (Fin 1) Int) := (matVecAffine 3 ([[0, 0], [1, 0], [0, 1]] : List (List Int)) ([0, 0, 0] : List Int) extl_n)
@@ -189,12 +188,6 @@ open Box
 @[simp] def update (ctrl: (Matrix (Fin 3) (Fin 1) Int)) (extl_l: (Matrix (Fin 2) (Fin 1) Int)) (extl_n: (Matrix (Fin 2) (Fin 1) Int)) : (Matrix (Fin 3) (Fin 1) Int) :=
   let x0 : (Matrix (Fin 3) (Fin 1) Int) := (matVecAffine 3 ([[1, 0, 0], [0, 1, 0], [0, 0, 1]] : List (List Int)) ([1, 0, 0] : List Int) ctrl)
   x0
-
-@[simp] def init_l1 : Box [(Matrix (Fin 2) (Fin 1) Int)] [(Matrix (Fin 3) (Fin 1) Int)] :=
-  (Box.linear 3 ([[0, 0], [1, 0], [0, 1]] : List (List Int)) ([0, 0, 0] : List Int))
-
-@[simp] def update_l2 : Box [(Matrix (Fin 3) (Fin 1) Int)] [(Matrix (Fin 3) (Fin 1) Int)] :=
-  (Box.linear 3 ([[1, 0, 0], [0, 1, 0], [0, 0, 1]] : List (List Int)) ([1, 0, 0] : List Int))
 
 end GenLinearCompileCheck
 

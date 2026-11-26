@@ -177,8 +177,9 @@ def generate_data_lean(
 ) -> str:
     """Generate Certificate/Data.lean: init_pre, update_pre, inv, P, ranking.
 
-    Imports only ``Relational.Basic``.  ``Module.lean`` imports it, and
-    the proofs and the certificate through that.
+    Imports only ``Relational.ReactiveTS`` and ``Relational.ProofRules``.
+    ``Module.lean`` imports it, and the proofs and the certificate through
+    that.
 
     It sits under ``Certificate/`` rather than ``System/`` because that is what
     it is about: ``System/`` is the module, which is the same whatever is being

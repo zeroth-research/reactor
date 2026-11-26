@@ -55,16 +55,15 @@ written, `lean_gaps` refuses an operator with no Lean form.
 
 ```
 NAME/
-  System.lean, System/          the module in five encodings: functional,
-                                circuit, relational, scalar and
-                                scalar-relational, each tied to the
-                                functional one by equivalence theorems
-                                (`--encodings` selects which; a module
-                                of several atoms has the functional
-                                one alone)
+  System.lean, System/          the module in four encodings: functional,
+                                relational, scalar and scalar-relational,
+                                each tied to the functional one by
+                                equivalence theorems (`--encodings`
+                                selects which; a module of several atoms
+                                has the functional one alone)
   Certificate/Data.lean         the certificate: init_pre, update_pre, P,
                                 inv, ranking
-  Certificate/Module.lean       RM and lts, the module as a ReactiveModule and
+  Certificate/Module.lean       RM and lts, the module as a ReactiveTS and
                                 its transition system: fixed text
   Certificate/Proofs.lean       the obligations, each stated again and proved
                                 by `sorry`, for a prover to replace
@@ -83,7 +82,7 @@ directory of that repository.
 | Package | Library | Modules | Contents |
 |---------|---------|---------|----------|
 | `ReactLib` | `Spec` | `Spec.LTL` | LTL formulas and their semantics |
-| | `Relational` | `Relational.Mat`, `.Box`, `.Basic` | matrices, ReactiveModule, the proof rules (`rule_globally`, `rule_buchi`) |
+| | `Relational` | `Relational.Mat`, `.Basic`, `.ReactiveTS`, `.ProofRules` | matrices, transition systems, `ReactiveTS`, the proof rules (`rule_globally`, `rule_buchi`) |
 | `LeanAI` | `LeanAI` | `LeanAI.*` | the `ai_solve` tactic |
 
 By default they are git requires at `project/lakefile.py`'s
@@ -201,7 +200,7 @@ layer.
 | `core/` | The vocabulary every layer is written in, importing nothing of `reactor_lean`: `certificate` (`Claim`, `Certificate` as SMT-LIB, `LeanAnswer` for an answer that is Lean only), `errors` (`Refused`, the error a run is refused with), `options` (`Opt`, an option an input format declares), `encodings` (the encodings' names, as `--encodings` takes them) |
 | `lowering/` | What every backend reads of a module besides its terms: `sorts` (sorts and shapes of wires, and the Lean types they print as), `elements` (tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares), `values` (a constant as the exact number every backend states), `ops` (the op table: one row per theory variant, one column per backend) |
 | `artifacts/` | The project's `artifacts/`, what a run leaves for the next: `store` (`ArtifactStore`, `Artifact`) |
-| `codegen/` | The module as Lean text, never importing cvc5: `context` (`LeanContext`, what every encoding of one module shares), `literals` (constants as Lean text, `ConstantRegistry`), `terms` (term lists → functional `let`-binding bodies, and `lean_gaps`), `boxes` (term lists → `Box` circuit layers), `encodings/` (`ModuleToLean4` and one module per encoding: `functional`, `circuit`, `scalar`, `relational`; `skeleton`, the shape every relational encoding has, and `common`, what the scalar ones share) |
+| `codegen/` | The module as Lean text, never importing cvc5: `context` (`LeanContext`, what every encoding of one module shares), `literals` (constants as Lean text, `ConstantRegistry`), `terms` (term lists → functional `let`-binding bodies, and `lean_gaps`), `encodings/` (`ModuleToLean4` and one module per encoding: `functional`, `scalar`, `relational`; `skeleton`, the shape every relational encoding has, and `common`, what the scalar ones share) |
 | `parse/` | Reading a predicate's text, never importing cvc5: `dsl` (the Python predicate syntax, walked over whichever terms a parser hands it), `sexpr` and `smtlib` (SMT-LIB into reactor's terms), `formula` (`Formula`, a predicate in reactor's terms), `native` (the native parser: `NativeParser`, `read_predicates`); `PARSERS` names the two a run picks from |
 | `smt/` | The module in cvc5, which the certificate's predicates are read against: `encode` (the encoder), `encoding` (`ModuleEncoding`, the run's one encoding, over `module.ModuleSMT`), `predicates` (`PredicateParser`), `queries` (`ModuleQueries`, the claim and certificate parsed, and `predicate_terms`), `terms` (walks over terms) |
 | `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `lake_cache` (the built packages it can share), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table), the certificate's files as the text it is handed |
@@ -308,40 +307,7 @@ atoms. An awaited input is read from `extl_n`, as in a module of one atom.
 
 ---
 
-## Encoding 2 — Circuit (`codegen/boxes.py`, `codegen/encodings/circuit.py`)
-
-The same computation is re-expressed as a `Box` (categorical wiring diagram)
-inside `namespace Circ`.  The translation:
-
-1. Builds a reversed dependency graph layer by layer.
-2. Emits swap/dup/delete layers to route wires into the right positions.
-3. Each operation becomes `Box.add`, `Box.lt`, etc. composed with `⊗` (par) and
-   `≫` (seq).
-
-`circuit.atom_to_lean_circuit` emits one `@[simp] def init_l0 ...`
-per layer and a composed `def init := init_l0 ≫ init_l1 ≫ ...`.
-
-**Equivalence theorems** (`to_lean_equiv_theorems`) prove that the circuit and
-functional encodings compute the same result:
-
-```lean
-theorem init_circ_eq : ∀ (extl_n : Unit),
-    Circ.init.fn ⟨extl_n, ()⟩ =
-    let r := init extl_n
-    (r.1, (r.2, ())) := by
-  intro extl_n
-  simp_circ [Circ.init, Box.seq]
-  simp_circ [Circ.init_l0]
-  ...
-  simp [init]
-```
-
-The helper macro `simp_circ` unfolds one layer name plus all Box/ValTuple
-plumbing lemmas.
-
----
-
-## Encoding 3 — Scalar (`codegen/terms.py`, `codegen/encodings/scalar.py`)
+## Encoding 2 — Scalar (`codegen/terms.py`, `codegen/encodings/scalar.py`)
 
 `translate_terms_scalar` is like `translate_terms_lean` but uses bare scalar types
 (`Bool`, `Int`, `Real`) instead of 1×1 matrices for all 1×1 wires:
@@ -404,18 +370,16 @@ The main entry point.  Accepts a `Module` or a pre-built `LeanContext`.
 | Method | Returns |
 |--------|---------|
 | `to_lean_functional()` | Constants block + `init`/`update` defs (`System/System.lean`) |
-| `to_lean_circ()` | Circuit namespace + equivalence theorems (`System/Circ.lean`) |
 | `to_lean_mat_rel()` | `namespace Rel`, the matrix-domain relational encoding (`System/Rel.lean`) |
 | `to_lean_scalar()` | `namespace Scalar` block + equivalence theorems (`System/Scalar.lean`) |
 | `to_lean_rel()` | `namespace ScalarRel`, the scalar-relational encoding (`System/ScalarRel.lean`) |
-| `to_lean(circuit=True, scalar=True, rel=True)` | Functional, then each enabled one of circuit, scalar and scalar-relational, joined (never `Rel`); used by tests |
-| `to_lean_equiv_theorems()` | `init_circ_eq` / `update_circ_eq` theorems |
+| `to_lean(scalar=True, rel=True)` | Functional, then each enabled one of scalar and scalar-relational, joined (never `Rel`); used by tests |
 | `to_lean_scalar_equiv()` | `init_scalar_eq` / `update_scalar_eq` theorems |
 
 Each wraps the function of its encoding's module that prints the bare
-block -- `atom_to_lean_functional`, `atom_to_lean_circuit`,
-`atom_to_lean_scalar`, `atom_to_lean_mat_rel`, `atom_to_lean_rel` -- each
-taking the `LeanContext`.
+block -- `atom_to_lean_functional`, `atom_to_lean_scalar`,
+`atom_to_lean_mat_rel`, `atom_to_lean_rel` -- each taking the
+`LeanContext`.
 
 The project writes one file per row of `project.scaffold.ENCODINGS` that
 `--encodings` selects (`selected_encodings`: the functional row always, and
@@ -453,7 +417,7 @@ files:
    (`«a-b»`); one that a keyword or a root name already uses is printed
    qualified (`Var.init s`).
 2. `Module.lean`: `def RM`, wiring `init`/`update` and the preconditions into
-   a `ReactiveModule`, and `def lts`, its transition system.
+   a `ReactiveTS`, and `def lts`, its transition system.
 3. `Proofs.lean`: `init_inv_proof`, `step_inv_proof` and `hrank_proof` (or
    `inv_imp_P_proof`), each obligation stated again and proved by
    `proofs.script(name)` -- `sorry`, unless a prover handed its scripts
@@ -485,7 +449,7 @@ its certificate is in `Certificate/Data.lean` and `Certificate/Proofs.lean`;
 `Certificate/Module.lean` is fixed text, and `Certificate/Certificate.lean` is
 fixed text, one per kind of property, so the two can be rewritten -- by
 `reactor`, by a prover or by hand -- without them. `RM` leaves its types to Lean
-(`({ ... } : ReactiveModule _ _)`), which reads them off `init_pre` and
+(`({ ... } : ReactiveTS _ _)`), which reads them off `init_pre` and
 `update`, so `Module.lean` names none of the module's. `Proofs.lean` states
 each obligation again, so a proof of it is complete in one file, and
 `Certificate.lean` takes it with `exact`, which checks the two statements
@@ -615,7 +579,6 @@ uv run reactor mymodule.py --buchi "(= (X @intf.0) 0)" --cert-file out/MyCert.le
   System.lean                 # root: imports the encodings
   System/
     System.lean               # functional encoding of init/update
-    Circ.lean                 # circuit encoding + equivalence theorems
     Rel.lean                  # relational encoding + equivalence theorems
     Scalar.lean               # scalar encoding + equivalence theorems
     ScalarRel.lean            # scalar-relational encoding + equivalence theorems
@@ -681,7 +644,7 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--invariant` | — | SMT-LIB 2 Bool invariant |
 | `--ranking` | — | SMT-LIB 2 Int ranking (`--buchi` only) |
 | `--cert-file` | — | Write standalone `.lean` file instead of full project |
-| `--encodings` | all | The encodings written, comma-separated, of `functional`, `circuit`, `relational`, `scalar`, `scalar-relational`; the functional one is always written. A module of several atoms needs `--encodings functional` |
+| `--encodings` | all | The encodings written, comma-separated, of `functional`, `relational`, `scalar`, `scalar-relational`; the functional one is always written. A module of several atoms needs `--encodings functional` |
 | `--artifacts` | `use` | What to do with the project's `artifacts/`: `use` lets the run read what an earlier run left, `ignore` reads nothing back but still records, `reset` empties it first |
 
 ### Writing a claim on the command line
@@ -717,7 +680,7 @@ SMT-LIB tuple selectors: `((_ tuple.select 0) s0)`.  External inputs are
 
 Every backend dispatches through one table, so an op is added in one place:
 a row in `lowering.ops.OPS` giving its name, the theories that expose it,
-and a cell for each of `mat`, `scalar`, `box` and `smt`.  A cell is an
+and a cell for each of `mat`, `scalar` and `smt`.  A cell is an
 emitter, or `ViaMat`/`Inline`/`Unsupported` saying why it is not one —
 `Unsupported`'s reason is what the caller is told when it hits the gap.
 

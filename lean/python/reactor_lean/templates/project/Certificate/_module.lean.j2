@@ -6,7 +6,7 @@ def RM := ({
     update := fun x e => update x e.1 e.2
     init_pre := init_pre
     update_pre := update_pre
-} : ReactiveModule _ _)
+} : ReactiveTS _ _)
 
 def lts := RM.toTS
 

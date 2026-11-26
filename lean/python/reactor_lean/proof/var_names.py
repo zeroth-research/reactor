@@ -48,9 +48,9 @@ _KEYWORDS = frozenset("""
 # ReactLib's (`Relational`, `Spec`) and Mathlib's that predicates print.
 _ROOT = frozenset("""
     init update RM lts inv P ranking init_pre update_pre s e el
-    affineLinear And AP argmax argmax_ Ax Ay Az Box colOf Finally Globally LTLFormula
-    matMax matMin matrixOf matVecAffine Next Not Or reachable reachableSet ReactiveModule
-    ReLu sem Shallow StateSet T toShallow toTS Trace traces TS Until ValTuple
+    affineLinear And AP argmax argmax_ Ax Ay Az colOf Finally Globally LTLFormula
+    matMax matMin matrixOf matVecAffine Next Not Or reachable reachableSet ReactiveTS
+    ReLu sem Shallow StateSet T toShallow toTS Trace traces TS Until
     max min abs id ite dite Matrix Real Int Nat Bool True False
 """.split())
 

@@ -25,7 +25,7 @@ _PER_FILE = 8
 
 @pytest.mark.slow
 def test_the_lean_encoding_takes_the_rounds_the_benchmark_takes(
-        tmp_path: Path, relational_circ, lean_outputs):
+        tmp_path: Path, relational_mat, lean_outputs):
     scripts = []
     for name in sorted(CORPUS):
         module = CORPUS[name]()
@@ -41,7 +41,7 @@ def test_the_lean_encoding_takes_the_rounds_the_benchmark_takes(
     for k in range(0, len(scripts), _PER_FILE):
         chunk = scripts[k:k + _PER_FILE]
         path = tmp_path / f"agree{k // _PER_FILE}.lean"
-        path.write_text("import Relational.Circ\n"
+        path.write_text("import Relational.Mat\n"
                         + "\n".join(t for _, t, _ in chunk))
         files.append((path, chunk))
 

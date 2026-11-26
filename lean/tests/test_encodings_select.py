@@ -49,7 +49,7 @@ def test_a_selection_brings_the_functional_encoding_and_what_it_imports():
     ctx = LeanContext(fixture("counter"))
     assert _names(selected_encodings(ctx)) == ENCODING_NAMES
     assert _names(selected_encodings(ctx, ())) == (FUNCTIONAL,)
-    assert _names(selected_encodings(ctx, ("circuit",))) == (FUNCTIONAL, "circuit")
+    assert _names(selected_encodings(ctx, ("relational",))) == (FUNCTIONAL, "relational")
     assert _names(selected_encodings(ctx, ("scalar-relational",))) == (
         FUNCTIONAL, "scalar", "scalar-relational")
 
@@ -70,7 +70,7 @@ def test_a_module_of_several_atoms_has_the_functional_encoding_alone():
         selected_encodings(ctx)
     said = str(refused.value)
     assert said.startswith("--encodings: the module has 3 atoms")
-    assert "no circuit, relational, scalar, scalar-relational encoding" in said
+    assert "no relational, scalar, scalar-relational encoding" in said
     assert "`--encodings functional`" in said
     # and every encoding written over the one atom refuses it, too
     with pytest.raises(Refused, match="3 atoms"):
