@@ -1685,7 +1685,7 @@ fn accepted_arrays() {
             "  logic [7:0] t [17];\n  initial begin\n    $readmemh(\"{file}\", t);\n  end\n\
              \x20 assign y = t[j[0]] + t[16];"
         ),
-        // Yosys 0.69 loses the values before an address that goes back
+        // Yosys (0.69, still 0.71) loses the values before an address that goes back
         // (`@0` after `@10`: `t[0]` is 0); iverilog agrees with us
         Check::NotYosys("Yosys drops the values before a backward address in a memory file"),
     );

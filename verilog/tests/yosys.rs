@@ -374,7 +374,7 @@ fn miter_examples() {
 /// a `case` selecting only constants (a ROM, written with SMT arrays) and
 /// empty modules (blackboxes, instances left undeclared). Each is compared
 /// like any other; `queries` = number of controlled variables. (Yosys
-/// 0.69 makes a ROM from 16 entries on, not from 8.)
+/// 0.69 makes a ROM from 16 entries on, not from 8; 0.71 from 8 on.)
 /// A design whose meaning depends on the macro `SYNTHESIS`; with it
 /// defined as 1 (as by Yosys and v2rm), `y = a + 1`, and the debug code under
 /// `` `ifndef SYNTHESIS `` (a string, which v2rm rejects) is not read.
@@ -1034,7 +1034,7 @@ endmodule
     );
 }
 
-/// A known deviation of Yosys (0.69) from IEEE 1800: it extends an
+/// A known deviation of Yosys (0.69, still 0.71) from IEEE 1800: it extends an
 /// unsized based literal whose top bit is 1 (`'hffffffff`) with ones in a
 /// wider context, while the standard (§5.7.1, an unsigned 32-bit value)
 /// and iverilog extend it with zeros. The miter finds it, and the replay
@@ -1066,7 +1066,7 @@ endmodule
     );
 }
 
-/// A known deviation of Yosys (0.69) from IEEE 1800: an expression
+/// A known deviation of Yosys (0.69, still 0.71) from IEEE 1800: an expression
 /// connected to an input port is evaluated by its own width, then
 /// extended to the port (`x + 4'sd1` at 4 bits, so 7 + 1 wraps to -8 and
 /// gives 248 in an 8-bit port; iverilog does the same). The standard makes
@@ -1112,7 +1112,7 @@ endmodule
     );
 }
 
-/// Yosys (0.69) deviates from the standard on two assignments to selects
+/// Yosys (0.69, still 0.71) deviates from the standard on two assignments to selects
 /// with a variable index (`tests/varwrites.sv`; `tests/targets.rs` checks
 /// our values against hand-computed ones). It drops a `-:` select reaching
 /// below bit 0 completely, instead of writing the bits from bit 0 up. And it
@@ -1198,22 +1198,19 @@ fn ours(names: &[&str]) -> Vec<Blame> {
         .collect()
 }
 
-/// A known bug of Yosys (0.69, its `proc` pass): in a clocked process,
-/// inside a branch of an `if` or `case`, a conditional nonblocking write
-/// followed by an unconditional one to the same bits keeps the conditional
-/// value: `if (r) begin if (e) q <= a; q <= b; end` becomes
+/// A former discrepancy with Yosys (0.69, its `proc` pass, gone in 0.71):
+/// in a clocked process, inside a branch of an `if` or `case`, a conditional
+/// nonblocking write followed by an unconditional one to the same bits kept
+/// the conditional value: `if (r) begin if (e) q <= a; q <= b; end` became
 /// `q <= r ? (e ? a : b) : q`. By the standard the later write wins
 /// (§10.4.2: nonblocking updates take effect in the order executed), so `q`
-/// gets `b`; iverilog agrees. Yosys's own `write_verilog` netlist has the
-/// wrong multiplexer, so the bug is not in its SMT-LIB output. At the top
-/// level of the process, with blocking writes, and in `always_comb` Yosys is right. The
-/// miter finds it, and the replay sides with us. The examples avoid the
-/// pattern.
+/// gets `b`; iverilog agrees. The miter found it and the replay sided with
+/// us; now the two sides agree, and these cases check that they stay so.
 #[test]
-fn yosys_proc_keeps_overwritten_nonblocking_writes() {
+fn yosys_agrees_on_overwritten_nonblocking_writes() {
     let Some((yosys, z3)) = tools() else { return };
     let tools = (yosys.as_path(), z3.as_path());
-    for (file, source, expected, distinct) in [
+    for (file, source, distinct) in [
         (
             "proc1.v",
             "\
@@ -1221,7 +1218,6 @@ module top(input clk, input r, input e, input a, input b, output reg q);
   always @(posedge clk) if (r) begin if (e) q <= a; q <= b; end
 endmodule
 ",
-            "q",
             true,
         ),
         // a partial write under `if`, then a full one, in a `case` item
@@ -1234,7 +1230,6 @@ module top(input logic clk, input logic c, input logic [1:0] j,
     case (j) 0: begin if (c) u[2] <= a[0]; u <= a[3:1]; end endcase
 endmodule
 ",
-            "u",
             true,
         ),
         // a full write under `if`, then a partial one, in the `else` of an
@@ -1248,17 +1243,12 @@ module top(input logic clk, input logic rst, input logic en,
     if (rst) q <= 8'd0; else begin if (en) q <= d; q[4:0] <= 5'd0; end
 endmodule
 ",
-            "q",
             false,
         ),
     ] {
-        assert_eq!(
-            deviation_with(tools, file, source, distinct),
-            ours(&[expected]),
-            "{file}"
-        );
+        assert_eq!(deviation_with(tools, file, source, distinct), [], "{file}");
     }
-    // the same at the top level of the process: Yosys is right
+    // the same at the top level of the process (right in 0.69 already)
     let top = "\
 module top(input clk, input e, input a, input b, output reg q);
   always @(posedge clk) begin if (e) q <= a; q <= b; end
@@ -1267,17 +1257,18 @@ endmodule
     assert_eq!(deviation(tools, "proc4.v", top), []);
 }
 
-/// Two known bugs of Yosys (0.69) with size casts `N'(e)` (§6.24.1: the
-/// value `e` gives when assigned to an `N`-bit variable). Its parser reads
-/// `!2'(x)` as a cast to the size `!2`: over a constant that gives 0
-/// (`!2'(3'd4)` is 0 instead of `!2'b00` = 1), over a variable an error
-/// ("Static cast with zero or negative size"); a cast is a primary, so
-/// `!` applies to the cast. And it folds a constant operand at its own
-/// width: `16'(8'd200 + 8'd100)` is 44 instead of 300, while
-/// `16'(8'd200 + b)` with `b = 100` is 300. iverilog and slang agree with
-/// us. The miter finds both, and the replay sides with us.
+/// Two former discrepancies with Yosys (0.69, gone in 0.71) on size casts `N'(e)`
+/// (§6.24.1: the value `e` gives when assigned to an `N`-bit variable). Its
+/// parser read `!2'(x)` as a cast to the size `!2`: over a constant that
+/// gave 0 (`!2'(3'd4)` is 0 instead of `!2'b00` = 1), over a variable an
+/// error ("Static cast with zero or negative size"); a cast is a primary,
+/// so `!` applies to the cast. And it folded a constant operand at its own
+/// width: `16'(8'd200 + 8'd100)` was 44 instead of 300, while
+/// `16'(8'd200 + b)` with `b = 100` was 300. iverilog and slang agree with
+/// us. The miter found both and the replay sided with us; now the two
+/// sides agree, and this checks that they stay so.
 #[test]
-fn yosys_misreads_size_casts() {
+fn yosys_agrees_on_size_casts() {
     let Some((yosys, z3)) = tools() else { return };
     let source = "\
 module top(input logic [7:0] b, output logic y, output logic [15:0] z,
@@ -1288,13 +1279,10 @@ module top(input logic [7:0] b, output logic y, output logic [15:0] z,
   assign z2 = 16'(8'd200 + b);
 endmodule
 ";
-    assert_eq!(
-        deviation((&yosys, &z3), "casts.sv", source),
-        ours(&["init:y", "init:z", "y", "z"])
-    );
+    assert_eq!(deviation((&yosys, &z3), "casts.sv", source), []);
 }
 
-/// A known bug of Yosys (0.69, its SMT-LIB output): a logical right shift
+/// A known bug of Yosys (0.69, still 0.71, its SMT-LIB output): a logical right shift
 /// `s >> i` of a signed operand by a wider amount extends `s` by its sign
 /// to the amount's width before shifting, so ones move into the result:
 /// a 1-bit `$signed(c) >> i` with `c = 1`, `i = 1` gives 1, a 4-bit
@@ -1318,7 +1306,7 @@ endmodule
     );
 }
 
-/// A known deviation of Yosys (0.69): it fills `'1` inside `$unsigned` to
+/// A known deviation of Yosys (0.69, still 0.71): it fills `'1` inside `$unsigned` to
 /// the width of the assignment around it (`$unsigned('1)` into 8 bits
 /// gives 255), although the argument of `$unsigned` is self-determined
 /// (§11.7), so `'1` has 1 bit and the result is 1; iverilog and slang
@@ -1338,7 +1326,7 @@ endmodule
     );
 }
 
-/// A known deviation of Yosys (0.69): it evaluates the override of a typed
+/// A known deviation of Yosys (0.69, still 0.71): it evaluates the override of a typed
 /// parameter in the parent at the override expression's own width and only
 /// then converts it, so `.W(4'd15 + 4'd1)` wraps to 0 before it reaches the
 /// 8-bit `W`. By the standard an override value is converted to the
@@ -1717,8 +1705,8 @@ fn cli_yosys_differs() {
 /// iverilog as a second reference on known deviations of Yosys: on a port
 /// expression sized by itself, iverilog does what Yosys does, so the two
 /// agree against us (the standard and the AST semantics side with us); on
-/// the signed shift and the overwritten nonblocking write (a register, in
-/// the update round), iverilog agrees with us.
+/// the signed shift, also into a register (a difference in the update
+/// round only), iverilog agrees with us.
 #[test]
 fn second_opinion_on_deviations() {
     let Some((yosys, z3)) = tools() else { return };
@@ -1787,12 +1775,12 @@ endmodule
         opinions("shift.sv", shift),
         [("init:o".into(), ours), ("o".into(), ours)]
     );
-    let proc = "\
-module top(input clk, input r, input e, input a, input b, output reg q);
-  always @(posedge clk) if (r) begin if (e) q <= a; q <= b; end
+    let register = "\
+module top(input logic clk, input logic c, input logic [1:0] i, output logic q);
+  always_ff @(posedge clk) q <= $signed(c) >> i;
 endmodule
 ";
-    assert_eq!(opinions("proc1.v", proc), [("q".into(), ours)]);
+    assert_eq!(opinions("shiftreg.sv", register), [("q".into(), ours)]);
 }
 
 /// `v2rm --yosys` prints iverilog's opinion under each replay, not with
@@ -1890,7 +1878,7 @@ fn cli_warns_on_other_yosys_versions() {
     assert_eq!(yosys::version_warning(&checked), None);
     let other = yosys::version_warning(&Ok("0.70".into())).unwrap();
     assert!(
-        other.starts_with("Yosys 0.70: ") && other.contains("0.69+173"),
+        other.starts_with("Yosys 0.70: ") && other.contains(yosys::CHECKED_VERSION),
         "{other}"
     );
     assert!(yosys::version_warning(&Err("no answer".into())).is_some());

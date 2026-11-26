@@ -48,7 +48,7 @@ leaves unconnected. `check` reports problems of the netlist; [`run`] fails
 on conflicting drivers (it passes `-e` so that Yosys stops at that
 warning, and also looks for the warning's text). The comparison relies on
 Yosys's transition accepting every input value, and a wire with two
-drivers breaks that: Yosys 0.69 reads the target `{f, r[n]} = {e[2], e[0]}`
+drivers breaks that: Yosys (0.69, still 0.71) reads the target `{f, r[n]} = {e[2], e[0]}`
 backwards and drives the input bit `e[0]`, which in SMT-LIB defines the
 input as a function of other signals, so the comparison could find no
 difference where Yosys is wrong. [`parse`] checks this on the output too,
@@ -140,7 +140,7 @@ sample can carry the name of a register (`/s1#sampled` above) with its
 width, so names alone do not tell the output sample of a register; see
 [`miter::registers`](crate::miter::registers). That is the only place
 that depends on Yosys's internal names: it recognises the samples by the
-patterns above (`N` and `K` are wildcards), checked with Yosys 0.69+173
+patterns above (`N` and `K` are wildcards), checked with Yosys 0.71+128
 ([`CHECKED_VERSION`]). `v2rm --yosys` warns with any other version; if that
 version names the samples differently, the comparison refuses the design
 instead of giving a wrong result.
@@ -168,10 +168,10 @@ pub fn find() -> Option<PathBuf> {
 /// The Yosys version the naming pattern of the flip-flop samples of
 /// `clk2fflogic` (see the module docs) was checked with. Another version
 /// may name them differently; then the comparison refuses the design.
-pub const CHECKED_VERSION: &str = "0.69+173";
+pub const CHECKED_VERSION: &str = "0.71+128";
 
-/// The version of the Yosys binary `bin`, as `yosys -V` gives it (`0.69+173`
-/// from `Yosys 0.69+173 (git sha1 …)`). Fails if Yosys cannot be started or
+/// The version of the Yosys binary `bin`, as `yosys -V` gives it (`0.71+128`
+/// from `Yosys 0.71+128 (git sha1 …)`). Fails if Yosys cannot be started or
 /// its answer has no version.
 pub fn version(bin: &Path) -> Result<String, String> {
     let out = Command::new(bin)
