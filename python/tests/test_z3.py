@@ -45,10 +45,10 @@ CASES = [
     (word.broadcast.Ite([Bool([1, 1]), W, W]), [torch.tensor([[False]]), WX, WY]),
     (real.Zero(R), []),
     # constants, linear and affine maps
-    (real.Const(RX), []),
-    (int_.Const(IX), []),
+    (real.Num(RX), []),
+    (int_.Num(IX), []),
     (bool_.Truth(BX), []),
-    (word.Const(WX, W), []),
+    (word.Num(WX, W), []),
     (real.Linear(A, R), [RX]),
     (int_.Linear(AI, I), [IX]),
     (real.Affine(A, A, Real([2, 2])), [RX]),

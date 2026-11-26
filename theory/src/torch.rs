@@ -3,15 +3,15 @@
 
 The torch backing of the operations of [`crate::matrix`]: [`tch::Tensor`]
 implements [`crate::Matrix`], so that the operations carrying tensors hold
-torch tensors directly, as `matrix::real::Const<tch::Tensor>`. The Python
+torch tensors directly, as `matrix::real::Num<tch::Tensor>`. The Python
 `torch.Tensor` objects convert to and from them through
 [`pyo3_tch::PyTensor`], sharing their storage.
 
 The constants are Python classes of their own, one per theory, as a tensor
-alone does not tell the theory of its constant: [`real::Const`],
-[`int::Const`], [`bool::Truth`] and [`word::Const`]. Each holds, in a
+alone does not tell the theory of its constant: [`real::Num`],
+[`int::Num`], [`bool::Truth`] and [`word::Num`]. Each holds, in a
 private field, a [`tch::Tensor`] of the element kind of its theory, checked
-on construction, and [`word::Const`] its width too. A [`tch::Tensor`] is not
+on construction, and [`word::Num`] its width too. A [`tch::Tensor`] is not
 `Sync`, which a Python class must be, so each class implements `Sync`
 itself, as only its own module touches the tensor. The constants of
 [`crate::matrix`] extract from the class of their theory, sharing its tensor.

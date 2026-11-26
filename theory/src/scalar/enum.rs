@@ -6,7 +6,7 @@ symbolic constants, as in nuXmv, whose symbolic constants admit only
 equality and choice. Every operation carries the enumerations it reads or
 writes, and so enough information to compute its [`Boundary`]:
 
-- [`Val`] — a symbolic constant of an enumeration.
+- [`Sym`] — a symbolic constant of an enumeration.
 - [`Into`] — a value of an enumeration, as one of another that holds all its
   values.
 - [`Eq`](struct@Eq), [`Ne`] — equality and disequality of two values of an
@@ -41,12 +41,12 @@ use std::convert::Into as _;
 
 /// A symbolic constant of an enumeration: one of its values.
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
-pub struct Val {
+pub struct Sym {
     value: String,
     sort: Enum,
 }
 
-impl Val {
+impl Sym {
     /// The constant `value`, writing the enumeration of `cod`; fails unless
     /// `value` is one of its values.
     pub fn with_cod(value: &str, cod: [Enum; 1]) -> Result<Self, crate::Error> {
@@ -57,7 +57,7 @@ impl Val {
                 &[sort],
             ));
         }
-        Ok(Val {
+        Ok(Sym {
             value: value.to_string(),
             sort,
         })
@@ -176,14 +176,14 @@ impl Ite {
 /// The operations on enumerations, with their boundary in [`Sort`].
 #[derive(Clone, PartialEq, Debug, Eq, Hash, From)]
 pub enum Any {
-    Val(Val),
+    Sym(Sym),
     Into(Into),
     Eq(Eq),
     Ne(Ne),
     Ite(Ite),
 }
 
-impl Boundary<Sort> for Val {
+impl Boundary<Sort> for Sym {
     fn dom(&self) -> Poly<Sort> {
         Poly::unit()
     }
@@ -241,7 +241,7 @@ impl Boundary<Sort> for Ite {
 impl Boundary<Sort> for Any {
     fn dom(&self) -> Poly<Sort> {
         match self {
-            Any::Val(op) => op.dom(),
+            Any::Sym(op) => op.dom(),
             Any::Into(op) => op.dom(),
             Any::Eq(op) => op.dom(),
             Any::Ne(op) => op.dom(),
@@ -251,7 +251,7 @@ impl Boundary<Sort> for Any {
 
     fn cod(&self) -> Poly<Sort> {
         match self {
-            Any::Val(op) => op.cod(),
+            Any::Sym(op) => op.cod(),
             Any::Into(op) => op.cod(),
             Any::Eq(op) => op.cod(),
             Any::Ne(op) => op.cod(),
@@ -261,7 +261,7 @@ impl Boundary<Sort> for Any {
 }
 
 /// Writes the symbolic constant itself.
-impl fmt::Display for Val {
+impl fmt::Display for Sym {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.value)
     }
@@ -294,7 +294,7 @@ impl fmt::Display for Ite {
 impl fmt::Display for Any {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Any::Val(op) => op.fmt(f),
+            Any::Sym(op) => op.fmt(f),
             Any::Into(op) => op.fmt(f),
             Any::Eq(op) => op.fmt(f),
             Any::Ne(op) => op.fmt(f),

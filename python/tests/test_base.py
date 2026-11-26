@@ -26,12 +26,12 @@ def test_term_new():
 
     # test `function` ctor
     _ = Term.function(matrix.int.Add([Int([2, 3]), Int([2, 3])]), [xn], [x, y])
-    _ = Term.function(matrix.int.Const(torch.tensor([[3, 4, 5]]), Int([1, 3])), [w4], [])
-    _ = Term.function(matrix.int.Const(torch.tensor([[3, 4, 6]]), Int([1, 3])), [w5], [])
+    _ = Term.function(matrix.int.Num(torch.tensor([[3, 4, 5]]), Int([1, 3])), [w4], [])
+    _ = Term.function(matrix.int.Num(torch.tensor([[3, 4, 6]]), Int([1, 3])), [w5], [])
 
     # comparisons are pointwise -> Bool of the operand shape
     Term(matrix.int.Lt([Int([1, 3]), Int([1, 3])]), [Wire(Bool([1, 3]))], [w4, Wire(Int([1, 3]))])
-    Term.constant(matrix.int.Const(torch.tensor([[3, 2, 1]]), Int([1, 3])), [Wire(Int([1, 3]))])
+    Term.constant(matrix.int.Num(torch.tensor([[3, 2, 1]]), Int([1, 3])), [Wire(Int([1, 3]))])
 
 
 def test_var_derefs_to_wire():
@@ -141,7 +141,7 @@ def _stateful_blocks():
     zero = torch.tensor([[0.0]])
     x = Var(Real([1, 1]))
     p = Var(Real([1, 1]))
-    init = [Term(matrix.real.Const(zero, Real([1, 1])), [X(x)]), Term(matrix.real.Const(zero, Real([1, 1])), [X(p)])]
+    init = [Term(matrix.real.Num(zero, Real([1, 1])), [X(x)]), Term(matrix.real.Num(zero, Real([1, 1])), [X(p)])]
     update = [Term(Skip(Real([1, 1])), [X(x)], [x]), Term(Skip(Real([1, 1])), [X(p)], [p])]
     # the zero rate of change of a real: the zero matrix, of degree 1
     rest = matrix.real.Zero(T(Real([1, 1])))
@@ -228,7 +228,7 @@ def test_module_new_positional_is_parallel():
     y = Var(Real([1, 1]))
 
     p1 = Module(init=init, update=update, vars=[x, p])
-    p2 = Module(init=[Term(matrix.real.Const(torch.tensor([[0.0]]), Real([1, 1])), [X(y)])], vars=[y])
+    p2 = Module(init=[Term(matrix.real.Num(torch.tensor([[0.0]]), Real([1, 1])), [X(y)])], vars=[y])
 
     m = Module(p1, p2)
     assert m.intf == [x, p, y]
@@ -252,11 +252,11 @@ def test_compose_hiding_coupled_variables():
 
     # m1 controls x and y, reading the shared input w; m2 reads y and w and
     # controls z: y couples the two, w is external on both sides
-    init = [Term(matrix.real.Const(zero, Real([1, 1])), [X(x)]), Term(matrix.real.Const(zero, Real([1, 1])), [X(y)])]
+    init = [Term(matrix.real.Num(zero, Real([1, 1])), [X(x)]), Term(matrix.real.Num(zero, Real([1, 1])), [X(y)])]
     update = [Term(Skip(Real([1, 1])), [X(x)], [w]), Term(Skip(Real([1, 1])), [X(y)], [y])]
     m1 = Module.sequential([x, y, w], init, update)
 
-    init = [Term(matrix.real.Const(zero, Real([1, 1])), [X(z)])]
+    init = [Term(matrix.real.Num(zero, Real([1, 1])), [X(z)])]
     update = [Term(matrix.real.Add([Real([1, 1]), Real([1, 1])]), [X(z)], [y, w])]
     m2 = Module.sequential([y, z, w], init, update)
 
@@ -299,7 +299,7 @@ def test_module_new_positional_atoms():
     # several atoms compose into one module
     y = Var(Real([1, 1]))
     zero = torch.tensor([[0.0]])
-    other = Atom.constant([y], [Term(matrix.real.Const(zero, Real([1, 1])), [X(y)])])
+    other = Atom.constant([y], [Term(matrix.real.Num(zero, Real([1, 1])), [X(y)])])
     m = Module(atom, other)
     assert m.intf == [x, p, y]
     assert len(m.atoms) == 2
@@ -390,7 +390,7 @@ def test_atom_infers_awaited_variables():
     t = Var(Real([1, 1]))
 
     # x' = X(t): the atom awaits t rather than controlling it
-    init = [Term(matrix.real.Const(zero, Real([1, 1])), [X(x)])]
+    init = [Term(matrix.real.Num(zero, Real([1, 1])), [X(x)])]
     update = [Term(Skip(Real([1, 1])), [X(x)], [X(t)])]
     atom = Atom([x, t], init=init, update=update)
 
@@ -403,7 +403,7 @@ def test_atom_rejects_ill_formed_blocks():
     x = Var(Real([1, 1]))
 
     # the update writes the latched wire instead of the next wire
-    init = [Term(matrix.real.Const(zero, Real([1, 1])), [X(x)])]
+    init = [Term(matrix.real.Num(zero, Real([1, 1])), [X(x)])]
     update = [Term(Skip(Real([1, 1])), [x], [X(x)])]
     with pytest.raises(Exception):
         Atom.sequential([x], init, update)
@@ -450,11 +450,11 @@ def test_heterogeneous_composition():
     z = Var(Real([1, 1]))
 
     zero = torch.tensor([[0.0]])
-    init = [Term(matrix.real.Const(zero, Real([1, 1])), [X(x)])]
+    init = [Term(matrix.real.Num(zero, Real([1, 1])), [X(x)])]
     update = [Term(Skip(Real([1, 1])), [X(x)], [x])]
     P = Module.sequential([x], init, update)
 
-    init = [Term(matrix.real.Const(zero, Real([1, 1])), [X(y)])]
+    init = [Term(matrix.real.Num(zero, Real([1, 1])), [X(y)])]
     flow = [Term(matrix.real.Zero(T(Real([1, 1]))), [d(y)])]
     Q = Module.differential([y], init, flow)
 

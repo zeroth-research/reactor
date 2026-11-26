@@ -70,10 +70,10 @@ fn constants_are_built_from_tensors_of_their_theory_only() {
         let ints = python(py, full(2, 3, 0.0, tch::Kind::Int64));
         let bools = python(py, full(2, 3, 0.0, tch::Kind::Bool));
 
-        let real = py.get_type::<real::Const>();
-        let int = py.get_type::<int::Const>();
+        let real = py.get_type::<real::Num>();
+        let int = py.get_type::<int::Num>();
         let boolean = py.get_type::<bool::Truth>();
-        let word = py.get_type::<word::Const>();
+        let word = py.get_type::<word::Num>();
 
         let reals = sort(py, Real::new([2, 3]));
         let integers = sort(py, Int::new([2, 3]));
@@ -116,11 +116,11 @@ fn constants_extract_from_the_class_of_their_theory() {
     Python::attach(|py| {
         let floats = python(py, full(2, 3, 0.0, tch::Kind::Float));
         let constant = py
-            .get_type::<real::Const>()
+            .get_type::<real::Num>()
             .call1((&floats, sort(py, Real::new([2, 3]))))
             .unwrap();
         let op = constant
-            .extract::<matrix::real::Const<tch::Tensor>>()
+            .extract::<matrix::real::Num<tch::Tensor>>()
             .unwrap();
         assert_eq!(
             op.cod(),
@@ -134,24 +134,16 @@ fn constants_extract_from_the_class_of_their_theory() {
         assert_eq!(op.tensor().data_ptr(), t.data_ptr());
 
         // the class decides the theory, not the tensor
-        assert!(
-            constant
-                .extract::<matrix::int::Const<tch::Tensor>>()
-                .is_err()
-        );
-        assert!(
-            floats
-                .extract::<matrix::real::Const<tch::Tensor>>()
-                .is_err()
-        );
+        assert!(constant.extract::<matrix::int::Num<tch::Tensor>>().is_err());
+        assert!(floats.extract::<matrix::real::Num<tch::Tensor>>().is_err());
 
         let ints = python(py, full(2, 3, 0.0, tch::Kind::Int64));
         let constant = py
-            .get_type::<word::Const>()
+            .get_type::<word::Num>()
             .call1((&ints, sort(py, Word::new_unchecked(8, [2, 3]))))
             .unwrap();
         let op = constant
-            .extract::<matrix::word::Const<tch::Tensor>>()
+            .extract::<matrix::word::Num<tch::Tensor>>()
             .unwrap();
         assert_eq!(op.width(), 8);
     });
@@ -245,12 +237,9 @@ fn any_extracts_constants_and_linear_maps_with_torch_tensors() {
     Python::attach(|py| {
         let ints = python(py, full(2, 3, 0.0, tch::Kind::Int64));
         let integers = sort(py, Int::new([2, 3]));
-        let constant = py
-            .get_type::<int::Const>()
-            .call1((&ints, &integers))
-            .unwrap();
+        let constant = py.get_type::<int::Num>().call1((&ints, &integers)).unwrap();
         let any = constant.extract::<matrix::Any<tch::Tensor>>().unwrap();
-        assert!(matches!(any, matrix::Any::Int(matrix::int::NIA::Const(_))));
+        assert!(matches!(any, matrix::Any::Int(matrix::int::NIA::Num(_))));
 
         let scale = py
             .get_type::<int::Scale>()
@@ -259,7 +248,7 @@ fn any_extracts_constants_and_linear_maps_with_torch_tensors() {
         let any = scale.extract::<matrix::Any<tch::Tensor>>().unwrap();
         assert!(matches!(any, matrix::Any::Int(matrix::int::NIA::Scale(_))));
         // the class decides the operation and the theory
-        assert!(scale.extract::<matrix::int::Const<tch::Tensor>>().is_err());
+        assert!(scale.extract::<matrix::int::Num<tch::Tensor>>().is_err());
         let floats = python(py, full(2, 3, 0.0, tch::Kind::Float));
         let reals = sort(py, Real::new([2, 3]));
         assert!(
@@ -366,10 +355,10 @@ fn constants_are_built_from_matrices_only() {
     Python::attach(|py| {
         let tensor =
             |size: &[i64], kind| python(py, tch::Tensor::zeros(size, (kind, tch::Device::Cpu)));
-        let real = py.get_type::<real::Const>();
-        let int = py.get_type::<int::Const>();
+        let real = py.get_type::<real::Num>();
+        let int = py.get_type::<int::Num>();
         let boolean = py.get_type::<bool::Truth>();
-        let word = py.get_type::<word::Const>();
+        let word = py.get_type::<word::Num>();
 
         // a codomain of a matrix, so that only the tensor is wrong
         let reals = sort(py, Real::new([1, 1]));

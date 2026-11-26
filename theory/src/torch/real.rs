@@ -201,16 +201,16 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::real::Affine<tch::Tensor>
 
 /// A constant real matrix: a `torch.Tensor` of floating-point or integer
 /// elements, kept as given, since integers are reals too.
-#[pyclass(frozen, name = "Const", module = "reactor.matrix.real")]
-pub struct Const(tch::Tensor, u8);
+#[pyclass(frozen, name = "Num", module = "reactor.matrix.real")]
+pub struct Num(tch::Tensor, u8);
 
 // SAFETY: the tensor is private to this module, which only reads its
 // shape and element kind and takes shallow clones of it; libtorch makes
 // these thread-safe, counting the references to a tensor atomically.
-unsafe impl Sync for Const {}
+unsafe impl Sync for Num {}
 
 #[pymethods]
-impl Const {
+impl Num {
     /// The constant held in `tensor`, writing `cod`, which it determines but for
     /// its degree: when omitted, it is of degree 0. Fails when `tensor` is not a
     /// `torch.Tensor` of two dimensions and floating-point or integer elements, or
@@ -226,8 +226,8 @@ impl Const {
             )));
         }
         let cod = cod.unwrap_or_else(|| Real::new(crate::Matrix::shape(&tensor.0)));
-        let op = real::Const::with_cod(tensor.0, [cod])?;
-        Ok(Const(op.tensor().shallow_clone(), op.degree()))
+        let op = real::Num::with_cod(tensor.0, [cod])?;
+        Ok(Num(op.tensor().shallow_clone(), op.degree()))
     }
 
     #[getter]
@@ -250,19 +250,19 @@ impl Const {
     /// The sort it writes.
     #[getter]
     fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
-        let op: crate::matrix::real::Const<tch::Tensor> = slf.extract()?;
+        let op: crate::matrix::real::Num<tch::Tensor> = slf.extract()?;
         crate::matrix::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
     }
 }
 
-impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::real::Const<tch::Tensor> {
+impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::real::Num<tch::Tensor> {
     type Error = PyErr;
 
-    /// Fails when `ob` is not a [`Const`].
+    /// Fails when `ob` is not a [`Num`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        let constant = ob.cast::<Const>()?.get();
+        let constant = ob.cast::<Num>()?.get();
         let cod = Real::with_degree(crate::Matrix::shape(&constant.0), constant.1);
-        Ok(crate::matrix::real::Const::with_cod(
+        Ok(crate::matrix::real::Num::with_cod(
             constant.0.shallow_clone(),
             [cod],
         )?)
@@ -271,10 +271,10 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::real::Const<tch::Tensor> 
 
 /// A clone shares the tensor of the original: `tch::Tensor` is not `Clone`,
 /// so this takes a shallow clone of it, as libtorch counts its references.
-impl Clone for crate::matrix::real::Const<tch::Tensor> {
+impl Clone for crate::matrix::real::Num<tch::Tensor> {
     fn clone(&self) -> Self {
         let cod = Real::with_degree(crate::Matrix::shape(self.tensor()), self.degree());
-        crate::matrix::real::Const::with_cod(self.tensor().shallow_clone(), [cod])
+        crate::matrix::real::Num::with_cod(self.tensor().shallow_clone(), [cod])
             .expect("a clone has the sort of the original")
     }
 }
@@ -393,7 +393,7 @@ impl<'py> IntoPyObject<'py> for crate::matrix::real::NRA<tch::Tensor> {
         use crate::matrix::real::NRA;
 
         match self {
-            NRA::Const(op) => Const(op.tensor().shallow_clone(), op.degree())
+            NRA::Num(op) => Num(op.tensor().shallow_clone(), op.degree())
                 .into_pyobject(py)
                 .map(Bound::into_any),
             NRA::Scale(op) => Scale(op.tensor().shallow_clone(), op.degree())

@@ -76,11 +76,11 @@ def interpret(itype):
         # constants
         case matrix.bool.Truth(t):
             return lambda: _np.vectorize(_z3.BoolVal, otypes=[object])(t.detach().numpy())
-        case matrix.real.Const(t):
+        case matrix.real.Num(t):
             return lambda: _np.vectorize(_z3.RealVal, otypes=[object])(t.detach().numpy())
-        case matrix.int.Const(t):
+        case matrix.int.Num(t):
             return lambda: _np.vectorize(_z3.IntVal, otypes=[object])(t.detach().numpy())
-        case matrix.word.Const(t, Word(w)):
+        case matrix.word.Num(t, Word(w)):
             return lambda: _np.vectorize(lambda v: _z3.BitVecVal(int(v), w), otypes=[object])(t.detach().numpy())
 
         # arithmetic

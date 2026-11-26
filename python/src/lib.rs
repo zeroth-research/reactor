@@ -59,7 +59,7 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         matrix.add_class::<theory::matrix::Skip>()?;
         {
             let real = PyModule::new(py, "real")?;
-            real.add_class::<theory::torch::real::Const>()?;
+            real.add_class::<theory::torch::real::Num>()?;
             real.add_class::<theory::torch::real::Scale>()?;
             real.add_class::<theory::torch::real::Linear>()?;
             real.add_class::<theory::torch::real::Affine>()?;
@@ -94,7 +94,7 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         }
         {
             let int = PyModule::new(py, "int")?;
-            int.add_class::<theory::torch::int::Const>()?;
+            int.add_class::<theory::torch::int::Num>()?;
             int.add_class::<theory::torch::int::Scale>()?;
             int.add_class::<theory::torch::int::Linear>()?;
             int.add_class::<theory::torch::int::Affine>()?;
@@ -148,7 +148,7 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         }
         {
             let word = PyModule::new(py, "word")?;
-            word.add_class::<theory::torch::word::Const>()?;
+            word.add_class::<theory::torch::word::Num>()?;
             word.add_class::<theory::matrix::word::Concat>()?;
             word.add_class::<theory::matrix::word::Extract>()?;
             word.add_class::<theory::matrix::word::Repeat>()?;

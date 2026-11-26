@@ -56,10 +56,10 @@ def _make_counter():
     """Simple counter: init x=0, update x'=x+1."""
     x = Var(Int([1, 1]))
 
-    init = [Term(matrix.int.Const(torch.tensor([[0]], dtype=torch.int64), Int([1, 1])), [X(x)])]
+    init = [Term(matrix.int.Num(torch.tensor([[0]], dtype=torch.int64), Int([1, 1])), [X(x)])]
     one = Wire(Int([1, 1]))
     update = [
-        Term(matrix.int.Const(torch.tensor([[1]], dtype=torch.int64), Int([1, 1])), [one]),
+        Term(matrix.int.Num(torch.tensor([[1]], dtype=torch.int64), Int([1, 1])), [one]),
         Term(matrix.int.Add([Int([1, 1]), Int([1, 1])]), [X(x)], [x, one]),
     ]
     m = Module.sequential([x], init, update)
@@ -138,7 +138,7 @@ def test_ite():
 
     init = [
         Term(matrix.bool.Truth(torch.tensor([[True]]), Bool([1, 1])), [X(cond)]),
-        Term(matrix.int.Const(torch.tensor([[0]], dtype=torch.int64), Int([1, 1])), [X(x)]),
+        Term(matrix.int.Num(torch.tensor([[0]], dtype=torch.int64), Int([1, 1])), [X(x)]),
     ]
 
     one = Wire(Int([1, 1]))
@@ -148,8 +148,8 @@ def test_ite():
 
     update = [
         Term(matrix.bool.Not(Bool([1, 1])), [X(cond)], [cond]),
-        Term(matrix.int.Const(torch.tensor([[1]], dtype=torch.int64), Int([1, 1])), [one]),
-        Term(matrix.int.Const(torch.tensor([[2]], dtype=torch.int64), Int([1, 1])), [two]),
+        Term(matrix.int.Num(torch.tensor([[1]], dtype=torch.int64), Int([1, 1])), [one]),
+        Term(matrix.int.Num(torch.tensor([[2]], dtype=torch.int64), Int([1, 1])), [two]),
         Term(matrix.int.Add([Int([1, 1]), Int([1, 1])]), [tmp1], [x, one]),
         Term(matrix.int.Add([Int([1, 1]), Int([1, 1])]), [tmp2], [x, two]),
         Term(matrix.int.Ite([Bool([1, 1]), Int([1, 1]), Int([1, 1])]), [X(x)], [cond, tmp1, tmp2]),
@@ -177,7 +177,7 @@ def test_tensor_ops():
     data = Var(Int([1, 4]))
 
     init = [
-        Term(matrix.int.Const(torch.tensor([[-1, 2, 3, -4]], dtype=torch.int64), Int([1, 4])), [X(data)]),
+        Term(matrix.int.Num(torch.tensor([[-1, 2, 3, -4]], dtype=torch.int64), Int([1, 4])), [X(data)]),
     ]
     update = [
         Term(matrix.int.ReLU(Int([1, 4])), [X(data)], [data]),
@@ -220,8 +220,8 @@ def test_comparisons():
     lt_wire = Wire(Bool([1, 1]))
 
     init = [
-        Term(matrix.int.Const(torch.tensor([[3]], dtype=torch.int64), Int([1, 1])), [X(a)]),
-        Term(matrix.int.Const(torch.tensor([[5]], dtype=torch.int64), Int([1, 1])), [X(b)]),
+        Term(matrix.int.Num(torch.tensor([[3]], dtype=torch.int64), Int([1, 1])), [X(a)]),
+        Term(matrix.int.Num(torch.tensor([[5]], dtype=torch.int64), Int([1, 1])), [X(b)]),
         Term(matrix.int.Eq([Int([1, 1]), Int([1, 1])]), [eq_wire], [X(a), X(b)]),
         Term(matrix.int.Lt([Int([1, 1]), Int([1, 1])]), [lt_wire], [X(a), X(b)]),
     ]
@@ -230,7 +230,7 @@ def test_comparisons():
     eq_wire2 = Wire(Bool([1, 1]))
     lt_wire2 = Wire(Bool([1, 1]))
     update = [
-        Term(matrix.int.Const(torch.tensor([[1]], dtype=torch.int64), Int([1, 1])), [one]),
+        Term(matrix.int.Num(torch.tensor([[1]], dtype=torch.int64), Int([1, 1])), [one]),
         Term(matrix.int.Add([Int([1, 1]), Int([1, 1])]), [X(a)], [a, one]),
         Term(Skip(Int([1, 1])), [X(b)], [b]),
         Term(matrix.int.Eq([Int([1, 1]), Int([1, 1])]), [eq_wire2], [a, b]),
@@ -267,7 +267,7 @@ def test_env_inputs():
     env = Var(Int([1, 1]))
 
     init = [
-        Term(matrix.int.Const(torch.tensor([[0]], dtype=torch.int64), Int([1, 1])), [X(x)]),
+        Term(matrix.int.Num(torch.tensor([[0]], dtype=torch.int64), Int([1, 1])), [X(x)]),
     ]
     update = [
         Term(matrix.int.Add([Int([1, 1]), Int([1, 1])]), [X(x)], [x, X(env)]),
@@ -423,13 +423,13 @@ def test_extract_and_extend():
 
 def test_real_constants_of_integer_tensors_evaluate_as_reals():
     # a real constant may hold an integer tensor; it still combines with floating-point ones
-    (c,) = eval_itype(matrix.real.Const(torch.tensor([[1], [2]])), [])
+    (c,) = eval_itype(matrix.real.Num(torch.tensor([[1], [2]])), [])
     (out,) = eval_itype(matrix.real.Linear(torch.eye(2), Real([2, 1])), [c])
     assert torch.equal(out, torch.tensor([[1.0], [2.0]]))
     (out,) = eval_itype(matrix.real.MatMul([Real([2, 2]), Real([2, 1])]), [torch.eye(2), c])
     assert torch.equal(out, torch.tensor([[1.0], [2.0]]))
     # nor do they wrap around, as integers do
-    (big,) = eval_itype(matrix.real.Const(torch.tensor([[2**62]])), [])
+    (big,) = eval_itype(matrix.real.Num(torch.tensor([[2**62]])), [])
     (out,) = eval_itype(matrix.real.Add([Real([1, 1])] * 2), [big, big])
     assert out.item() == 2.0**63
 

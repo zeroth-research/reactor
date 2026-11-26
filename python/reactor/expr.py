@@ -81,7 +81,7 @@ class collecting:
     """Context manager: records every Term built inside it, in dependency order.
 
         with collecting() as terms:
-            e = x + 1          # terms == [<Const 1>, <Add>]
+            e = x + 1          # terms == [<Num 1>, <Add>]
     """
 
     def __enter__(self) -> list[Term]:
@@ -594,11 +594,11 @@ def _term_from_torch(value, sort):
     if family is Bool and value.dtype == torch.bool:
         op = matrix.bool.Truth(value, cod)
     elif family is Real and (value.dtype in (torch.half, torch.float, torch.double) or integer):
-        op = matrix.real.Const(value, cod)
+        op = matrix.real.Num(value, cod)
     elif family is Int and integer:
-        op = matrix.int.Const(value, cod)
+        op = matrix.int.Num(value, cod)
     elif family is Word and integer:
-        op = matrix.word.Const(value, cod)
+        op = matrix.word.Num(value, cod)
     else:
         raise TypeError(f"expr() unsupported literal type {value.dtype} / {sort}")
     return Term.constant(op, [Wire(op.cod)]), value

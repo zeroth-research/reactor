@@ -20,7 +20,7 @@ whole matrices by a scalar boolean, [`broadcast::Ite`], is in the submodule
 
 | Operation | SMT-LIB2 | | Operation | SMT-LIB2 |
 |---|---|---|---|---|
-| [`Const`] | `#b…`, `(_ bvN width)` | | [`signed::Div`] | `bvsdiv` |
+| [`Num`] | `#b…`, `(_ bvN width)` | | [`signed::Div`] | `bvsdiv` |
 | [`Concat`] | `concat` | | [`signed::Rem`] | `bvsrem` |
 | [`Extract`] | `(_ extract i j)` | | [`signed::Mod`] | `bvsmod` |
 | [`Repeat`] | `(_ repeat i)` | | [`signed::Shr`] | `bvashr` |
@@ -65,17 +65,17 @@ use std::fmt;
 /// theories.
 pub use super::sort::Words as Sort;
 
-/// A constant matrix literal of `width`-bit words, as `Const(tensor, width)`, held
+/// A constant matrix literal of `width`-bit words, as `Num(tensor, width)`, held
 /// in a tensor of type `T`.
 ///
 /// SMT-LIB2: a literal `#b…` or `(_ bvN width)`.
 #[derive(Debug)]
-pub struct Const<T> {
+pub struct Num<T> {
     tensor: T,
     width: usize,
 }
 
-impl<T: Matrix> Const<T> {
+impl<T: Matrix> Num<T> {
     /// The constant held in `tensor`, writing the words of `cod`; fails
     /// unless `tensor` is of its shape.
     pub fn with_cod(tensor: T, cod: [Word; 1]) -> Result<Self, crate::Error> {
@@ -86,14 +86,14 @@ impl<T: Matrix> Const<T> {
                 &cod,
             ));
         }
-        Ok(Const {
+        Ok(Num {
             tensor,
             width: x.width(),
         })
     }
 }
 
-impl<T> Const<T> {
+impl<T> Num<T> {
     /// The tensor holding the constant.
     pub fn tensor(&self) -> &T {
         &self.tensor
@@ -391,7 +391,7 @@ pub struct Ne {
 /// as `SDiv` for [`signed::Div`] and `UDiv` for [`unsigned::Div`].
 #[derive(Debug, From)]
 pub enum BV<T> {
-    Const(Const<T>),
+    Num(Num<T>),
     Concat(Concat),
     Extract(Extract),
     Repeat(Repeat),
@@ -435,11 +435,11 @@ pub enum BV<T> {
 
 impl<T> Clone for BV<T>
 where
-    Const<T>: Clone,
+    Num<T>: Clone,
 {
     fn clone(&self) -> Self {
         match self {
-            BV::Const(op) => BV::Const(op.clone()),
+            BV::Num(op) => BV::Num(op.clone()),
             BV::Concat(op) => BV::Concat(*op),
             BV::Extract(op) => BV::Extract(*op),
             BV::Repeat(op) => BV::Repeat(*op),
@@ -486,7 +486,7 @@ where
 impl<T: fmt::Display> fmt::Display for BV<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BV::Const(op) => op.fmt(f),
+            BV::Num(op) => op.fmt(f),
             BV::Concat(op) => op.fmt(f),
             BV::Extract(op) => op.fmt(f),
             BV::Repeat(op) => op.fmt(f),
@@ -533,7 +533,7 @@ impl<T: fmt::Display> fmt::Display for BV<T> {
 impl<T: Matrix> Boundary<Sort> for BV<T> {
     fn dom(&self) -> Poly<Sort> {
         match self {
-            BV::Const(op) => op.dom(),
+            BV::Num(op) => op.dom(),
             BV::Concat(op) => op.dom(),
             BV::Extract(op) => op.dom(),
             BV::Repeat(op) => op.dom(),
@@ -578,7 +578,7 @@ impl<T: Matrix> Boundary<Sort> for BV<T> {
 
     fn cod(&self) -> Poly<Sort> {
         match self {
-            BV::Const(op) => op.cod(),
+            BV::Num(op) => op.cod(),
             BV::Concat(op) => op.cod(),
             BV::Extract(op) => op.cod(),
             BV::Repeat(op) => op.cod(),
@@ -622,7 +622,7 @@ impl<T: Matrix> Boundary<Sort> for BV<T> {
     }
 }
 
-impl<T: Matrix> Boundary<Sort> for Const<T> {
+impl<T: Matrix> Boundary<Sort> for Num<T> {
     fn dom(&self) -> Poly<Sort> {
         Poly::unit()
     }
@@ -828,7 +828,7 @@ impl Boundary<Sort> for Ne {
     }
 }
 
-impl<T: fmt::Display> fmt::Display for Const<T> {
+impl<T: fmt::Display> fmt::Display for Num<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.tensor)
     }
@@ -2826,12 +2826,12 @@ pub mod unsigned {
 
 /// Extracts an operation of fixed-size bit-vectors from a Python object,
 /// trying each operation in turn: those carrying no data through their own
-/// classes, and [`Const`] through the extraction that the tensor type `T`
+/// classes, and [`Num`] through the extraction that the tensor type `T`
 /// provides.
 #[cfg(feature = "pyo3")]
 impl<'a, 'py, T> pyo3::FromPyObject<'a, 'py> for BV<T>
 where
-    Const<T>: pyo3::FromPyObject<'a, 'py>,
+    Num<T>: pyo3::FromPyObject<'a, 'py>,
 {
     type Error = pyo3::PyErr;
 
@@ -2955,8 +2955,8 @@ where
         if let Ok(op) = ob.extract::<unsigned::Ge>() {
             return Ok(BV::UGe(op));
         }
-        if let Ok(op) = ob.extract::<Const<T>>() {
-            return Ok(BV::Const(op));
+        if let Ok(op) = ob.extract::<Num<T>>() {
+            return Ok(BV::Num(op));
         }
         Err(pyo3::exceptions::PyTypeError::new_err(format!(
             "expected an operation of fixed-size bit-vectors, got {}",

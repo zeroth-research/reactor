@@ -81,7 +81,7 @@ mod any {
 
     #[test]
     fn data_operations_take_their_shape_from_their_tensors() {
-        let c = real(real::Const::with_cod(Mat([2, 3]), [sort::Real::new([2, 3])]).unwrap());
+        let c = real(real::Num::with_cod(Mat([2, 3]), [sort::Real::new([2, 3])]).unwrap());
         assert_eq!(c.dom(), Poly::unit());
         let cod: Poly<sort::Any> = base::mono![sort::Real::new([2, 3]).into()].into();
         assert_eq!(c.cod(), cod);
@@ -94,9 +94,8 @@ mod any {
         assert_eq!(l.dom(), dom);
         assert_eq!(l.cod(), cod);
 
-        let w = word(
-            word::Const::with_cod(Mat([1, 2]), [sort::Word::new(8, [1, 2]).unwrap()]).unwrap(),
-        );
+        let w =
+            word(word::Num::with_cod(Mat([1, 2]), [sort::Word::new(8, [1, 2]).unwrap()]).unwrap());
         let cod: Poly<sort::Any> = base::mono![sort::Word::new_unchecked(8, [1, 2]).into()].into();
         assert_eq!(w.cod(), cod);
 
@@ -117,9 +116,9 @@ mod any {
         );
 
         // a constant word has the shape of its tensor
-        assert!(word::Const::with_cod(Mat([1, 2]), [sort::Word::new(8, [2, 1]).unwrap()]).is_err());
+        assert!(word::Num::with_cod(Mat([1, 2]), [sort::Word::new(8, [2, 1]).unwrap()]).is_err());
         assert_eq!(
-            word::Const::with_cod(Mat([1, 2]), [sort::Word::new(8, [1, 2]).unwrap()])
+            word::Num::with_cod(Mat([1, 2]), [sort::Word::new(8, [1, 2]).unwrap()])
                 .unwrap()
                 .width(),
             8
@@ -128,7 +127,7 @@ mod any {
 
     #[test]
     fn data_operations_read_their_tensors() {
-        let c = real::Const::with_cod(Mat([2, 3]), [sort::Real::new([2, 3])]).unwrap();
+        let c = real::Num::with_cod(Mat([2, 3]), [sort::Real::new([2, 3])]).unwrap();
         assert_eq!(c.tensor().0, [2, 3]);
         let l = int::Affine::with_dom(Mat([2, 3]), Mat([2, 4]), [sort::Int::new([3, 4])]).unwrap();
         assert_eq!(l.a().0, [2, 3]);
@@ -365,7 +364,7 @@ mod any {
         );
 
         // constants and the linear maps of a constant are of a degree too
-        let op = real(real::Const::with_cod(Mat([2, 3]), [T(sort::Real::new([2, 3]))]).unwrap());
+        let op = real(real::Num::with_cod(Mat([2, 3]), [T(sort::Real::new([2, 3]))]).unwrap());
         assert_eq!(op.cod(), base::mono![r([2, 3], 1)].into());
         let op = real(real::Scale::with_dom(Mat([2, 3]), [T(sort::Real::new([2, 3]))]).unwrap());
         assert_eq!(op.dom(), base::mono![r([2, 3], 1)].into());

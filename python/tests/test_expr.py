@@ -78,7 +78,7 @@ def test_numeric_literal_needs_explicit_sort():
 
 def tensor_of_term(term):
     match term.itype:
-        case matrix.real.Const(t) | matrix.int.Const(t) | matrix.bool.Truth(t) | matrix.word.Const(t):
+        case matrix.real.Num(t) | matrix.int.Num(t) | matrix.bool.Truth(t) | matrix.word.Num(t):
             return t
         case _:
             return None
@@ -293,7 +293,7 @@ def test_collecting_records_deps_first():
     with collecting() as terms:
         ite(x < y, x + 1, y)
     optypes = [type(t.itype) for t in terms]
-    assert optypes == [matrix.int.Lt, matrix.int.Const, matrix.int.Add, matrix.int.Ite]
+    assert optypes == [matrix.int.Lt, matrix.int.Num, matrix.int.Add, matrix.int.Ite]
 
 
 def test_shared_subexpression_recorded_once():

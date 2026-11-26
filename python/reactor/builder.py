@@ -352,7 +352,7 @@ class RealTermBuilder(TermBuilder):
         return self._compare(real.Ne, a, b)
 
     def _const(self, tensor, cod):
-        return real.Const(tensor.to(torch.float32), cod)
+        return real.Num(tensor.to(torch.float32), cod)
 
 
 class IntTermBuilder(TermBuilder):
@@ -423,7 +423,7 @@ class IntTermBuilder(TermBuilder):
         return self._compare(int_.Ne, a, b)
 
     def _const(self, tensor, cod):
-        return int_.Const(tensor.to(torch.int64), cod)
+        return int_.Num(tensor.to(torch.int64), cod)
 
 
 class WordTermBuilder(TermBuilder):
@@ -504,7 +504,7 @@ class WordTermBuilder(TermBuilder):
         # the tensor does not tell the width of its words: the codomain is required
         if cod is None:
             cod = self.number(list(tensor.shape))
-        return word.Const(tensor.to(torch.int64), cod)
+        return word.Num(tensor.to(torch.int64), cod)
 
 
 def builder_for(number=Real) -> TermBuilder:

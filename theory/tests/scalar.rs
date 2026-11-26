@@ -91,11 +91,11 @@ mod r#enum {
 
     #[test]
     fn a_constant_is_a_value_of_its_enumeration() {
-        let c = Val::with_cod("busy", [state()]).unwrap();
+        let c = Sym::with_cod("busy", [state()]).unwrap();
         assert_eq!(c.dom(), Poly::unit());
         assert_eq!(c.cod(), mono![state().into()].into());
         assert_eq!(c.to_string(), "busy");
-        assert!(Val::with_cod("on", [state()]).is_err());
+        assert!(Sym::with_cod("on", [state()]).is_err());
     }
 
     #[test]
@@ -175,7 +175,7 @@ mod r#enum {
 
     #[test]
     fn the_operations_display_and_compute_their_boundary_through_op() {
-        let c: Any = Val::with_cod("idle", [state()]).unwrap().into();
+        let c: Any = Sym::with_cod("idle", [state()]).unwrap().into();
         assert_eq!(c.to_string(), "idle");
         assert_eq!(c.cod(), mono![state().into()].into());
         let ite: Any = Ite::with_cod([state()]).unwrap().into();
@@ -247,10 +247,10 @@ mod any {
     fn the_operations_of_each_theory_keep_their_boundary_and_display() {
         let e = Enum::new(["idle", "busy"]).unwrap();
         let b = Bool::new([1, 1]);
-        let val = r#enum::Val::with_cod("idle", [e.clone()]).unwrap();
+        let sym = r#enum::Sym::with_cod("idle", [e.clone()]).unwrap();
         let cases: [(scalar::Any, Poly<Any>, Poly<Any>, &str); 3] = [
             (
-                r#enum::Any::from(val).into(),
+                r#enum::Any::from(sym).into(),
                 Poly::unit(),
                 mono![Any::from(e.clone())].into(),
                 "idle",

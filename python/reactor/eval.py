@@ -123,11 +123,11 @@ def eval_itype(itype, read, out_sort=None):
             return [torch.zeros(shape, dtype=torch.float32)]
 
         # --- constants, linear and affine maps (tensors carried by the op) ---
-        case matrix.real.Const(t):
+        case matrix.real.Num(t):
             # a real constant may hold integers, kept as given; its value is a real, of
             # floating point, so that it neither wraps around nor mixes with integers
             return [t.clone() if t.is_floating_point() else t.to(torch.get_default_dtype())]
-        case matrix.int.Const(t) | matrix.bool.Truth(t) | matrix.word.Const(t):
+        case matrix.int.Num(t) | matrix.bool.Truth(t) | matrix.word.Num(t):
             return [t.clone()]
         case matrix.real.Linear(a) | matrix.int.Linear(a):
             return [a @ r[0]]

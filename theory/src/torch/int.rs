@@ -187,16 +187,16 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::int::Affine<tch::Tensor> 
 }
 
 /// A constant integer matrix: a `torch.Tensor` of integer elements.
-#[pyclass(frozen, name = "Const", module = "reactor.matrix.int")]
-pub struct Const(tch::Tensor);
+#[pyclass(frozen, name = "Num", module = "reactor.matrix.int")]
+pub struct Num(tch::Tensor);
 
 // SAFETY: the tensor is private to this module, which only reads its
 // shape and element kind and takes shallow clones of it; libtorch makes
 // these thread-safe, counting the references to a tensor atomically.
-unsafe impl Sync for Const {}
+unsafe impl Sync for Num {}
 
 #[pymethods]
-impl Const {
+impl Num {
     /// The constant held in `tensor`, writing `cod`, which it determines and may be
     /// omitted. Fails when `tensor` is not a `torch.Tensor` of two dimensions and
     /// integer elements, or `cod` not of its shape.
@@ -211,8 +211,8 @@ impl Const {
             )));
         }
         let cod = cod.unwrap_or_else(|| Int::new(crate::Matrix::shape(&tensor.0)));
-        let op = int::Const::with_cod(tensor.0, [cod])?;
-        Ok(Const(op.tensor().shallow_clone()))
+        let op = int::Num::with_cod(tensor.0, [cod])?;
+        Ok(Num(op.tensor().shallow_clone()))
     }
 
     #[getter]
@@ -230,19 +230,19 @@ impl Const {
     /// The sort it writes.
     #[getter]
     fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
-        let op: crate::matrix::int::Const<tch::Tensor> = slf.extract()?;
+        let op: crate::matrix::int::Num<tch::Tensor> = slf.extract()?;
         crate::matrix::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
     }
 }
 
-impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::int::Const<tch::Tensor> {
+impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::int::Num<tch::Tensor> {
     type Error = PyErr;
 
-    /// Fails when `ob` is not an [`Const`].
+    /// Fails when `ob` is not an [`Num`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        let constant = ob.cast::<Const>()?.get();
+        let constant = ob.cast::<Num>()?.get();
         let cod = Int::new(crate::Matrix::shape(&constant.0));
-        Ok(crate::matrix::int::Const::with_cod(
+        Ok(crate::matrix::int::Num::with_cod(
             constant.0.shallow_clone(),
             [cod],
         )?)
@@ -251,10 +251,10 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::int::Const<tch::Tensor> {
 
 /// A clone shares the tensor of the original: `tch::Tensor` is not `Clone`,
 /// so this takes a shallow clone of it, as libtorch counts its references.
-impl Clone for crate::matrix::int::Const<tch::Tensor> {
+impl Clone for crate::matrix::int::Num<tch::Tensor> {
     fn clone(&self) -> Self {
         let cod = Int::new(crate::Matrix::shape(self.tensor()));
-        crate::matrix::int::Const::with_cod(self.tensor().shallow_clone(), [cod])
+        crate::matrix::int::Num::with_cod(self.tensor().shallow_clone(), [cod])
             .expect("a clone has the shape of the original")
     }
 }
@@ -367,7 +367,7 @@ impl<'py> IntoPyObject<'py> for crate::matrix::int::NIA<tch::Tensor> {
         use crate::matrix::int::NIA;
 
         match self {
-            NIA::Const(op) => Const(op.tensor().shallow_clone())
+            NIA::Num(op) => Num(op.tensor().shallow_clone())
                 .into_pyobject(py)
                 .map(Bound::into_any),
             NIA::Scale(op) => Scale(op.tensor().shallow_clone())

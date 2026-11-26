@@ -115,32 +115,32 @@ def test_domains_of_no_instance_raise():
 def test_nullary_operations_take_and_match_their_codomain_only():
     for op in [
         real.Zero(T(Real([1, 2]))),
-        real.Const(torch.ones(1, 2), Real([1, 2])),
-        int_.Const(torch.ones(1, 2, dtype=torch.int64), Int([1, 2])),
+        real.Num(torch.ones(1, 2), Real([1, 2])),
+        int_.Num(torch.ones(1, 2, dtype=torch.int64), Int([1, 2])),
         bool_.Truth(torch.ones(1, 2, dtype=torch.bool), Bool([1, 2])),
-        word.Const(torch.ones(1, 2, dtype=torch.int64), Word(4, [1, 2])),
+        word.Num(torch.ones(1, 2, dtype=torch.int64), Word(4, [1, 2])),
         Havoc(Int([1, 2])),
         Zero(),
     ]:
         assert type(op).__match_args__[-1] == "cod"
         assert "dom" not in type(op).__match_args__
         assert not hasattr(op, "dom")
-    assert real.Const(torch.ones(1, 2), T(Real([1, 2]))).cod == T(Real([1, 2]))
-    assert word.Const(torch.ones(1, 2, dtype=torch.int64), Word(4, [1, 2])).cod == Word(4, [1, 2])
+    assert real.Num(torch.ones(1, 2), T(Real([1, 2]))).cod == T(Real([1, 2]))
+    assert word.Num(torch.ones(1, 2, dtype=torch.int64), Word(4, [1, 2])).cod == Word(4, [1, 2])
     assert Havoc(Int([1, 2])).cod == Int([1, 2])
     assert Zero().cod == ZeroSort()
     with pytest.raises(ValueError):
-        real.Const(torch.ones(1, 2), Real([2, 1]))
+        real.Num(torch.ones(1, 2), Real([2, 1]))
 
 
 def test_the_codomain_of_constants_is_optional_when_their_tensor_determines_it():
-    assert real.Const(torch.ones(1, 2)).cod == Real([1, 2])
-    assert real.Const(torch.ones(1, 2), T(Real([1, 2]))).cod == T(Real([1, 2]))
-    assert int_.Const(torch.ones(1, 2, dtype=torch.int64)).cod == Int([1, 2])
+    assert real.Num(torch.ones(1, 2)).cod == Real([1, 2])
+    assert real.Num(torch.ones(1, 2), T(Real([1, 2]))).cod == T(Real([1, 2]))
+    assert int_.Num(torch.ones(1, 2, dtype=torch.int64)).cod == Int([1, 2])
     assert bool_.Truth(torch.ones(1, 2, dtype=torch.bool)).cod == Bool([1, 2])
     # the tensor of words does not determine their width
     with pytest.raises(TypeError):
-        word.Const(torch.ones(1, 2, dtype=torch.int64))
+        word.Num(torch.ones(1, 2, dtype=torch.int64))
 
 
 def test_skip_reads_and_writes_its_sort():

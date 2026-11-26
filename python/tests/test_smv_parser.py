@@ -37,7 +37,7 @@ def test_counter_basic():
 
 
 def test_counter_init_terms():
-    """counter.smv: init(x) := 0 should produce a Const(0) term."""
+    """counter.smv: init(x) := 0 should produce a Num(0) term."""
     text = (FIXTURES / "counter.smv").read_text()
     module, name_map = parse_smv(text)
 
@@ -49,12 +49,12 @@ def test_counter_init_terms():
     # At least one init term should be a zero-valued word constant for x.
     def _is_const_zero(itype):
         match itype:
-            case matrix.word.Const(data):
+            case matrix.word.Num(data):
                 return int(data.item()) == 0
         return False
 
     const_zero_found = any(_is_const_zero(t.itype) for t in init_terms)
-    assert const_zero_found, "Expected a word.Const(0) init term for x"
+    assert const_zero_found, "Expected a word.Num(0) init term for x"
 
 
 def test_test_itypes():
@@ -201,7 +201,7 @@ def test_literal_takes_the_width_of_its_operand():
     VAR x : unsigned word[8];
     ASSIGN next(x) := x + 1;
     """)
-    consts = [t for t in update if isinstance(t.itype, matrix.word.Const)]
+    consts = [t for t in update if isinstance(t.itype, matrix.word.Num)]
     assert consts and all(t.write[0].dtype == Word(8, [1, 1]) for t in consts)
     assert any(isinstance(t.itype, matrix.word.Add) and t.itype.width == 8 for t in update)
 
@@ -214,7 +214,7 @@ def test_word_constants_add_modulo_their_width():
     ASSIGN next(x) := 0ud8_200 + 0ud8_100;
     """)
     terms = list(update)
-    consts = [t for t in terms if isinstance(t.itype, matrix.word.Const)]
+    consts = [t for t in terms if isinstance(t.itype, matrix.word.Num)]
     assert len(consts) == 2 and all(t.write[0].dtype == Word(8, [1, 1]) for t in consts)
     assert any(isinstance(t.itype, matrix.word.Add) and t.itype.width == 8 for t in terms)
     state = {}

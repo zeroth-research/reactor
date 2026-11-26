@@ -33,9 +33,9 @@ def _const_op(value, sort):
         case Bool():
             return matrix.bool.Truth(torch.tensor([[bool(value)]]), sort)
         case Int():
-            return matrix.int.Const(torch.tensor([[int(value)]], dtype=torch.int64), sort)
+            return matrix.int.Num(torch.tensor([[int(value)]], dtype=torch.int64), sort)
         case Word(w):
-            return matrix.word.Const(torch.tensor([[int(value) % (1 << w)]], dtype=torch.int64), sort)
+            return matrix.word.Num(torch.tensor([[int(value) % (1 << w)]], dtype=torch.int64), sort)
     raise TypeError(f"no constant of sort {sort}")
 
 

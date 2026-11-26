@@ -5,7 +5,7 @@ Defines one type per operation on the sort [`Int`] of integer matrices. Every
 operation reads and writes integer matrices, and carries enough
 information to compute its [`Boundary`]:
 
-- [`Const`] — a constant integer matrix literal.
+- [`Num`] — a constant integer matrix literal.
 - [`Scale`] — the pointwise product `C ⊙ x` with a constant integer matrix `C`.
 - [`Add`], [`Sub`] — pointwise addition and subtraction.
 - [`Mul`] — pointwise multiplication `x ⊙ y`.
@@ -53,11 +53,11 @@ pub use super::sort::Ints as Sort;
 
 /// A constant integer matrix literal, held in a tensor of type `T`.
 #[derive(Debug)]
-pub struct Const<T> {
+pub struct Num<T> {
     tensor: T,
 }
 
-impl<T: Matrix> Const<T> {
+impl<T: Matrix> Num<T> {
     /// The constant held in `tensor`, writing the integer matrix of `cod`; fails
     /// unless `tensor` is of its shape.
     pub fn with_cod(tensor: T, cod: [Int; 1]) -> Result<Self, crate::Error> {
@@ -68,11 +68,11 @@ impl<T: Matrix> Const<T> {
                 &cod,
             ));
         }
-        Ok(Const { tensor })
+        Ok(Num { tensor })
     }
 }
 
-impl<T> Const<T> {
+impl<T> Num<T> {
     /// The tensor holding the constant.
     pub fn tensor(&self) -> &T {
         &self.tensor
@@ -474,7 +474,7 @@ pub struct Ne {
 #[derive(Debug, From)]
 pub enum NIA<T> {
     #[subenum(LIA)]
-    Const(Const<T>),
+    Num(Num<T>),
     #[subenum(LIA)]
     Scale(Scale<T>),
     #[subenum(LIA)]
@@ -523,14 +523,14 @@ pub enum NIA<T> {
 
 impl<T> Clone for NIA<T>
 where
-    Const<T>: Clone,
+    Num<T>: Clone,
     Scale<T>: Clone,
     Linear<T>: Clone,
     Affine<T>: Clone,
 {
     fn clone(&self) -> Self {
         match self {
-            NIA::Const(op) => NIA::Const(op.clone()),
+            NIA::Num(op) => NIA::Num(op.clone()),
             NIA::Scale(op) => NIA::Scale(op.clone()),
             NIA::Add(op) => NIA::Add(*op),
             NIA::Sub(op) => NIA::Sub(*op),
@@ -562,7 +562,7 @@ where
 impl<T: fmt::Display> fmt::Display for NIA<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            NIA::Const(op) => op.fmt(f),
+            NIA::Num(op) => op.fmt(f),
             NIA::Scale(op) => op.fmt(f),
             NIA::Add(op) => op.fmt(f),
             NIA::Sub(op) => op.fmt(f),
@@ -593,14 +593,14 @@ impl<T: fmt::Display> fmt::Display for NIA<T> {
 
 impl<T> Clone for LIA<T>
 where
-    Const<T>: Clone,
+    Num<T>: Clone,
     Scale<T>: Clone,
     Linear<T>: Clone,
     Affine<T>: Clone,
 {
     fn clone(&self) -> Self {
         match self {
-            LIA::Const(op) => LIA::Const(op.clone()),
+            LIA::Num(op) => LIA::Num(op.clone()),
             LIA::Scale(op) => LIA::Scale(op.clone()),
             LIA::Add(op) => LIA::Add(*op),
             LIA::Sub(op) => LIA::Sub(*op),
@@ -628,7 +628,7 @@ where
 impl<T: fmt::Display> fmt::Display for LIA<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LIA::Const(op) => op.fmt(f),
+            LIA::Num(op) => op.fmt(f),
             LIA::Scale(op) => op.fmt(f),
             LIA::Add(op) => op.fmt(f),
             LIA::Sub(op) => op.fmt(f),
@@ -656,7 +656,7 @@ impl<T: fmt::Display> fmt::Display for LIA<T> {
 impl<T: Matrix> Boundary<Sort> for NIA<T> {
     fn dom(&self) -> Poly<Sort> {
         match self {
-            NIA::Const(op) => op.dom().map(Sort::from),
+            NIA::Num(op) => op.dom().map(Sort::from),
             NIA::Scale(op) => op.dom().map(Sort::from),
             NIA::Add(op) => op.dom().map(Sort::from),
             NIA::Sub(op) => op.dom().map(Sort::from),
@@ -686,7 +686,7 @@ impl<T: Matrix> Boundary<Sort> for NIA<T> {
 
     fn cod(&self) -> Poly<Sort> {
         match self {
-            NIA::Const(op) => op.cod().map(Sort::from),
+            NIA::Num(op) => op.cod().map(Sort::from),
             NIA::Scale(op) => op.cod().map(Sort::from),
             NIA::Add(op) => op.cod().map(Sort::from),
             NIA::Sub(op) => op.cod().map(Sort::from),
@@ -717,7 +717,7 @@ impl<T: Matrix> Boundary<Sort> for NIA<T> {
 impl<T: Matrix> Boundary<Sort> for LIA<T> {
     fn dom(&self) -> Poly<Sort> {
         match self {
-            LIA::Const(op) => op.dom().map(Sort::from),
+            LIA::Num(op) => op.dom().map(Sort::from),
             LIA::Scale(op) => op.dom().map(Sort::from),
             LIA::Add(op) => op.dom().map(Sort::from),
             LIA::Sub(op) => op.dom().map(Sort::from),
@@ -743,7 +743,7 @@ impl<T: Matrix> Boundary<Sort> for LIA<T> {
 
     fn cod(&self) -> Poly<Sort> {
         match self {
-            LIA::Const(op) => op.cod().map(Sort::from),
+            LIA::Num(op) => op.cod().map(Sort::from),
             LIA::Scale(op) => op.cod().map(Sort::from),
             LIA::Add(op) => op.cod().map(Sort::from),
             LIA::Sub(op) => op.cod().map(Sort::from),
@@ -768,7 +768,7 @@ impl<T: Matrix> Boundary<Sort> for LIA<T> {
     }
 }
 
-impl<T: Matrix> Boundary<Int> for Const<T> {
+impl<T: Matrix> Boundary<Int> for Num<T> {
     fn dom(&self) -> Poly<Int> {
         Poly::unit()
     }
@@ -1008,7 +1008,7 @@ impl<T: fmt::Display> fmt::Display for Scale<T> {
     }
 }
 
-impl<T: fmt::Display> fmt::Display for Const<T> {
+impl<T: fmt::Display> fmt::Display for Num<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.tensor)
     }
@@ -1173,12 +1173,12 @@ impl fmt::Display for Ne {
 
 /// Extracts an operation of integer arithmetic from a Python object, trying
 /// each operation in turn: those carrying no data through their own
-/// classes, and [`Const`], [`Scale`], [`Linear`] and [`Affine`] through the extraction that the
+/// classes, and [`Num`], [`Scale`], [`Linear`] and [`Affine`] through the extraction that the
 /// tensor type `T` provides.
 #[cfg(feature = "pyo3")]
 impl<'a, 'py, T> pyo3::FromPyObject<'a, 'py> for NIA<T>
 where
-    Const<T>: pyo3::FromPyObject<'a, 'py>,
+    Num<T>: pyo3::FromPyObject<'a, 'py>,
     Scale<T>: pyo3::FromPyObject<'a, 'py>,
     Linear<T>: pyo3::FromPyObject<'a, 'py>,
     Affine<T>: pyo3::FromPyObject<'a, 'py>,
@@ -1251,8 +1251,8 @@ where
         if let Ok(op) = ob.extract::<Ne>() {
             return Ok(NIA::Ne(op));
         }
-        if let Ok(op) = ob.extract::<Const<T>>() {
-            return Ok(NIA::Const(op));
+        if let Ok(op) = ob.extract::<Num<T>>() {
+            return Ok(NIA::Num(op));
         }
         if let Ok(op) = ob.extract::<Scale<T>>() {
             return Ok(NIA::Scale(op));
