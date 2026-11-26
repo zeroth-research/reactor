@@ -6,7 +6,7 @@ theory: [`real`] and [`int`] for arithmetic, [`bool`](mod@bool) for
 propositional logic, and [`word`] for fixed-size bit-vectors, whose
 operations act on matrices; and `enum` for the enumerations of
 symbolic constants, and [`event`] for the events, booleans whose change
-signals them, whose operations act on values of no shape and read and write
+signals them, each its own sort, whose operations act on values of no shape and read and write
 the booleans of the shape `[1, 1]`. Each module defines the sort of its
 theory, with its operations, which read and write the sorts of [`Any`] and
 compute their own boundary.
@@ -387,43 +387,6 @@ where
                 "the operation reading this domain writes {}, not {expected}",
                 op.cod()
             )));
-        }
-    }
-    Ok(op)
-}
-
-/// The sorts of a domain or codomain as Python gives it: a sort alone, or a
-/// list of them.
-#[cfg(feature = "pyo3")]
-fn py_mono(ob: &Bound<'_, PyAny>) -> PyResult<Poly<Any>> {
-    let sorts = match ob.extract::<Any>() {
-        Ok(s) => vec![s],
-        Err(_) => ob.extract::<Vec<Any>>()?,
-    };
-    Ok(sorts
-        .into_iter()
-        .collect::<base::boundary::Mono<Any>>()
-        .into())
-}
-
-/// The operation `op`, whose boundary its type fixes, checked against the
-/// domain `dom` and the codomain `cod` that a Python constructor is given,
-/// when it is: those must be the ones of `op`.
-#[cfg(feature = "pyo3")]
-pub(crate) fn check_boundary<O: Boundary<Any> + fmt::Display>(
-    op: O,
-    dom: Option<&Bound<'_, PyAny>>,
-    cod: Option<&Bound<'_, PyAny>>,
-) -> PyResult<O> {
-    for (name, given, fixed) in [("domain", dom, op.dom()), ("codomain", cod, op.cod())] {
-        if let Some(given) = given {
-            let given = py_mono(given)?;
-            if given != fixed {
-                return Err(Error(format!(
-                    "the operation {op} has the {name} {fixed}, not {given}"
-                ))
-                .into());
-            }
         }
     }
     Ok(op)

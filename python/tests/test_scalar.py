@@ -8,7 +8,7 @@ from reactor import Havoc, Skip, T, Term, Wire
 from reactor.bool import Bool
 from reactor.zero import Real0
 from reactor.enum import Enum, Sym, Into
-from reactor.event import Event, Set, Reset
+from reactor.event import Event, Toggle
 import reactor.enum as enum_
 import reactor.event as event_
 
@@ -53,9 +53,13 @@ def test_a_value_is_in_an_enumeration_when_it_is_one_of_its_constants():
     assert 1 not in e and None not in e
 
 
-def test_events_have_no_parameters():
-    assert Event() == Event() and str(Event()) == "Event()"
-    match Event():
+def test_each_event_is_its_own_sort():
+    e, f = Event(), Event()
+    assert e != f and e.id != f.id
+    # equal to itself, and hashable, as a sort
+    assert e == e and len({e, e, f}) == 2
+    assert str(e) == f"Event#{e.id}"
+    match e:
         case Event():
             pass
         case _:
@@ -119,35 +123,42 @@ def test_the_choice_of_enumerations_reads_a_scalar_condition():
         enum_.Ite([Bool([2, 2]), e, e])
 
 
-def test_the_operations_on_events_have_a_fixed_boundary():
-    ev = Event()
+def test_the_operations_on_events_read_the_values_of_one_event():
+    ev, other = Event(), Event()
     cases = [
-        (Set, [], ev),
-        (Reset, [], ev),
-        (event_.Test, ev, COND),
-        (event_.Ite, [COND, ev, ev], ev),
+        (Toggle, ev, ev, other),
+        (event_.Eq, [ev, ev], COND, [other, other]),
+        (event_.Ne, [ev, ev], COND, [other, other]),
+        (event_.Ite, [COND, ev, ev], ev, [COND, other, other]),
     ]
-    for cls, dom, cod in cases:
-        op = cls()
+    for cls, dom, cod, dom_of_other in cases:
+        op = cls(dom)
         assert (op.dom, op.cod) == (dom, cod)
-        # the boundary, given, must be the fixed one
-        assert cls(dom) == cls(dom, cod) == op
+        # the codomain, given, must be the one it writes: not another event
+        assert cls(dom, cod) == op
         with pytest.raises(ValueError):
-            cls(cod=Real0())
+            cls(dom, other)
         match op:
             case cls(d, c):
                 assert (d, c) == (dom, cod)
+        # each operation is of its event
+        assert op != cls(dom_of_other)
+    # the values of two events never meet
+    with pytest.raises(ValueError):
+        event_.Ne([ev, other])
+    with pytest.raises(ValueError):
+        event_.Ite([COND, ev, other])
 
 
 def test_the_scalar_sorts_and_operations_go_through_terms():
-    e = Enum({"idle", "busy"})
+    e, ev = Enum({"idle", "busy"}), Event()
     for op, read, write in [
         (Sym("idle", e), [], [Wire(e)]),
         (enum_.Eq([e, e]), [Wire(e), Wire(e)], [Wire(COND)]),
-        (Set(), [], [Wire(Event())]),
-        (event_.Test(), [Wire(Event())], [Wire(COND)]),
+        (Toggle(ev), [Wire(ev)], [Wire(ev)]),
+        (event_.Ne([ev, ev]), [Wire(ev), Wire(ev)], [Wire(COND)]),
         (Havoc(e), [], [Wire(e)]),
-        (Skip(Event()), [Wire(Event())], [Wire(Event())]),
+        (Skip(ev), [Wire(ev)], [Wire(ev)]),
     ]:
         term = Term(op, write, read) if read else Term(op, write)
         assert term.itype == op

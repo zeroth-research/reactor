@@ -11,9 +11,12 @@ import torch
 
 import reactor
 from reactor import Module, Wire, sugar, Var, T, TheoryError
+from reactor.bool import Bool
 from reactor.int import Int
 from reactor.real import Real
-from reactor.sugar import ite, d, X, Zero, expr
+from reactor.enum import Enum
+from reactor.event import Event
+from reactor.sugar import ite, d, X, Zero, expr, recv, Havoc
 from reactor import Skip
 from reactor.zero import Real0
 from reactor.eval import eval_itype
@@ -394,3 +397,103 @@ def test_compose_hiding_coupled_variables():
 
     # the coupling took place regardless: hiding only restricts visibility
     assert y not in m.obs and y not in m.extl
+
+
+# --- enumerations and events -------------------------------------------------
+
+LIGHT = Enum({"on", "off"})
+
+
+def _light(state, s):
+    """The value of the light `s` written in `state`, by its name."""
+    return LIGHT.values[state[reactor.X(s)].item()]
+
+
+def _happens(m, steps, e):
+    """Whether the event `e` happens in each of `steps` updates of `m`: whether its next
+    value differs from its latched one."""
+    state, out = _init(m), []
+    for _ in range(steps):
+        state = _update(m, _latch(m, state))
+        out.append(bool(state[reactor.X(e)] != state[e]))
+    return out
+
+
+class Switch(sugar.Module):
+    """A light, switched over whenever the button is pressed."""
+
+    def init(self, _press):
+        return "off"
+
+    def update(self, s, press):
+        return ite(recv(press), ite(s == "off", "on", "off"), s)
+
+
+class Button(sugar.Module):
+    """A button pressed in every other step: whenever its phase is up."""
+
+    def init(self):
+        # the initial state of an event is arbitrary
+        return Havoc, False
+
+    def update(self, press, up):
+        # flipped, an event is sent; kept, it is not
+        return ite(up, ~press, press), ~up
+
+
+def test_a_light_switches_when_its_button_is_pressed():
+    s, press = Var(LIGHT), Var(Event())
+    m = Switch(ctrl=(s,), extl=(press,))
+    state = _init(m)
+    trace = [_light(state, s)]
+    # the environment presses the button by flipping its event
+    value = torch.tensor([[False]])
+    for pressed in [False, True, True, False, True]:
+        state = _latch(m, state)
+        state[press] = value
+        value = ~value if pressed else value
+        state[reactor.X(press)] = value
+        state = _update(m, state)
+        trace.append(_light(state, s))
+    assert trace == ["off", "off", "on", "off", "off", "on"]
+
+
+def test_a_button_sends_its_event_by_true_and_not_by_false():
+    press, up = Var(Event()), Var(Bool([1, 1]))
+    m = Button(ctrl=(press, up))
+    assert _happens(m, 5, press) == [False, True, False, True, False]
+
+
+def test_a_light_follows_the_button_it_is_composed_with():
+    s, press, up = Var(LIGHT), Var(Event()), Var(Bool([1, 1]))
+    m = Module.compose(Button(ctrl=(press, up)), Switch(ctrl=(s,), extl=(press,)))
+    assert m.closed()
+    state = _init(m)
+    trace = [_light(state, s)]
+    for _ in range(6):
+        state = _update(m, _latch(m, state))
+        trace.append(_light(state, s))
+    # pressed in every other step, so on, then off, every two steps
+    assert trace == ["off", "off", "on", "on", "off", "off", "on"]
+
+
+def test_an_event_is_never_sent_by_a_module_with_no_update():
+    class Never(sugar.Module):
+        def init(self):
+            return Havoc
+
+    e = Var(Event())
+    # its initial state means nothing, and the update of a module with none keeps it,
+    # so that it never flips
+    assert _happens(Never(ctrl=(e,)), 3, e) == [False, False, False]
+
+
+
+def test_an_event_is_initialised_arbitrarily_not_by_a_constant():
+    class Start(sugar.Module):
+        def init(self):
+            return True
+
+    # an event has no constants: its initial state, never observed, is arbitrary
+    with pytest.raises(TypeError):
+        Start(ctrl=(Var(Event()),))

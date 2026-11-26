@@ -11,13 +11,13 @@ holds the singleton sort `Real0`, shared by all theories, and the operation `Zer
 writing its only value; `real`, `int`, `bool` and `word` (with `word.signed` and
 `word.unsigned`, and each with `.broadcast`, the choice of whole matrices by a scalar
 condition), and `enum` and `event`, hold the sort of each theory (`real.Real([rows,
-cols])`, `word.Word(width, [rows, cols])`, `enum.Enum(values)`, `event.Event()`) and its
+cols])`, `word.Word(width, [rows, cols])`, `enum.Enum(values)`, and `event.Event()`, a
+new event, each its own sort) and its
 operations, each built from the parameters its sorts do not determine, then its domain,
 a single sort bare and several as a list, and optionally its codomain, which must agree
 (`real.Add([x, y])`, `word.Extract(i, j, x)`); an operation that reads nothing is built
 from its codomain (`real.Zero(x)`, `Havoc(x)`), except `zero.Zero()`, whose codomain,
-the singleton sort, carries no information, and the operations on events, whose domain
-and codomain are fixed and so optional (`event.Test()`). The sorts and operations of
+the singleton sort, carries no information. The sorts and operations of
 the namespaces are typed loosely here, as `Sort` and `Op`: a stub file cannot describe
 the nested namespaces of a single extension module. A `Var` bundles the latched, next
 (`X(v)`), and derivative (`d(v)`) wires of a state variable and stands for its latched

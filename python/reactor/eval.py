@@ -6,6 +6,9 @@ then its domain and codomain, a single sort bare and several as a list
 reals as floating point, integers and words as `int64`. A word of width `w` is stored
 as its unsigned value in `[0, 2^w)`; the signed operations read it in two's complement,
 and every word result is reduced modulo `2^w`. Division by zero follows SMT-LIB2.
+A value of an enumeration is the position of its symbolic constant among the values
+of the enumeration, sorted, as an `int64` of the shape `[1, 1]`, and an event a
+`torch.bool` of the shape `[1, 1]` that flips when it happens.
 """
 
 import torch
@@ -15,6 +18,8 @@ from .real import Real
 from .int import Int
 from .bool import Bool
 from .word import Word
+from .enum import Enum
+from .event import Event
 from . import real as _rl
 from .real import broadcast as _rb
 from . import int as _ii
@@ -26,6 +31,8 @@ from .word import broadcast as _wb
 from .word import signed as _ws
 from .word import unsigned as _wu
 from . import zero as _zz
+from . import enum as _en
+from . import event as _ev
 
 __all__ = ["eval_itype", "execute_init", "execute_update", "read_wire", "getattr_wire"]
 
@@ -48,6 +55,12 @@ def _zeros(sort):
             return torch.zeros(s, dtype=torch.float32)
         case Int(s) | Word(_, s):
             return torch.zeros(s, dtype=torch.int64)
+        case Enum():
+            # the first of its values
+            return torch.zeros([1, 1], dtype=torch.int64)
+        case Event():
+            # an arbitrary state: its state alone means nothing
+            return torch.zeros([1, 1], dtype=torch.bool)
     raise RuntimeError(f"no value of sort {sort}")
 
 
@@ -284,6 +297,23 @@ def eval_itype(itype, read, out_sort=None):
             return [r[0].clone()]
         case _ws.Extend(i, Word(w), Word(v)):
             return [_wrap(_signed(r[0], w), v)]
+
+        # --- enumerations: positions of the values, sorted ---
+        case _en.Sym(value, Enum(values)):
+            return [torch.tensor([[values.index(value)]], dtype=torch.int64)]
+        case _en.Into(Enum(small), Enum(large)):
+            # each position in the smaller enumeration, to that of its value in the larger
+            return [torch.tensor([large.index(v) for v in small], dtype=torch.int64)[r[0]]]
+        case _en.Eq() | _ev.Eq():
+            return [r[0] == r[1]]
+        case _en.Ne() | _ev.Ne():
+            return [r[0] != r[1]]
+        case _en.Ite() | _ev.Ite():
+            return [torch.where(r[0], r[1], r[2])]
+
+        # --- events: flipped when they happen ---
+        case _ev.Toggle():
+            return [~r[0]]
 
     raise RuntimeError(f"cannot evaluate op: {itype}")
 

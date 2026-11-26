@@ -55,8 +55,11 @@ mod sort {
     fn display() {
         let e = Enum::new(["idle", "busy"]).unwrap();
         assert_eq!(e.to_string(), r#"Enum(["busy", "idle"])"#);
-        assert_eq!(Event.to_string(), "Event()");
-        assert_eq!(Any::from(Event).to_string(), "Event()");
+        // an event by its identity, as a wire
+        let ev = Event::new();
+        let name = format!("Event#{}", ev.id());
+        assert_eq!(ev.to_string(), name);
+        assert_eq!(Any::from(ev).to_string(), name);
         assert_eq!(Any::from(e).to_string(), r#"Enum(["busy", "idle"])"#);
     }
 
@@ -65,7 +68,18 @@ mod sort {
         let e = Enum::new(["idle", "busy"]).unwrap();
         assert_eq!(T(&e), Real0);
         assert_eq!(T(e.clone()), Real0);
-        assert_eq!(T(Event), Real0);
+        assert_eq!(T(Event::new()), Real0);
+    }
+
+    #[test]
+    fn each_event_is_its_own_sort() {
+        let (e, f) = (Event::new(), Event::new());
+        assert_ne!(e, f);
+        assert_ne!(e.id(), f.id());
+        // a copy is the same event
+        let g = e;
+        assert_eq!(g, e);
+        assert_ne!(Any::from(e), Any::from(f));
     }
 }
 
@@ -196,50 +210,67 @@ mod r#enum {
 
 /// Tests for `event`.
 mod event {
-    use base::boundary::{Boundary, Poly};
+    use base::boundary::Boundary;
     use base::mono;
     use theory::bool::Bool;
     use theory::event::Event;
     use theory::event::*;
 
+    fn cond() -> Sort {
+        Bool::new_unchecked([1, 1]).into()
+    }
+
     #[test]
-    fn set_and_reset_read_nothing_and_write_an_event() {
-        for op in [Op::from(Set), Op::from(Reset)] {
-            assert_eq!(op.dom(), Poly::unit());
-            assert_eq!(op.cod(), mono![Event.into()].into());
+    fn toggle_flips_an_event_into_itself() {
+        let e = Event::new();
+        for op in [Toggle::with_dom([e]), Toggle::with_cod([e])] {
+            let op = Op::from(op.unwrap());
+            assert_eq!(op.dom(), mono![e.into()].into());
+            assert_eq!(op.cod(), mono![e.into()].into());
         }
-        assert_ne!(Op::from(Set), Op::from(Reset));
     }
 
     #[test]
-    fn test_reads_an_event_and_writes_a_bool() {
-        let op = Op::from(Test);
-        assert_eq!(op.dom(), mono![Event.into()].into());
-        assert_eq!(op.cod(), mono![Bool::new_unchecked([1, 1]).into()].into());
+    fn the_comparisons_read_two_values_of_one_event() {
+        let (e, f) = (Event::new(), Event::new());
+        for op in [
+            Op::from(Eq::with_dom([e, e]).unwrap()),
+            Op::from(Ne::with_dom([e, e]).unwrap()),
+        ] {
+            assert_eq!(op.dom(), mono![e.into(), e.into()].into());
+            assert_eq!(op.cod(), mono![cond()].into());
+        }
+        // the values of two events never meet
+        assert!(Eq::with_dom([e, f]).is_err());
+        assert!(Ne::with_dom([e, f]).is_err());
+        // each operation is of its event
+        assert_ne!(Ne::with_dom([e, e]).unwrap(), Ne::with_dom([f, f]).unwrap());
     }
 
     #[test]
-    fn ite_chooses_by_a_bool_between_events() {
-        let op = Op::from(Ite);
+    fn ite_chooses_by_a_bool_between_values_of_one_event() {
+        let (e, f) = (Event::new(), Event::new());
+        let op = Op::from(Ite::with_dom([cond(), e.into(), e.into()]).unwrap());
+        assert_eq!(op.dom(), mono![cond(), e.into(), e.into()].into());
+        assert_eq!(op.cod(), mono![e.into()].into());
         assert_eq!(
-            op.dom(),
-            mono![
-                Bool::new_unchecked([1, 1]).into(),
-                Event.into(),
-                Event.into()
-            ]
-            .into()
+            Ite::with_cod([e]).unwrap(),
+            Ite::with_dom([cond(), e.into(), e.into()]).unwrap()
         );
-        assert_eq!(op.cod(), mono![Event.into()].into());
+        // not between two events, nor by a condition that is no scalar boolean
+        assert!(Ite::with_dom([cond(), e.into(), f.into()]).is_err());
+        let wide = Bool::new_unchecked([2, 2]).into();
+        assert!(Ite::with_dom([wide, e.into(), e.into()]).is_err());
     }
 
     #[test]
     fn display() {
+        let e = Event::new();
         for (op, name) in [
-            (Op::from(Set), "Set"),
-            (Op::from(Reset), "Reset"),
-            (Op::from(Test), "Test"),
-            (Op::from(Ite), "Ite"),
+            (Op::from(Toggle::with_dom([e]).unwrap()), "Toggle"),
+            (Op::from(Eq::with_dom([e, e]).unwrap()), "Eq"),
+            (Op::from(Ne::with_dom([e, e]).unwrap()), "Ne"),
+            (Op::from(Ite::with_cod([e]).unwrap()), "Ite"),
         ] {
             assert_eq!(op.to_string(), name);
         }
@@ -278,6 +309,7 @@ mod op {
         let e = Enum::new(["idle", "busy"]).unwrap();
         let b = Bool::new_unchecked([1, 1]);
         let sym = r#enum::Sym::with_cod("idle", [e.clone()]).unwrap();
+        let ev = Event::new();
         let cases: [(Op, Poly<Any>, Poly<Any>, &str); 3] = [
             (
                 r#enum::Op::from(sym).into(),
@@ -292,10 +324,10 @@ mod op {
                 "Eq",
             ),
             (
-                event::Op::from(event::Set).into(),
-                Poly::unit(),
-                mono![Any::from(Event)].into(),
-                "Set",
+                event::Op::from(event::Toggle::with_dom([ev]).unwrap()).into(),
+                mono![Any::from(ev)].into(),
+                mono![Any::from(ev)].into(),
+                "Toggle",
             ),
         ];
         for (op, dom, cod, name) in cases {
@@ -306,8 +338,9 @@ mod op {
     }
 
     #[test]
-    fn the_tests_write_the_booleans_of_the_matrix_theories() {
-        let op: Op = event::Op::from(event::Test).into();
+    fn the_comparisons_write_the_booleans_of_the_matrix_theories() {
+        let ev = Event::new();
+        let op: Op = event::Op::from(event::Ne::with_dom([ev, ev]).unwrap()).into();
         assert_eq!(
             op.cod(),
             mono![Any::Bool(Bool::new_unchecked([1, 1]))].into()

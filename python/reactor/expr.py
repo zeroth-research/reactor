@@ -11,8 +11,7 @@ are split by *operation family* (the sort picks the class):
     SExpr  — Signed word   Word           arithmetic + bitwise + width, signed  // % and comparisons
     UExpr  — Unsigned word Word           arithmetic + bitwise + width, unsigned // % and comparisons
     NExpr  — Enumeration   Enum           == != (-> BExpr), its constants written as strings
-    EExpr  — Event         Event          recv(e) (-> BExpr);
-                                          its constants True (set), False (reset)
+    EExpr  — Event         Event          ~ (flip: send), recv(e) (-> BExpr); no constants, each its own sort
 
 The operations are those of the namespace of the operands' sort, ``reactor.real``,
 ``.int``, ``.bool``, ``.word``, ``.enum`` or ``.event``, built from the operands' sorts,
@@ -34,6 +33,7 @@ Construction and coercion go through ``expr()``:
     expr(3, sort=Real)                         # a numeric constant (sort is REQUIRED)
     expr(5, sort=Word(32, [1, 1]), signed=True)
     expr(var, tag="x")                         # `tag` is a display label only, no meaning
+    expr(Havoc, sort=Int([1, 1]))              # an arbitrary value, as with no init
 
 ``expr()`` is **not idempotent** — passing an existing ``Expr`` is an error. Operators coerce
 a *raw* operand through it (using the sibling's sort) but never convert between sorts: mixing
@@ -94,6 +94,7 @@ __all__ = [
     "relu",
     "argmax",
     "recv",
+    "Havoc",
 ]
 
 
@@ -119,8 +120,9 @@ def _family(sort) -> str:
         # the values of different enumerations meet in the union of their values
         case Enum():
             return "Enum"
+        # each event is its own sort: the values of two events never meet
         case Event():
-            return "Event"
+            return str(sort)
     raise TypeError(f"unknown sort: {sort}")
 
 
@@ -651,21 +653,34 @@ class NExpr(Expr):
 
 
 class EExpr(Expr):
-    """Events (Event): a value that is whether the event happens in the step that writes
-    it, set, by ``True``, when it does and reset, by ``False``, when it does not.
-    ``recv(e)`` is whether it happens in this step: ``ite(recv(e), a, b)``.
+    """Events (Event): a value that flips when the event happens, and is kept when it does
+    not; its state alone means nothing. ``~e`` is the event flipped, which, returned for
+    it, sends it: ``ite(c, ~e, e)``; ``recv(e)`` is whether it happens in this step,
+    ``X(e) != e``: ``ite(recv(e), a, b)``. Each event is its own sort, so that the values
+    of an event meet only its own: an event has no constants, and is flipped into no other
+    event."""
 
-    Open issue: ``Skip`` repeats an event. Kept as is, as an update returning its latched
-    value does, the value of an event that happened stays set, so that the event happens
-    again in every step until it is reset; the same holds wherever its owner does not
-    update. An event should happen only in the step that sets it, which needs to be
-    addressed (see the module docs of the event theory).
-    """
+    def __invert__(self) -> "EExpr":
+        """The event flipped: returned for it, an event happens."""
+        return self._unary(_ev.Toggle(self.dtype))
 
 
 # ---------------------------------------------------------------------------
 # expr() — single construction / coercion entry point
 # ---------------------------------------------------------------------------
+
+
+class _Havoc:
+    """The value `Havoc`: an arbitrary value of the sort it is built of, by `expr(Havoc,
+    sort=...)`, written by the operation `reactor.Havoc` of that sort, as the variables of
+    a module with no init start from. Returned by `init`, it leaves a variable
+    uninitialised, as an event, whose initial state is never observed, may be."""
+
+    def __repr__(self) -> str:
+        return "Havoc"
+
+
+Havoc = _Havoc()
 
 
 def expr(value, *, sort=None, signed=False, tag=None) -> Expr:
@@ -750,6 +765,13 @@ def _const(value, sort, *, signed, tag=None) -> Expr:
     if sort is None:
         raise TypeError("expr(): a numeric literal needs an explicit sort= ")
 
+    # an arbitrary value of a sort, of which it needs the concrete sort
+    if value is Havoc:
+        if isinstance(sort, type):
+            raise TypeError(f"expr(): an arbitrary value needs a concrete sort, got {sort.__name__}")
+        _emit(term := Term.constant(_rr.Havoc(sort), [Wire(sort)]))
+        return _wrap(term.write[0], signed=signed, tag=tag)
+
     # the singleton sort, the rate of change of discrete values: its only value is
     # written by the operation `Zero()`, given as is, unambiguously, and no literal
     if sort is Real0 or isinstance(sort, Real0):
@@ -773,13 +795,9 @@ def _const(value, sort, *, signed, tag=None) -> Expr:
         _emit(term)
         return _wrap(term.write[0], value=value, tag=tag)
 
-    # an event is set, by `True`, when it happens, and reset, by `False`, when it does not
+    # an event has no constants: its state alone means nothing
     if sort is Event or isinstance(sort, Event):
-        if not isinstance(value, bool):
-            raise TypeError(f"expr(): an event is True (set) or False (reset), got {value!r}")
-        op = _ev.Set() if value else _ev.Reset()
-        _emit(term := Term.constant(op, [Wire(op.cod)]))
-        return _wrap(term.write[0], value=value, tag=tag)
+        raise TypeError(f"expr(): an event has no constants, got {value!r}")
 
     # build term
     if isinstance(value, torch.Tensor):
@@ -816,7 +834,7 @@ def cast(e: Expr, sort) -> Expr:
     op between the matrix sorts is not yet in the IR."""
     if isinstance(e, NExpr) and isinstance(sort, Enum):
         return e._cast(sort)
-    if isinstance(e, EExpr) and (sort is Event or isinstance(sort, Event)):
+    if isinstance(e, EExpr) and sort == e.dtype:
         return e
     if isinstance(e, NExpr | EExpr) or isinstance(sort, Enum | Event) or sort in (Enum, Event):
         raise TypeError(f"cannot cast {e.dtype} to {sort}")
@@ -849,6 +867,9 @@ def ite(cond: "BExpr", iftrue, iffalse) -> Expr:
         raise TypeError(f"ite(): the condition must be a boolean expression, got {cond!r}")
     # a symbolic constant is of its own enumeration, whatever the other branch
     a, b = (expr(v) if isinstance(v, str) else v for v in (iftrue, iffalse))
+    # two booleans are of the scalar boolean sort, as `expr()` makes them
+    if isinstance(a, bool) and isinstance(b, bool):
+        a, b = expr(a), expr(b)
     if not isinstance(a, Expr) and not isinstance(b, Expr):
         raise TypeError("ite(): at least one branch must be an Expr")
     if not isinstance(a, Expr):
@@ -901,10 +922,10 @@ def ite(cond: "BExpr", iftrue, iffalse) -> Expr:
 
 def recv(e: "EExpr") -> "BExpr":
     """Whether the event `e` is received: whether it happens in this step, its next value
-    set, ``X(e) = 1``."""
+    differing from its latched one, ``X(e) != e``."""
     if not isinstance(e, EExpr):
         raise TypeError(f"recv() needs an event, got {e!r}")
-    return X(e)._unary(_ev.Test())
+    return X(e)._binary(_ev.Ne([e.dtype, e.dtype]), e)
 
 
 def relu(e: Expr) -> Expr:

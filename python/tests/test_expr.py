@@ -495,7 +495,7 @@ def test_tag_is_a_label_with_no_logical_meaning():
 from reactor.enum import Enum
 from reactor.event import Event
 from reactor import enum as _en, event as _ev
-from reactor.expr import NExpr, EExpr, recv
+from reactor.expr import NExpr, EExpr, recv, Havoc
 
 MODE = Enum({"idle", "busy"})
 COND = Bool([1, 1])
@@ -583,19 +583,20 @@ def test_ite_chooses_between_enumerations_by_a_scalar_condition():
         ite(expr(Var(Bool([2, 2]))), x, x)
 
 
-def test_an_event_is_set_or_reset_and_tested():
-    v = Var(Event())
-    e = expr(v)
-    assert isinstance(e, EExpr) and e.dtype == Event() and not hasattr(e, "shape")
+def test_an_event_is_received_when_it_changes():
+    ev = Event()
+    e = expr(Var(ev))
+    assert isinstance(e, EExpr) and e.dtype == ev and not hasattr(e, "shape")
     with collecting() as terms:
-        s, r = expr(True, sort=Event()), expr(False, sort=Event)
         happens = recv(e)
-    assert isinstance(s, EExpr) and isinstance(r, EExpr)
     assert isinstance(happens, BExpr) and happens.dtype == COND
-    assert [t.itype for t in terms] == [_ev.Set(), _ev.Reset(), _ev.Test()]
-    # an event is True or False
-    with pytest.raises(TypeError):
-        expr(1, sort=Event())
+    # its next value differs from its latched one
+    assert [t.itype for t in terms] == [_ev.Ne([ev, ev])]
+    assert [w.id for w in terms[0].read] == [X(e).wire.id, e.wire.id]
+    # an event has no constants
+    for sort in [ev, Event]:
+        with pytest.raises(TypeError):
+            expr(True, sort=sort)
     with pytest.raises(TypeError):
         recv(expr(Var(COND)))
 
@@ -607,16 +608,25 @@ def test_an_event_has_no_boolean_operations():
         ite(e, "on", "off")
     with pytest.raises(TypeError):
         e & e
-    with pytest.raises(TypeError):
-        ~e
-
-
-def test_ite_chooses_between_events_by_a_scalar_condition():
-    e, f = expr(Var(Event())), expr(Var(Event()))
+    # `~e` is its flip, an event of itself, not a boolean
     with collecting() as terms:
-        r = ite(recv(e), True, f)
-    assert isinstance(r, EExpr)
-    assert [t.itype for t in terms] == [_ev.Test(), _ev.Set(), _ev.Ite()]
+        f = ~e
+    assert isinstance(f, EExpr) and f.dtype == e.dtype
+    assert [t.itype for t in terms] == [_ev.Toggle(e.dtype)]
+
+
+def test_ite_chooses_between_values_of_one_event_by_a_scalar_condition():
+    ev, fv = Event(), Event()
+    e, f = expr(Var(ev)), expr(Var(fv))
+    with collecting() as terms:
+        r = ite(recv(e), ~f, f)
+    assert isinstance(r, EExpr) and r.dtype == fv
+    assert [t.itype for t in terms] == [_ev.Ne([ev, ev]), _ev.Toggle(fv), _ev.Ite([COND, fv, fv])]
+    # not between two events, nor with a constant, which an event has none of
+    with pytest.raises(TypeError):
+        ite(recv(e), e, f)
+    with pytest.raises(TypeError):
+        ite(recv(e), True, f)
 
 
 def test_enumerations_and_events_do_not_mix():
@@ -626,3 +636,26 @@ def test_enumerations_and_events_do_not_mix():
     with pytest.raises(TypeError):
         ite(x == "idle", x, e)
 
+
+def test_ite_of_two_booleans_is_a_boolean_choice():
+    c = expr(Var(COND))
+    with collecting() as terms:
+        r = ite(c, True, False)
+    assert isinstance(r, BExpr) and r.dtype == COND
+    assert terms[-1].itype == rr.bool.Ite([COND, COND, COND])
+    # two numbers have no sort to take
+    with pytest.raises(TypeError):
+        ite(c, 1, 0)
+
+
+def test_havoc_is_an_arbitrary_value_of_a_concrete_sort():
+    with collecting() as terms:
+        h = expr(Havoc, sort=INT)
+    assert isinstance(h, IExpr) and h.dtype == INT
+    assert [t.itype for t in terms] == [rr.Havoc(INT)]
+    # of an event too, which has no constants
+    ev = Event()
+    assert expr(Havoc, sort=ev).dtype == ev
+    # a family does not say which sort
+    with pytest.raises(TypeError):
+        expr(Havoc, sort=Int)

@@ -30,7 +30,8 @@ type Op = theory::Op<Mat>;
 fn each_sort_is_a_variant_of_any() {
     let r = Real::new_unchecked([2, 3]);
     assert_eq!(Any::from(r), Any::Real(r));
-    assert_eq!(Any::from(Event), Any::Event(Event));
+    let ev = Event::new();
+    assert_eq!(Any::from(ev), Any::Event(ev));
     let e = Enum::new(["idle", "busy"]).unwrap();
     assert_eq!(Any::from(e.clone()), Any::Enum(e));
     assert_eq!(Any::from(Real0), Any::Zero(Real0));
@@ -40,7 +41,7 @@ fn each_sort_is_a_variant_of_any() {
 fn the_subsets_hold_the_matrix_sorts_only() {
     let r = Real::new_unchecked([2, 3]);
     assert_eq!(Reals::try_from(Any::Real(r)).ok(), Some(Reals::Real(r)));
-    assert!(Reals::try_from(Any::Event(Event)).is_err());
+    assert!(Reals::try_from(Any::Event(Event::new())).is_err());
     // the subsets are `Copy`, as their sorts are, unlike `Any`
     let s = Reals::from(r);
     let t = s;
@@ -53,7 +54,7 @@ fn tangents_are_taken_within_any() {
     assert_eq!(T(Any::from(r)), Any::from(T(r)));
     // the discrete sorts, matrix or scalar, have the same tangent, Real0
     assert_eq!(T(Any::from(Int::new_unchecked([2, 3]))), Any::Zero(Real0));
-    assert_eq!(T(Any::from(Event)), Any::Zero(Real0));
+    assert_eq!(T(Any::from(Event::new())), Any::Zero(Real0));
     assert_eq!(T(Any::Zero(Real0)), Any::Zero(Real0));
 }
 
@@ -66,14 +67,15 @@ fn the_operations_of_every_theory_lift_their_boundary() {
     assert_eq!(add.dom(), mono![real.clone(), real.clone()].into());
     assert_eq!(add.cod(), mono![real].into());
 
-    // a scalar operation, whose test writes a boolean of the shape [1, 1]
-    let test: Op = event::Op::from(event::Test).into();
-    assert_eq!(test.dom(), mono![Any::from(Event)].into());
+    // a scalar operation, whose comparison writes a boolean of the shape [1, 1]
+    let ev = Event::new();
+    let ne: Op = event::Op::from(event::Ne::with_dom([ev, ev]).unwrap()).into();
+    assert_eq!(ne.dom(), mono![Any::from(ev), Any::from(ev)].into());
     assert_eq!(
-        test.cod(),
+        ne.cod(),
         mono![Any::from(Bool::new_unchecked([1, 1]))].into()
     );
-    assert_eq!(test.to_string(), "Test");
+    assert_eq!(ne.to_string(), "Ne");
 
     // the zero rate of change of a discrete value writes the one Real0
     let zero = Op::Zero(theory::zero::Zero);
@@ -86,7 +88,7 @@ fn sorts() -> [Any; 4] {
     [
         Real::new_unchecked([2, 3]).into(),
         Enum::new(["idle", "busy"]).unwrap().into(),
-        Event.into(),
+        Event::new().into(),
         Any::Zero(Real0),
     ]
 }
@@ -123,7 +125,7 @@ fn zero_writes_the_zero_rate_of_change_of_a_tangent_sort() {
     // of Real0, the tangent of the discrete sorts, matrix or scalar, its only value
     for s in [
         T(Any::from(Int::new_unchecked([2, 3]))),
-        T(Any::from(Event)),
+        T(Any::from(Event::new())),
     ] {
         let op = Op::zero(&s);
         assert!(matches!(op, Op::Zero(_)));
@@ -136,5 +138,5 @@ fn zero_writes_the_zero_rate_of_change_of_a_tangent_sort() {
 #[test]
 #[should_panic(expected = "only the tangent sorts")]
 fn zero_panics_for_a_sort_that_is_no_rate_of_change() {
-    Op::zero(&Any::from(Event));
+    Op::zero(&Any::from(Event::new()));
 }
