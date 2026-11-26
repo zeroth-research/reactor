@@ -19,9 +19,9 @@ an event is a `Bool`, and its operations `=`, `distinct`, `not`, the
 identity and `ite`.
 */
 
-use super::sort::Event;
-use crate::matrix::sort::Bool;
-pub use crate::sort::Any as Sort;
+use super::Event;
+pub use crate::Any as Sort;
+use crate::matrix::bool::Bool;
 use base::boundary::{Boundary, Poly};
 use base::mono;
 use derive_more::From;
@@ -39,7 +39,7 @@ impl Boundary<Sort> for Eq {
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new([1, 1]).into()].into()
+        mono![Bool::new_unchecked([1, 1]).into()].into()
     }
 }
 
@@ -62,7 +62,7 @@ impl Boundary<Sort> for Ne {
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new([1, 1]).into()].into()
+        mono![Bool::new_unchecked([1, 1]).into()].into()
     }
 }
 
@@ -125,7 +125,12 @@ pub struct Ite;
 
 impl Boundary<Sort> for Ite {
     fn dom(&self) -> Poly<Sort> {
-        mono![Bool::new([1, 1]).into(), Event.into(), Event.into()].into()
+        mono![
+            Bool::new_unchecked([1, 1]).into(),
+            Event.into(),
+            Event.into()
+        ]
+        .into()
     }
 
     fn cod(&self) -> Poly<Sort> {
@@ -141,7 +146,7 @@ impl fmt::Display for Ite {
 
 /// The operations on events, with their boundary in [`Sort`].
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash, From)]
-pub enum Any {
+pub enum Op {
     Eq(Eq),
     Ne(Ne),
     Toggle(Toggle),
@@ -149,36 +154,36 @@ pub enum Any {
     Ite(Ite),
 }
 
-impl Boundary<Sort> for Any {
+impl Boundary<Sort> for Op {
     fn dom(&self) -> Poly<Sort> {
         match self {
-            Any::Eq(op) => op.dom(),
-            Any::Ne(op) => op.dom(),
-            Any::Toggle(op) => op.dom(),
-            Any::Hold(op) => op.dom(),
-            Any::Ite(op) => op.dom(),
+            Op::Eq(op) => op.dom(),
+            Op::Ne(op) => op.dom(),
+            Op::Toggle(op) => op.dom(),
+            Op::Hold(op) => op.dom(),
+            Op::Ite(op) => op.dom(),
         }
     }
 
     fn cod(&self) -> Poly<Sort> {
         match self {
-            Any::Eq(op) => op.cod(),
-            Any::Ne(op) => op.cod(),
-            Any::Toggle(op) => op.cod(),
-            Any::Hold(op) => op.cod(),
-            Any::Ite(op) => op.cod(),
+            Op::Eq(op) => op.cod(),
+            Op::Ne(op) => op.cod(),
+            Op::Toggle(op) => op.cod(),
+            Op::Hold(op) => op.cod(),
+            Op::Ite(op) => op.cod(),
         }
     }
 }
 
-impl fmt::Display for Any {
+impl fmt::Display for Op {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Any::Eq(op) => op.fmt(f),
-            Any::Ne(op) => op.fmt(f),
-            Any::Toggle(op) => op.fmt(f),
-            Any::Hold(op) => op.fmt(f),
-            Any::Ite(op) => op.fmt(f),
+            Op::Eq(op) => op.fmt(f),
+            Op::Ne(op) => op.fmt(f),
+            Op::Toggle(op) => op.fmt(f),
+            Op::Hold(op) => op.fmt(f),
+            Op::Ite(op) => op.fmt(f),
         }
     }
 }

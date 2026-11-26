@@ -11,8 +11,11 @@ and every word result is reduced modulo `2^w`. Division by zero follows SMT-LIB2
 import torch
 
 from .matrix import Havoc, Skip
-from .reactor import Zero
-from .matrix.sort import Real, Int, Bool, Word
+from .zero import Zero
+from .matrix.real import Real
+from .matrix.int import Int
+from .matrix.bool import Bool
+from .matrix.word import Word
 
 from .reactor import matrix
 

@@ -1,16 +1,16 @@
 use pyo3::prelude::*;
-use theory::matrix::sort;
+use theory::matrix;
 
 #[pyclass(module = "reactor", frozen, eq, hash, ord)]
 #[derive(Debug, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub(crate) struct Wire {
-    base: dataflow::diagram::Wire<sort::Any>,
+    base: dataflow::diagram::Wire<matrix::Any>,
 }
 
 #[pymethods]
 impl Wire {
     #[new]
-    pub(crate) fn new(dtype: sort::Any) -> Self {
+    pub(crate) fn new(dtype: matrix::Any) -> Self {
         let base = dataflow::diagram::Wire::new(dtype);
         Self { base }
     }
@@ -21,7 +21,7 @@ impl Wire {
     }
 
     #[getter]
-    fn dtype(&self) -> sort::Any {
+    fn dtype(&self) -> matrix::Any {
         self.base.dtype().clone()
     }
 
@@ -31,13 +31,13 @@ impl Wire {
 }
 
 impl Wire {
-    pub(crate) fn base(&self) -> &dataflow::diagram::Wire<sort::Any> {
+    pub(crate) fn base(&self) -> &dataflow::diagram::Wire<matrix::Any> {
         &self.base
     }
 }
 
-impl From<dataflow::diagram::Wire<sort::Any>> for Wire {
-    fn from(base: dataflow::diagram::Wire<sort::Any>) -> Self {
+impl From<dataflow::diagram::Wire<matrix::Any>> for Wire {
+    fn from(base: dataflow::diagram::Wire<matrix::Any>) -> Self {
         Self { base }
     }
 }

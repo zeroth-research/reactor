@@ -1,7 +1,9 @@
 import pytest
 import torch
 from reactor import Wire, Term, Atom, Module, T, Var, X, d
-from reactor.matrix.sort import Bool, Int, Real
+from reactor.matrix.bool import Bool
+from reactor.matrix.int import Int
+from reactor.matrix.real import Real
 from reactor import matrix
 from reactor.matrix import Skip
 

@@ -1,11 +1,11 @@
 use crate::wire::Wire;
 use crate::*;
 use pyo3::exceptions::{PyException, PyIndexError};
-use theory::matrix::sort;
+use theory::matrix;
 
 #[pyclass(module = "reactor", frozen)]
 pub(crate) struct Term {
-    base: dataflow::diagram::Term<Any, sort::Any>,
+    base: dataflow::diagram::Term<Op, matrix::Any>,
 }
 
 // SAFETY: the operations of the term may hold `tch::Tensor`s, which are not
@@ -22,7 +22,7 @@ impl Term {
         write: &Bound<'_, PyAny>,
         read: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
-        let itype: Any = itype.extract()?;
+        let itype: Op = itype.extract()?;
         let write = try_wire_iter_cloned(write)?;
         let read = try_wire_iter_cloned(read)?;
 
@@ -34,7 +34,7 @@ impl Term {
 
     #[staticmethod]
     fn constant(itype: &Bound<'_, PyAny>, write: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let itype: Any = itype.extract()?;
+        let itype: Op = itype.extract()?;
         let write = try_wire_iter_cloned(write)?;
 
         match dataflow::diagram::Term::constant(itype, write) {
@@ -67,7 +67,7 @@ impl Term {
     }
 
     #[getter]
-    fn itype(&self) -> Any {
+    fn itype(&self) -> Op {
         self.base.itype().clone()
     }
 
@@ -77,7 +77,7 @@ impl Term {
 }
 
 impl Term {
-    pub(crate) fn base(&self) -> &dataflow::diagram::Term<Any, sort::Any> {
+    pub(crate) fn base(&self) -> &dataflow::diagram::Term<Op, matrix::Any> {
         &self.base
     }
 
@@ -90,8 +90,8 @@ impl Term {
     }
 }
 
-impl From<dataflow::diagram::Term<Any, sort::Any>> for Term {
-    fn from(base: dataflow::diagram::Term<Any, sort::Any>) -> Self {
+impl From<dataflow::diagram::Term<Op, matrix::Any>> for Term {
+    fn from(base: dataflow::diagram::Term<Op, matrix::Any>) -> Self {
         Self { base }
     }
 }
@@ -108,7 +108,7 @@ struct TermInterface {
 }
 
 impl TermInterface {
-    fn base(&self) -> &[dataflow::diagram::Wire<sort::Any>] {
+    fn base(&self) -> &[dataflow::diagram::Wire<matrix::Any>] {
         let base = &self.term.get().base;
         match self.interface {
             TermInterfaceType::Read => base.read(),

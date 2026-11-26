@@ -8,11 +8,15 @@ their width, whose operations follow SMT-LIB2, as those of `reactor.eval` do.
 import z3 as _z3
 import torch
 from ..matrix import Havoc, Skip
-from ..matrix.sort import Real, Int, Bool, Word
+from ..matrix.real import Real
+from ..matrix.int import Int
+from ..matrix.bool import Bool
+from ..matrix.word import Word
 import numpy as _np
 import operator
 
-from ..reactor import matrix, Zero
+from ..reactor import matrix
+from ..zero import Zero
 
 
 def fresh(dtype, prefix):

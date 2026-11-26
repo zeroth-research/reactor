@@ -49,21 +49,112 @@ theory FixedSizeBitVectors or are defined by the logic QF_BV. The
 comparisons, `=` and `distinct` write booleans, as in SMT-LIB2.
 */
 
-use super::sort::{Bool, Word};
+use super::bool::Bool;
 use crate::Matrix;
+use crate::zero::Real0;
 use base::boundary::{Boundary, Poly};
+use base::differentiable::Differentiable;
 use base::mono;
 use derive_more::From;
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 use std::fmt;
 
+/// The sort of matrices of `width`-bit words with the given `[rows, cols]`
+/// shape: entrywise, the SMT-LIB2 sort `(_ BitVec width)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(
+        frozen,
+        from_py_object,
+        eq,
+        str,
+        get_all,
+        module = "reactor.matrix.word"
+    )
+)]
+pub struct Word {
+    width: usize,
+    shape: [usize; 2],
+}
+
+/// Fails unless `width` is positive: as in SMT-LIB2, words have at least one
+/// bit.
+pub(crate) fn check_width(width: usize) -> Result<(), crate::Error> {
+    if width == 0 {
+        return Err(crate::Error("words have at least one bit".to_string()));
+    }
+    Ok(())
+}
+
+impl Word {
+    /// Matrices of `width`-bit words, as [`Word::new`], but panics if
+    /// `width` is zero or `shape` empty.
+    pub fn new_unchecked(width: usize, shape: [usize; 2]) -> Self {
+        Self::new(width, shape).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
+    }
+}
+
+/// Python matches a `Word` by `width` and `shape`.
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Word {
+    /// Matrices of `width`-bit words; as in SMT-LIB2, `width` must be
+    /// positive, and the shape must have at least one row and one column,
+    /// or this returns an error.
+    #[cfg_attr(feature = "pyo3", new)]
+    pub fn new(width: usize, shape: [usize; 2]) -> Result<Self, crate::Error> {
+        check_width(width)?;
+        super::check_shape(shape)?;
+        Ok(Word { width, shape })
+    }
+
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("width", "shape")
+    }
+
+    /// The tangent sort `T(self)`: the sort of the rate of change of its
+    /// values.
+    #[cfg(feature = "pyo3")]
+    #[pyo3(name = "tangent")]
+    fn tangent(&self) -> Real0 {
+        Differentiable::tangent(self)
+    }
+}
+
+impl fmt::Display for Word {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let [i, j] = self.shape;
+        write!(f, "Word{}([{i}, {j}])", self.width)
+    }
+}
+
+/// Words are discrete, so their tangent is trivial: the singleton sort
+/// [`Real0`].
+impl Differentiable for Word {
+    type Tangent = Real0;
+
+    fn tangent(self) -> Real0 {
+        Real0
+    }
+}
+
 /// The sorts of the theory, as in the signature of SMT-LIB2's
 /// FixedSizeBitVectors: words, and the booleans of the Core theory, which
-/// comparisons write, together with [`Zero`](crate::sort::Zero), the tangent of both. It is
-/// the subset [`matrix::sort::Words`](crate::matrix::sort::Words) of the sorts of all
+/// comparisons write, together with [`Real0`], the tangent of both. It is
+/// the subset [`matrix::Words`](crate::matrix::Words) of the sorts of all
 /// theories.
-pub use super::sort::Words as Sort;
+pub use super::Words as Sort;
 
 /// A constant matrix literal of `width`-bit words, as `Num(tensor, width)`, held
 /// in a tensor of type `T`.
@@ -814,7 +905,7 @@ impl Boundary<Sort> for Eq {
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new(self.shape).into()].into()
+        mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
@@ -824,7 +915,7 @@ impl Boundary<Sort> for Ne {
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new(self.shape).into()].into()
+        mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
@@ -903,7 +994,7 @@ impl fmt::Display for Neg {
 impl Boundary<Sort> for Ite {
     fn dom(&self) -> Poly<Sort> {
         mono![
-            Bool::new(self.shape).into(),
+            Bool::new_unchecked(self.shape).into(),
             Word::new_unchecked(self.width, self.shape).into(),
             Word::new_unchecked(self.width, self.shape).into()
         ]
@@ -973,7 +1064,7 @@ impl fmt::Display for Ne {
 /// signedness; the others are in the parent module.
 pub mod signed {
     use super::{Sort, Word};
-    use crate::matrix::sort::Bool;
+    use crate::matrix::bool::Bool;
     use base::boundary::{Boundary, Poly};
     use base::mono;
     #[cfg(feature = "pyo3")]
@@ -1173,7 +1264,7 @@ pub mod signed {
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Bool::new(self.shape).into()].into()
+            mono![Bool::new_unchecked(self.shape).into()].into()
         }
     }
 
@@ -1183,7 +1274,7 @@ pub mod signed {
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Bool::new(self.shape).into()].into()
+            mono![Bool::new_unchecked(self.shape).into()].into()
         }
     }
 
@@ -1193,7 +1284,7 @@ pub mod signed {
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Bool::new(self.shape).into()].into()
+            mono![Bool::new_unchecked(self.shape).into()].into()
         }
     }
 
@@ -1203,7 +1294,7 @@ pub mod signed {
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Bool::new(self.shape).into()].into()
+            mono![Bool::new_unchecked(self.shape).into()].into()
         }
     }
 
@@ -1978,7 +2069,7 @@ pub mod signed {
 /// signedness; the others are in the parent module.
 pub mod unsigned {
     use super::{Sort, Word};
-    use crate::matrix::sort::Bool;
+    use crate::matrix::bool::Bool;
     use base::boundary::{Boundary, Poly};
     use base::mono;
     #[cfg(feature = "pyo3")]
@@ -2187,7 +2278,7 @@ pub mod unsigned {
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Bool::new(self.shape).into()].into()
+            mono![Bool::new_unchecked(self.shape).into()].into()
         }
     }
 
@@ -2197,7 +2288,7 @@ pub mod unsigned {
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Bool::new(self.shape).into()].into()
+            mono![Bool::new_unchecked(self.shape).into()].into()
         }
     }
 
@@ -2207,7 +2298,7 @@ pub mod unsigned {
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Bool::new(self.shape).into()].into()
+            mono![Bool::new_unchecked(self.shape).into()].into()
         }
     }
 
@@ -2217,7 +2308,7 @@ pub mod unsigned {
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Bool::new(self.shape).into()].into()
+            mono![Bool::new_unchecked(self.shape).into()].into()
         }
     }
 
@@ -4340,7 +4431,7 @@ pub mod broadcast {
     impl Boundary<Sort> for Ite {
         fn dom(&self) -> Poly<Sort> {
             mono![
-                Bool::new([1, 1]).into(),
+                Bool::new_unchecked([1, 1]).into(),
                 Word::new_unchecked(self.width, self.shape).into(),
                 Word::new_unchecked(self.width, self.shape).into()
             ]

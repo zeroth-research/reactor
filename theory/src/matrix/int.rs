@@ -35,9 +35,11 @@ to matrices. As they write booleans, their boundary is in [`Sort`], the
 sorts of the theory, rather than in [`Int`].
 */
 
-use super::sort::{Bool, Int};
+use super::bool::Bool;
 use crate::Matrix;
+use crate::zero::Real0;
 use base::boundary::{Boundary, Poly};
+use base::differentiable::Differentiable;
 use base::mono;
 use derive_more::From;
 #[cfg(feature = "pyo3")]
@@ -45,11 +47,83 @@ use pyo3::prelude::*;
 use std::fmt;
 use subenum::subenum;
 
+/// The sort of integer matrices with the given `[rows, cols]` shape.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(
+        frozen,
+        from_py_object,
+        eq,
+        str,
+        get_all,
+        module = "reactor.matrix.int"
+    )
+)]
+pub struct Int {
+    shape: [usize; 2],
+}
+
+impl Int {
+    /// Integer matrices of the given shape, as [`Int::new`], but panics if
+    /// `shape` is empty.
+    pub fn new_unchecked(shape: [usize; 2]) -> Self {
+        Self::new(shape).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
+    }
+}
+
+/// Python matches an `Int` by `shape`.
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Int {
+    /// Integer matrices of the given shape; fails unless the shape has at
+    /// least one row and one column.
+    #[cfg_attr(feature = "pyo3", new)]
+    pub fn new(shape: [usize; 2]) -> Result<Self, crate::Error> {
+        super::check_shape(shape)?;
+        Ok(Int { shape })
+    }
+
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("shape",)
+    }
+
+    /// The tangent sort `T(self)`: the sort of the rate of change of its
+    /// values.
+    #[cfg(feature = "pyo3")]
+    #[pyo3(name = "tangent")]
+    fn tangent(&self) -> Real0 {
+        Differentiable::tangent(self)
+    }
+}
+
+impl fmt::Display for Int {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let [i, j] = self.shape;
+        write!(f, "Int([{i}, {j}])")
+    }
+}
+
+/// Integers are discrete, so their tangent is trivial: the singleton sort
+/// [`Real0`].
+impl Differentiable for Int {
+    type Tangent = Real0;
+
+    fn tangent(self) -> Real0 {
+        Real0
+    }
+}
+
 /// The sorts of the theory, as in the signature of SMT-LIB2's `Ints`:
 /// int matrices, and the booleans of the Core theory, which comparisons
-/// write, together with [`Zero`](crate::sort::Zero). It is the subset
-/// [`matrix::sort::Ints`](crate::matrix::sort::Ints) of the sorts of all theories.
-pub use super::sort::Ints as Sort;
+/// write, together with [`Real0`]. It is the subset
+/// [`matrix::Ints`](crate::matrix::Ints) of the sorts of all theories.
+pub use super::Ints as Sort;
 
 /// A constant integer matrix literal, held in a tensor of type `T`.
 #[derive(Debug)]
@@ -195,6 +269,7 @@ impl<T: Matrix> Linear<T> {
     /// fails unless `a` is of shape `[m, n]` and `x` of shape `[n, k]`.
     pub fn with_dom(a: T, dom: [Int; 1]) -> Result<Self, crate::Error> {
         let [x] = dom;
+        super::check_shape(a.shape())?;
         let ([_, n], [rows, k]) = (a.shape(), x.shape());
         if rows != n {
             return Err(crate::matrix::unexpected_dom(
@@ -209,6 +284,7 @@ impl<T: Matrix> Linear<T> {
     /// unless `a` is of shape `[m, n]` and that matrix of shape `[m, k]`.
     pub fn with_cod(a: T, cod: [Int; 1]) -> Result<Self, crate::Error> {
         let [x] = cod;
+        super::check_shape(a.shape())?;
         let ([m, _], [rows, k]) = (a.shape(), x.shape());
         if rows != m {
             return Err(crate::matrix::unexpected_cod(
@@ -774,7 +850,7 @@ impl<T: Matrix> Boundary<Int> for Num<T> {
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new(self.tensor.shape())].into()
+        mono![Int::new_unchecked(self.tensor.shape())].into()
     }
 }
 
@@ -782,61 +858,61 @@ impl<T: Matrix> Boundary<Int> for Num<T> {
 /// matrices.
 impl<T: Matrix> Boundary<Int> for Scale<T> {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new(self.tensor.shape())].into()
+        mono![Int::new_unchecked(self.tensor.shape())].into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new(self.tensor.shape())].into()
+        mono![Int::new_unchecked(self.tensor.shape())].into()
     }
 }
 
 impl Boundary<Int> for Add {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new(self.shape); 2].into()
+        mono![Int::new_unchecked(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new(self.shape)].into()
+        mono![Int::new_unchecked(self.shape)].into()
     }
 }
 
 impl Boundary<Int> for Sub {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new(self.shape); 2].into()
+        mono![Int::new_unchecked(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new(self.shape)].into()
+        mono![Int::new_unchecked(self.shape)].into()
     }
 }
 
 impl Boundary<Int> for Mul {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new(self.shape); 2].into()
+        mono![Int::new_unchecked(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new(self.shape)].into()
+        mono![Int::new_unchecked(self.shape)].into()
     }
 }
 
 impl Boundary<Int> for Div {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new(self.shape); 2].into()
+        mono![Int::new_unchecked(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new(self.shape)].into()
+        mono![Int::new_unchecked(self.shape)].into()
     }
 }
 
 impl Boundary<Int> for Mod {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new(self.shape); 2].into()
+        mono![Int::new_unchecked(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new(self.shape)].into()
+        mono![Int::new_unchecked(self.shape)].into()
     }
 }
 
@@ -845,12 +921,12 @@ impl Boundary<Int> for Mod {
 impl<T: Matrix> Boundary<Int> for Linear<T> {
     fn dom(&self) -> Poly<Int> {
         let [_, n] = self.a.shape();
-        mono![Int::new([n, self.cols])].into()
+        mono![Int::new_unchecked([n, self.cols])].into()
     }
 
     fn cod(&self) -> Poly<Int> {
         let [m, _] = self.a.shape();
-        mono![Int::new([m, self.cols])].into()
+        mono![Int::new_unchecked([m, self.cols])].into()
     }
 }
 
@@ -860,72 +936,72 @@ impl<T: Matrix> Boundary<Int> for Affine<T> {
     fn dom(&self) -> Poly<Int> {
         let [_, n] = self.a.shape();
         let [_, k] = self.b.shape();
-        mono![Int::new([n, k])].into()
+        mono![Int::new_unchecked([n, k])].into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new(self.b.shape())].into()
+        mono![Int::new_unchecked(self.b.shape())].into()
     }
 }
 
 impl Boundary<Int> for Neg {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new(self.shape)].into()
+        mono![Int::new_unchecked(self.shape)].into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new(self.shape)].into()
+        mono![Int::new_unchecked(self.shape)].into()
     }
 }
 
 impl Boundary<Int> for Abs {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new(self.shape)].into()
+        mono![Int::new_unchecked(self.shape)].into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new(self.shape)].into()
+        mono![Int::new_unchecked(self.shape)].into()
     }
 }
 
 impl Boundary<Int> for ReLU {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new(self.shape)].into()
+        mono![Int::new_unchecked(self.shape)].into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new(self.shape)].into()
+        mono![Int::new_unchecked(self.shape)].into()
     }
 }
 
 impl Boundary<Int> for Min {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new(self.shape); 2].into()
+        mono![Int::new_unchecked(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new(self.shape)].into()
+        mono![Int::new_unchecked(self.shape)].into()
     }
 }
 
 impl Boundary<Int> for Max {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new(self.shape); 2].into()
+        mono![Int::new_unchecked(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new(self.shape)].into()
+        mono![Int::new_unchecked(self.shape)].into()
     }
 }
 
 /// Takes a matrix of shape `[m, n]` to one of shape `[n, m]`.
 impl Boundary<Int> for Transpose {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new(self.shape)].into()
+        mono![Int::new_unchecked(self.shape)].into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new([self.shape[1], self.shape[0]])].into()
+        mono![Int::new_unchecked([self.shape[1], self.shape[0]])].into()
     }
 }
 
@@ -933,72 +1009,72 @@ impl Boundary<Int> for Transpose {
 impl Boundary<Int> for MatMul {
     fn dom(&self) -> Poly<Int> {
         let [lhs, rhs] = self.shapes;
-        mono![Int::new(lhs), Int::new(rhs)].into()
+        mono![Int::new_unchecked(lhs), Int::new_unchecked(rhs)].into()
     }
 
     fn cod(&self) -> Poly<Int> {
         let [[m, _], [_, k]] = self.shapes;
-        mono![Int::new([m, k])].into()
+        mono![Int::new_unchecked([m, k])].into()
     }
 }
 
 impl Boundary<Sort> for Lt {
     fn dom(&self) -> Poly<Sort> {
-        mono![Int::new(self.shape).into(); 2].into()
+        mono![Int::new_unchecked(self.shape).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new(self.shape).into()].into()
+        mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
 impl Boundary<Sort> for Le {
     fn dom(&self) -> Poly<Sort> {
-        mono![Int::new(self.shape).into(); 2].into()
+        mono![Int::new_unchecked(self.shape).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new(self.shape).into()].into()
+        mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
 impl Boundary<Sort> for Gt {
     fn dom(&self) -> Poly<Sort> {
-        mono![Int::new(self.shape).into(); 2].into()
+        mono![Int::new_unchecked(self.shape).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new(self.shape).into()].into()
+        mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
 impl Boundary<Sort> for Ge {
     fn dom(&self) -> Poly<Sort> {
-        mono![Int::new(self.shape).into(); 2].into()
+        mono![Int::new_unchecked(self.shape).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new(self.shape).into()].into()
+        mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
 impl Boundary<Sort> for Eq {
     fn dom(&self) -> Poly<Sort> {
-        mono![Int::new(self.shape).into(); 2].into()
+        mono![Int::new_unchecked(self.shape).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new(self.shape).into()].into()
+        mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
 impl Boundary<Sort> for Ne {
     fn dom(&self) -> Poly<Sort> {
-        mono![Int::new(self.shape).into(); 2].into()
+        mono![Int::new_unchecked(self.shape).into(); 2].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new(self.shape).into()].into()
+        mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
@@ -1076,11 +1152,11 @@ impl fmt::Display for ReLU {
 
 impl Boundary<Int> for Argmax {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new(self.shape)].into()
+        mono![Int::new_unchecked(self.shape)].into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new([1, 1])].into()
+        mono![Int::new_unchecked([1, 1])].into()
     }
 }
 
@@ -1123,15 +1199,15 @@ impl fmt::Display for Lt {
 impl Boundary<Sort> for Ite {
     fn dom(&self) -> Poly<Sort> {
         mono![
-            Bool::new(self.shape).into(),
-            Int::new(self.shape).into(),
-            Int::new(self.shape).into()
+            Bool::new_unchecked(self.shape).into(),
+            Int::new_unchecked(self.shape).into(),
+            Int::new_unchecked(self.shape).into()
         ]
         .into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Int::new(self.shape).into()].into()
+        mono![Int::new_unchecked(self.shape).into()].into()
     }
 }
 
@@ -2388,15 +2464,15 @@ pub mod broadcast {
     impl Boundary<Sort> for Ite {
         fn dom(&self) -> Poly<Sort> {
             mono![
-                Bool::new([1, 1]).into(),
-                Int::new(self.shape).into(),
-                Int::new(self.shape).into()
+                Bool::new_unchecked([1, 1]).into(),
+                Int::new_unchecked(self.shape).into(),
+                Int::new_unchecked(self.shape).into()
             ]
             .into()
         }
 
         fn cod(&self) -> Poly<Sort> {
-            mono![Int::new(self.shape).into()].into()
+            mono![Int::new_unchecked(self.shape).into()].into()
         }
     }
 

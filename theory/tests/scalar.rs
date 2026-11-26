@@ -1,10 +1,10 @@
 //! Tests for the operations of `scalar`, one module per module of `scalar`.
 
-/// Tests for `scalar::sort`.
+/// Tests for the sorts of `scalar`.
 mod sort {
     use base::differentiable::T;
-    use theory::scalar::sort::*;
-    use theory::sort::Zero;
+    use theory::scalar::*;
+    use theory::zero::Real0;
 
     #[test]
     fn an_enumeration_is_the_set_of_its_values() {
@@ -60,9 +60,9 @@ mod sort {
     #[test]
     fn the_scalar_sorts_are_discrete() {
         let e = Enum::new(["idle", "busy"]).unwrap();
-        assert_eq!(T(&e), Zero);
-        assert_eq!(T(e.clone()), Zero);
-        assert_eq!(T(Event), Zero);
+        assert_eq!(T(&e), Real0);
+        assert_eq!(T(e.clone()), Real0);
+        assert_eq!(T(Event), Real0);
     }
 }
 
@@ -73,12 +73,12 @@ mod r#enum {
     use theory::scalar::r#enum::*;
     // `Into`, the operation, shadows the trait of the prelude
     use std::convert::Into as _;
-    use theory::matrix::sort::Bool;
-    use theory::scalar::sort::Enum;
+    use theory::matrix::bool::Bool;
+    use theory::scalar::Enum;
 
     /// The boolean of the shape `[1, 1]` that the comparisons write.
     fn b() -> Bool {
-        Bool::new([1, 1])
+        Bool::new_unchecked([1, 1])
     }
 
     fn state() -> Enum {
@@ -101,8 +101,8 @@ mod r#enum {
     #[test]
     fn comparisons_read_two_values_of_an_enumeration_and_write_a_bool() {
         for op in [
-            Any::from(Eq::with_dom([state(), state()]).unwrap()),
-            Any::from(Ne::with_dom([state(), state()]).unwrap()),
+            Op::from(Eq::with_dom([state(), state()]).unwrap()),
+            Op::from(Ne::with_dom([state(), state()]).unwrap()),
         ] {
             assert_eq!(op.dom(), mono![state().into(); 2].into());
             assert_eq!(op.cod(), mono![b().into()].into());
@@ -141,7 +141,14 @@ mod r#enum {
         // branches that are not enumerations
         assert!(Ite::with_dom([b().into(), b().into(), b().into()]).is_err());
         // a condition of another shape
-        assert!(Ite::with_dom([Bool::new([2, 2]).into(), state().into(), state().into()]).is_err());
+        assert!(
+            Ite::with_dom([
+                Bool::new_unchecked([2, 2]).into(),
+                state().into(),
+                state().into()
+            ])
+            .is_err()
+        );
     }
 
     #[test]
@@ -175,10 +182,10 @@ mod r#enum {
 
     #[test]
     fn the_operations_display_and_compute_their_boundary_through_op() {
-        let c: Any = Sym::with_cod("idle", [state()]).unwrap().into();
+        let c: Op = Sym::with_cod("idle", [state()]).unwrap().into();
         assert_eq!(c.to_string(), "idle");
         assert_eq!(c.cod(), mono![state().into()].into());
-        let ite: Any = Ite::with_cod([state()]).unwrap().into();
+        let ite: Op = Ite::with_cod([state()]).unwrap().into();
         assert_eq!(ite.to_string(), "Ite");
         assert_eq!(ite.cod(), mono![state().into()].into());
     }
@@ -188,33 +195,38 @@ mod r#enum {
 mod event {
     use base::boundary::Boundary;
     use base::mono;
-    use theory::matrix::sort::Bool;
+    use theory::matrix::bool::Bool;
+    use theory::scalar::Event;
     use theory::scalar::event::*;
-    use theory::scalar::sort::Event;
 
     #[test]
     fn comparisons_read_two_events_and_write_a_bool() {
-        for op in [Any::from(Eq), Any::from(Ne)] {
+        for op in [Op::from(Eq), Op::from(Ne)] {
             assert_eq!(op.dom(), mono![Event.into(), Event.into()].into());
-            assert_eq!(op.cod(), mono![Bool::new([1, 1]).into()].into());
+            assert_eq!(op.cod(), mono![Bool::new_unchecked([1, 1]).into()].into());
         }
     }
 
     #[test]
     fn toggle_and_hold_read_an_event_and_write_one() {
-        for op in [Any::from(Toggle), Any::from(Hold)] {
+        for op in [Op::from(Toggle), Op::from(Hold)] {
             assert_eq!(op.dom(), mono![Event.into()].into());
             assert_eq!(op.cod(), mono![Event.into()].into());
         }
-        assert_ne!(Any::from(Toggle), Any::from(Hold));
+        assert_ne!(Op::from(Toggle), Op::from(Hold));
     }
 
     #[test]
     fn ite_chooses_by_a_bool_between_events() {
-        let op = Any::from(Ite);
+        let op = Op::from(Ite);
         assert_eq!(
             op.dom(),
-            mono![Bool::new([1, 1]).into(), Event.into(), Event.into()].into()
+            mono![
+                Bool::new_unchecked([1, 1]).into(),
+                Event.into(),
+                Event.into()
+            ]
+            .into()
         );
         assert_eq!(op.cod(), mono![Event.into()].into());
     }
@@ -222,47 +234,47 @@ mod event {
     #[test]
     fn display() {
         for (op, name) in [
-            (Any::from(Eq), "Eq"),
-            (Any::from(Ne), "Ne"),
-            (Any::from(Toggle), "Toggle"),
-            (Any::from(Hold), "Hold"),
-            (Any::from(Ite), "Ite"),
+            (Op::from(Eq), "Eq"),
+            (Op::from(Ne), "Ne"),
+            (Op::from(Toggle), "Toggle"),
+            (Op::from(Hold), "Hold"),
+            (Op::from(Ite), "Ite"),
         ] {
             assert_eq!(op.to_string(), name);
         }
     }
 }
 
-/// Tests for `scalar::Any`, the operations of all the scalar theories.
-mod any {
+/// Tests for `scalar::Op`, the operations of all the scalar theories.
+mod op {
     use base::boundary::{Boundary, Poly};
     use base::mono;
-    use theory::matrix::sort::Bool;
+    use theory::Any;
+    use theory::matrix::bool::Bool;
     use theory::scalar;
-    use theory::scalar::sort::{Enum, Event};
+    use theory::scalar::{Enum, Event};
     use theory::scalar::{r#enum, event};
-    use theory::sort::Any;
 
     #[test]
     fn the_operations_of_each_theory_keep_their_boundary_and_display() {
         let e = Enum::new(["idle", "busy"]).unwrap();
-        let b = Bool::new([1, 1]);
+        let b = Bool::new_unchecked([1, 1]);
         let sym = r#enum::Sym::with_cod("idle", [e.clone()]).unwrap();
-        let cases: [(scalar::Any, Poly<Any>, Poly<Any>, &str); 3] = [
+        let cases: [(scalar::Op, Poly<Any>, Poly<Any>, &str); 3] = [
             (
-                r#enum::Any::from(sym).into(),
+                r#enum::Op::from(sym).into(),
                 Poly::unit(),
                 mono![Any::from(e.clone())].into(),
                 "idle",
             ),
             (
-                r#enum::Any::from(r#enum::Eq::with_dom([e.clone(), e.clone()]).unwrap()).into(),
+                r#enum::Op::from(r#enum::Eq::with_dom([e.clone(), e.clone()]).unwrap()).into(),
                 mono![Any::from(e.clone()), Any::from(e)].into(),
                 mono![Any::from(b)].into(),
                 "Eq",
             ),
             (
-                event::Any::from(event::Toggle).into(),
+                event::Op::from(event::Toggle).into(),
                 mono![Any::from(Event)].into(),
                 mono![Any::from(Event)].into(),
                 "Toggle",
@@ -277,10 +289,10 @@ mod any {
 
     #[test]
     fn the_comparisons_write_the_booleans_of_the_matrix_theories() {
-        let op: scalar::Any = event::Any::from(event::Ne).into();
+        let op: scalar::Op = event::Op::from(event::Ne).into();
         assert_eq!(
             op.cod(),
-            mono![Any::Matrix(Bool::new([1, 1]).into())].into()
+            mono![Any::Matrix(Bool::new_unchecked([1, 1]).into())].into()
         );
     }
 }

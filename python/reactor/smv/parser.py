@@ -13,8 +13,11 @@ from lark import Lark, Transformer, Tree, Token
 from ..reactor import Wire, Term, Module, Var, X
 from ..reactor import matrix
 from ..matrix import Skip
-from ..sort import ZeroSort
-from ..matrix.sort import Real, Int, Bool, Word
+from ..zero import Real0
+from ..matrix.real import Real
+from ..matrix.int import Int
+from ..matrix.bool import Bool
+from ..matrix.word import Word
 
 
 
@@ -79,7 +82,7 @@ def parse_smv(
 @dataclass(frozen=True)
 class _SMVType:
     """SMV variable type: its sort (a boolean or a word) paired with its signedness."""
-    dtype: Real | Int | Bool | Word | ZeroSort
+    dtype: Real | Int | Bool | Word | Real0
     signed: bool
 
 
@@ -378,7 +381,7 @@ class _Lowerer:
 
     # --- public entry -------------------------------------------------------
 
-    def lower(self, tree, target: Wire | None = None, hint: Real | Int | Bool | Word | ZeroSort | None = None) -> Wire:
+    def lower(self, tree, target: Wire | None = None, hint: Real | Int | Bool | Word | Real0 | None = None) -> Wire:
         """Lower *tree* into Term(s), return the wire carrying the result."""
         # Token leaf (from Lark inlining)
         if isinstance(tree, Token):

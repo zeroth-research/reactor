@@ -28,9 +28,9 @@ codomain, or the identity when all the symbolic constants of a model are of
 one datatype, each enumeration a constraint of membership.
 */
 
-use super::sort::Enum;
-use crate::matrix::sort::Bool;
-pub use crate::sort::Any as Sort;
+use super::Enum;
+pub use crate::Any as Sort;
+use crate::matrix::bool::Bool;
 use base::boundary::{Boundary, Poly};
 use base::mono;
 use derive_more::From;
@@ -151,8 +151,8 @@ impl Ite {
     /// fails unless the condition is a boolean of the shape `[1, 1]` and the
     /// branches of the same enumeration.
     pub fn with_dom(dom: [Sort; 3]) -> Result<Self, crate::Error> {
-        use super::sort::Any as S;
-        use crate::matrix::sort::Any as M;
+        use super::Any as S;
+        use crate::matrix::Any as M;
         match dom {
             [
                 Sort::Matrix(M::Bool(c)),
@@ -175,7 +175,7 @@ impl Ite {
 
 /// The operations on enumerations, with their boundary in [`Sort`].
 #[derive(Clone, PartialEq, Debug, Eq, Hash, From)]
-pub enum Any {
+pub enum Op {
     Sym(Sym),
     Into(Into),
     Eq(Eq),
@@ -209,7 +209,7 @@ impl Boundary<Sort> for Eq {
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new([1, 1]).into()].into()
+        mono![Bool::new_unchecked([1, 1]).into()].into()
     }
 }
 
@@ -219,14 +219,14 @@ impl Boundary<Sort> for Ne {
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new([1, 1]).into()].into()
+        mono![Bool::new_unchecked([1, 1]).into()].into()
     }
 }
 
 impl Boundary<Sort> for Ite {
     fn dom(&self) -> Poly<Sort> {
         mono![
-            Bool::new([1, 1]).into(),
+            Bool::new_unchecked([1, 1]).into(),
             self.sort.clone().into(),
             self.sort.clone().into()
         ]
@@ -238,24 +238,24 @@ impl Boundary<Sort> for Ite {
     }
 }
 
-impl Boundary<Sort> for Any {
+impl Boundary<Sort> for Op {
     fn dom(&self) -> Poly<Sort> {
         match self {
-            Any::Sym(op) => op.dom(),
-            Any::Into(op) => op.dom(),
-            Any::Eq(op) => op.dom(),
-            Any::Ne(op) => op.dom(),
-            Any::Ite(op) => op.dom(),
+            Op::Sym(op) => op.dom(),
+            Op::Into(op) => op.dom(),
+            Op::Eq(op) => op.dom(),
+            Op::Ne(op) => op.dom(),
+            Op::Ite(op) => op.dom(),
         }
     }
 
     fn cod(&self) -> Poly<Sort> {
         match self {
-            Any::Sym(op) => op.cod(),
-            Any::Into(op) => op.cod(),
-            Any::Eq(op) => op.cod(),
-            Any::Ne(op) => op.cod(),
-            Any::Ite(op) => op.cod(),
+            Op::Sym(op) => op.cod(),
+            Op::Into(op) => op.cod(),
+            Op::Eq(op) => op.cod(),
+            Op::Ne(op) => op.cod(),
+            Op::Ite(op) => op.cod(),
         }
     }
 }
@@ -291,14 +291,14 @@ impl fmt::Display for Ite {
     }
 }
 
-impl fmt::Display for Any {
+impl fmt::Display for Op {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Any::Sym(op) => op.fmt(f),
-            Any::Into(op) => op.fmt(f),
-            Any::Eq(op) => op.fmt(f),
-            Any::Ne(op) => op.fmt(f),
-            Any::Ite(op) => op.fmt(f),
+            Op::Sym(op) => op.fmt(f),
+            Op::Into(op) => op.fmt(f),
+            Op::Eq(op) => op.fmt(f),
+            Op::Ne(op) => op.fmt(f),
+            Op::Ite(op) => op.fmt(f),
         }
     }
 }

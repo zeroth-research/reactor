@@ -7,7 +7,7 @@ from .train import train
 from reactor.gym import Env
 from reactor.torch import Module
 from reactor import Wire, Var, X
-from reactor.matrix.sort import Real
+from reactor.matrix.real import Real
 from reactor import matrix
 from reactor.eval import eval_itype
 

@@ -4,11 +4,11 @@ use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
 use pyo3::types::{PyDict, PyTuple};
 use std::borrow::Cow;
 use std::collections::HashMap;
-use theory::matrix::sort;
+use theory::matrix;
 
 #[pyclass(module = "reactor", subclass, frozen)]
 pub(crate) struct Module {
-    pub(crate) base: reactive::Module<Any, Any, Any, sort::Any>,
+    pub(crate) base: reactive::Module<Op, Op, Op, matrix::Any>,
 }
 
 // SAFETY: the operations of the module may hold `tch::Tensor`s, which are not
@@ -20,7 +20,7 @@ unsafe impl Sync for Module {}
 impl Module {
     fn partially_observable<A>(atoms: A, hide: &Bound<'_, PyAny>) -> PyResult<Self>
     where
-        A: IntoIterator<Item = reactive::Atom<Any, Any, Any, sort::Any>>,
+        A: IntoIterator<Item = reactive::Atom<Op, Op, Op, matrix::Any>>,
     {
         let hide = Hide::try_from(hide)?;
         let module = reactive::Module::partially_observable(atoms, hide.as_fn());
@@ -30,7 +30,7 @@ impl Module {
 
     fn observable<A>(atoms: A) -> PyResult<Self>
     where
-        A: IntoIterator<Item = reactive::Atom<Any, Any, Any, sort::Any>>,
+        A: IntoIterator<Item = reactive::Atom<Op, Op, Op, matrix::Any>>,
     {
         let module = reactive::Module::observable(atoms);
         module.map(Into::into).map_err(PyException::new_err)
@@ -142,7 +142,7 @@ impl Module {
         assign: &Bound<'_, PyAny>,
         hide: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
-        let assign = try_term_iter_cloned::<Any>(&assign)?;
+        let assign = try_term_iter_cloned::<Op>(&assign)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         if let Some(hide) = hide {
             let atom =
@@ -379,8 +379,8 @@ impl Module {
     }
 }
 
-impl From<reactive::Module<Any, Any, Any, sort::Any>> for Module {
-    fn from(base: reactive::Module<Any, Any, Any, sort::Any>) -> Self {
+impl From<reactive::Module<Op, Op, Op, matrix::Any>> for Module {
+    fn from(base: reactive::Module<Op, Op, Op, matrix::Any>) -> Self {
         Self { base }
     }
 }
@@ -411,7 +411,7 @@ struct ModuleInterface {
 }
 
 impl ModuleInterface {
-    fn base(&self) -> &reactive::Interface<sort::Any> {
+    fn base(&self) -> &reactive::Interface<matrix::Any> {
         let module = &self.module.get().base;
         match self.interface {
             ModuleInterfaceType::Extl => module.extl(),

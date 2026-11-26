@@ -6,7 +6,7 @@ variables — ``reactor.Var`` objects — and override any of ``init`` / ``updat
 module is built in the constructor:
 
     from reactor import Var
-    from reactor.matrix.sort import Int
+    from reactor.matrix.int import Int
     from reactor.sugar import Module
 
     class Counter(Module):
@@ -63,8 +63,8 @@ from .expr import expr, cast, ite, relu, argmax, collecting, Expr, X as expr_X, 
 
 # Public authoring surface: `from reactor.sugar import Module, expr, X, d, ite, cast, ...`
 # The rate of change of a discrete variable, returned by ``delay`` for it: the operation
-# ``reactor.Zero()``, reading nothing.
-from .reactor import Zero
+# ``reactor.zero.Zero()``, reading nothing.
+from .zero import Zero
 
 __all__ = ["Module", "expr", "cast", "ite", "relu", "argmax", "Expr", "X", "d", "Var", "Zero"]
 

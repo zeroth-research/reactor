@@ -4,8 +4,11 @@ import inspect
 import gymnasium as gym
 
 from ..reactor import Module, Wire, X, Var
-from ..sort import ZeroSort
-from ..matrix.sort import Real, Int, Bool, Word
+from ..zero import Real0
+from ..matrix.real import Real
+from ..matrix.int import Int
+from ..matrix.bool import Bool
+from ..matrix.word import Word
 from ..builder import builder_for, number_sort
 from ..analyzer import (
     convert_method,
@@ -23,7 +26,7 @@ from ..eval import eval_itype, read_wire, getattr_wire
 # ============================================================================
 
 
-def space_to_dtype(space, number, is_action: bool) -> Real | Int | Bool | Word | ZeroSort:
+def space_to_dtype(space, number, is_action: bool) -> Real | Int | Bool | Word | Real0:
     """Convert a gym.spaces.Space to a Sort, with numbers of the sort family `number`
     (Real, Int or Word; always 2-D)."""
     if isinstance(space, gym.spaces.Discrete):
@@ -58,7 +61,7 @@ def _normalize_attrs(attrs, prvt_names):
     """
     if attrs is None:
         return {}
-    if isinstance(attrs, Real | Int | Bool | Word | ZeroSort):
+    if isinstance(attrs, Real | Int | Bool | Word | Real0):
         return {name: attrs for name in prvt_names}
     if isinstance(attrs, dict):
         unknown = set(attrs) - set(prvt_names)
@@ -76,7 +79,7 @@ def _normalize_attrs(attrs, prvt_names):
 def _resolve_attr_wire(name, spec):
     """Turn an `attrs` override (a Sort, or a (latched, next) wire pair) into a
     validated [latched, next] wire pair."""
-    if isinstance(spec, Real | Int | Bool | Word | ZeroSort):
+    if isinstance(spec, Real | Int | Bool | Word | Real0):
         return wire_pair(spec)
     is_var = (
         isinstance(spec, Var)

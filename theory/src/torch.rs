@@ -94,22 +94,22 @@ fn check_affine(a: &tch::Tensor, b: &tch::Tensor) -> Result<(), crate::Error> {
 /// Converts an operation of any theory into its Python class, through the
 /// conversion of its theory; the structural operations are classes of their
 /// own.
-impl<'py> IntoPyObject<'py> for crate::matrix::Any<tch::Tensor> {
+impl<'py> IntoPyObject<'py> for crate::matrix::Op<tch::Tensor> {
     type Target = PyAny;
     type Output = Bound<'py, PyAny>;
     type Error = PyErr;
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
-        use crate::matrix::Any;
+        use crate::matrix::Op;
 
         match self {
-            Any::Real(op) => op.into_pyobject(py),
-            Any::Int(op) => op.into_pyobject(py),
-            Any::Bool(op) => op.into_pyobject(py),
-            Any::Word(op) => op.into_pyobject(py),
-            Any::Havoc(op) => op.into_pyobject(py).map(Bound::into_any),
-            Any::Skip(op) => op.into_pyobject(py).map(Bound::into_any),
-            Any::Zero(op) => op.into_pyobject(py).map(Bound::into_any),
+            Op::Real(op) => op.into_pyobject(py),
+            Op::Int(op) => op.into_pyobject(py),
+            Op::Bool(op) => op.into_pyobject(py),
+            Op::Word(op) => op.into_pyobject(py),
+            Op::Havoc(op) => op.into_pyobject(py).map(Bound::into_any),
+            Op::Skip(op) => op.into_pyobject(py).map(Bound::into_any),
+            Op::Zero(op) => op.into_pyobject(py).map(Bound::into_any),
         }
     }
 }

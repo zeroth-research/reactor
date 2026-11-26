@@ -11,10 +11,11 @@ import torch
 
 import reactor
 from reactor import Module, Wire, sugar, Var, T, TheoryError
-from reactor.matrix.sort import Int, Real
+from reactor.matrix.int import Int
+from reactor.matrix.real import Real
 from reactor.sugar import ite, d, X, Zero, expr
 from reactor.matrix import Skip
-from reactor.sort import ZeroSort
+from reactor.zero import Real0
 from reactor.eval import eval_itype
 
 INT = Int([1, 1])
@@ -292,7 +293,7 @@ def test_delay_of_mixed_real_and_discrete_variables():
     # the counter's rate of change is the singleton: `Zero`, reading nothing, copied
     # into d(n) at the singleton sort
     skip = writer[reactor.d(n)]
-    assert skip.itype == Skip(ZeroSort())
+    assert skip.itype == Skip(Real0())
     zero = writer[skip.read[0]]
     assert zero.itype == Zero() and len(zero.read) == 0
     # the real's rate of change is a real of degree 1, copied at that sort

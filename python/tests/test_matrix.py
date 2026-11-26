@@ -6,10 +6,12 @@ domain left out when they read nothing; a single sort comes bare, and several as
 import pytest
 import torch
 import reactor
-from reactor import Zero
-from reactor.sort import ZeroSort
+from reactor.zero import Zero, Real0
 from reactor.matrix import Havoc, Skip, real, int as int_, bool as bool_, word
-from reactor.matrix.sort import Real, Int, Bool, Word
+from reactor.matrix.real import Real
+from reactor.matrix.int import Int
+from reactor.matrix.bool import Bool
+from reactor.matrix.word import Word
 from reactor import T
 
 
@@ -128,7 +130,7 @@ def test_nullary_operations_take_and_match_their_codomain_only():
     assert real.Num(torch.ones(1, 2), T(Real([1, 2]))).cod == T(Real([1, 2]))
     assert word.Num(torch.ones(1, 2, dtype=torch.int64), Word(4, [1, 2])).cod == Word(4, [1, 2])
     assert Havoc(Int([1, 2])).cod == Int([1, 2])
-    assert Zero().cod == ZeroSort()
+    assert Zero().cod == Real0()
     with pytest.raises(ValueError):
         real.Num(torch.ones(1, 2), Real([2, 1]))
 
@@ -168,15 +170,17 @@ def test_the_domain_is_optional_when_the_parameters_determine_it():
 
 
 def test_the_singleton_sort_and_its_operation_belong_to_no_theory():
-    # the sort is shared by all theories, and the operation writing its only value is a
-    # special case, at the top level
-    assert Zero().cod == ZeroSort()
-    assert ZeroSort.__module__ == "reactor.sort"
+    # the sort is shared by all theories, and it and the operation writing its only value
+    # are in a namespace of their own, `zero`, not at the top level nor in `matrix`
+    assert Zero().cod == Real0()
+    assert Real0.__module__ == Zero.__module__ == "reactor.zero"
     # an operation like any other, built with no arguments: no instance stands for it
     assert isinstance(Zero(), Zero) and Zero() == Zero()
-    assert Zero.__module__ == "reactor"
-    assert not hasattr(reactor, "ZeroType") and not hasattr(reactor, "ZeroOp")
-    assert not hasattr(reactor, "ZeroSort") and not hasattr(reactor, "zero")
-    assert not hasattr(reactor.matrix, "zero") and not hasattr(reactor.matrix.sort, "Zero")
+    assert not any(hasattr(reactor, s) for s in ["Zero", "Real0", "ZeroType", "ZeroOp"])
+    assert not hasattr(reactor.matrix, "zero")
+    # the namespaces of sorts are gone: each sort is in the namespace of its theory
+    assert not hasattr(reactor, "sort") and not hasattr(reactor.matrix, "sort")
     # the sorts are reached through their namespaces, not at the top level
     assert not any(hasattr(reactor, s) for s in ["Real", "Int", "Bool", "Word"])
+    for theory, sort in [(real, Real), (int_, Int), (bool_, Bool), (word, Word)]:
+        assert sort.__module__ == theory.__name__

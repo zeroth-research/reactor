@@ -1,7 +1,7 @@
 //! The Python classes of the operations of real arithmetic carrying tensors.
 
 use crate::matrix::real;
-use crate::matrix::sort::Real;
+use crate::matrix::real::Real;
 use pyo3::prelude::*;
 use pyo3_tch::PyTensor;
 
@@ -137,7 +137,7 @@ impl Affine {
         super::check_affine(&a, &b)?;
         let dom = dom.unwrap_or_else(|| {
             let ([_, n], [_, k]) = (crate::Matrix::shape(&a.0), crate::Matrix::shape(&b.0));
-            Real::new([n, k])
+            Real::new_unchecked([n, k])
         });
         let op = crate::matrix::check_cod(real::Affine::with_dom(a.0, b.0, [dom]), cod)?;
         Ok(Affine(
@@ -225,7 +225,10 @@ impl Num {
                 tensor.kind()
             )));
         }
-        let cod = cod.unwrap_or_else(|| Real::new(crate::Matrix::shape(&tensor.0)));
+        let cod = match cod {
+            Some(cod) => cod,
+            None => Real::new(crate::Matrix::shape(&tensor.0))?,
+        };
         let op = real::Num::with_cod(tensor.0, [cod])?;
         Ok(Num(op.tensor().shallow_clone(), op.degree()))
     }
@@ -306,7 +309,10 @@ impl Scale {
                 tensor.kind()
             )));
         }
-        let dom = dom.unwrap_or_else(|| Real::new(crate::Matrix::shape(&tensor.0)));
+        let dom = match dom {
+            Some(dom) => dom,
+            None => Real::new(crate::Matrix::shape(&tensor.0))?,
+        };
         let op = crate::matrix::check_cod(real::Scale::with_dom(tensor.0, [dom]), cod)?;
         Ok(Scale(op.tensor().shallow_clone(), op.degree()))
     }

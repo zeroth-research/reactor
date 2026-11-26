@@ -2,7 +2,7 @@
 //! tensors.
 
 use crate::matrix::int;
-use crate::matrix::sort::Int;
+use crate::matrix::int::Int;
 use pyo3::prelude::*;
 use pyo3_tch::PyTensor;
 
@@ -133,7 +133,7 @@ impl Affine {
         super::check_affine(&a, &b)?;
         let dom = dom.unwrap_or_else(|| {
             let ([_, n], [_, k]) = (crate::Matrix::shape(&a.0), crate::Matrix::shape(&b.0));
-            Int::new([n, k])
+            Int::new_unchecked([n, k])
         });
         let op = crate::matrix::check_cod(int::Affine::with_dom(a.0, b.0, [dom]), cod)?;
         Ok(Affine(op.a().shallow_clone(), op.b().shallow_clone()))
@@ -177,7 +177,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::int::Affine<tch::Tensor> 
     /// Fails when `ob` is not an [`Affine`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let affine = ob.cast::<Affine>()?.get();
-        let cod = Int::new(crate::Matrix::shape(&affine.1));
+        let cod = Int::new_unchecked(crate::Matrix::shape(&affine.1));
         Ok(crate::matrix::int::Affine::with_cod(
             affine.0.shallow_clone(),
             affine.1.shallow_clone(),
@@ -210,7 +210,10 @@ impl Num {
                 tensor.kind()
             )));
         }
-        let cod = cod.unwrap_or_else(|| Int::new(crate::Matrix::shape(&tensor.0)));
+        let cod = match cod {
+            Some(cod) => cod,
+            None => Int::new(crate::Matrix::shape(&tensor.0))?,
+        };
         let op = int::Num::with_cod(tensor.0, [cod])?;
         Ok(Num(op.tensor().shallow_clone()))
     }
@@ -241,7 +244,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::int::Num<tch::Tensor> {
     /// Fails when `ob` is not an [`Num`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let constant = ob.cast::<Num>()?.get();
-        let cod = Int::new(crate::Matrix::shape(&constant.0));
+        let cod = Int::new_unchecked(crate::Matrix::shape(&constant.0));
         Ok(crate::matrix::int::Num::with_cod(
             constant.0.shallow_clone(),
             [cod],
@@ -253,7 +256,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::int::Num<tch::Tensor> {
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::matrix::int::Num<tch::Tensor> {
     fn clone(&self) -> Self {
-        let cod = Int::new(crate::Matrix::shape(self.tensor()));
+        let cod = Int::new_unchecked(crate::Matrix::shape(self.tensor()));
         crate::matrix::int::Num::with_cod(self.tensor().shallow_clone(), [cod])
             .expect("a clone has the shape of the original")
     }
@@ -285,7 +288,10 @@ impl Scale {
                 tensor.kind()
             )));
         }
-        let dom = dom.unwrap_or_else(|| Int::new(crate::Matrix::shape(&tensor.0)));
+        let dom = match dom {
+            Some(dom) => dom,
+            None => Int::new(crate::Matrix::shape(&tensor.0))?,
+        };
         let op = crate::matrix::check_cod(int::Scale::with_dom(tensor.0, [dom]), cod)?;
         Ok(Scale(op.tensor().shallow_clone()))
     }
@@ -323,7 +329,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::int::Scale<tch::Tensor> {
     /// Fails when `ob` is not an [`Scale`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let scale = ob.cast::<Scale>()?.get();
-        let dom = Int::new(crate::Matrix::shape(&scale.0));
+        let dom = Int::new_unchecked(crate::Matrix::shape(&scale.0));
         Ok(crate::matrix::int::Scale::with_dom(
             scale.0.shallow_clone(),
             [dom],
@@ -335,7 +341,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::int::Scale<tch::Tensor> {
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::matrix::int::Scale<tch::Tensor> {
     fn clone(&self) -> Self {
-        let dom = Int::new(crate::Matrix::shape(self.tensor()));
+        let dom = Int::new_unchecked(crate::Matrix::shape(self.tensor()));
         crate::matrix::int::Scale::with_dom(self.tensor().shallow_clone(), [dom])
             .expect("a clone has the shape of the original")
     }
@@ -345,7 +351,7 @@ impl Clone for crate::matrix::int::Scale<tch::Tensor> {
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::matrix::int::Affine<tch::Tensor> {
     fn clone(&self) -> Self {
-        let cod = Int::new(crate::Matrix::shape(self.b()));
+        let cod = Int::new_unchecked(crate::Matrix::shape(self.b()));
         crate::matrix::int::Affine::with_cod(
             self.a().shallow_clone(),
             self.b().shallow_clone(),

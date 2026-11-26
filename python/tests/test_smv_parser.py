@@ -4,7 +4,8 @@ from pathlib import Path
 import pytest
 
 from reactor import Wire, Module, parse_smv, Var, X
-from reactor.matrix.sort import Word, Bool
+from reactor.matrix.word import Word
+from reactor.matrix.bool import Bool
 from reactor import matrix
 from reactor.matrix import Skip
 from reactor.eval import eval_itype

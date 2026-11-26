@@ -1,6 +1,6 @@
 //! The Python class of the constants of propositional logic.
 
-use crate::matrix::sort::Bool;
+use crate::matrix::bool::Bool;
 use pyo3::prelude::*;
 use pyo3_tch::PyTensor;
 
@@ -30,7 +30,7 @@ impl Truth {
         }
         let op = match cod {
             Some(cod) => crate::matrix::bool::Truth::with_cod(tensor.0, [cod])?,
-            None => crate::matrix::bool::Truth::new(tensor.0),
+            None => crate::matrix::bool::Truth::new(tensor.0)?,
         };
         Ok(Truth(op.tensor().shallow_clone()))
     }
@@ -64,7 +64,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::bool::Truth<tch::Tensor> 
         let shape = crate::Matrix::shape(&constant.0);
         Ok(crate::matrix::bool::Truth::with_cod(
             constant.0.shallow_clone(),
-            [crate::matrix::sort::Bool::new(shape)],
+            [crate::matrix::bool::Bool::new_unchecked(shape)],
         )?)
     }
 }
@@ -76,7 +76,7 @@ impl Clone for crate::matrix::bool::Truth<tch::Tensor> {
         let shape = crate::Matrix::shape(self.tensor());
         crate::matrix::bool::Truth::with_cod(
             self.tensor().shallow_clone(),
-            [crate::matrix::sort::Bool::new(shape)],
+            [crate::matrix::bool::Bool::new_unchecked(shape)],
         )
         .expect("a clone has the shape of the original")
     }

@@ -1,6 +1,6 @@
 //! The Python class of the constants of fixed-size bit-vectors.
 
-use crate::matrix::sort::Word;
+use crate::matrix::word::Word;
 use pyo3::prelude::*;
 use pyo3_tch::PyTensor;
 
@@ -64,7 +64,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::word::Num<tch::Tensor> {
     /// Fails when `ob` is not a [`Num`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let constant = ob.cast::<Num>()?.get();
-        let cod = crate::matrix::sort::Word::new(constant.1, crate::Matrix::shape(&constant.0))?;
+        let cod = crate::matrix::word::Word::new(constant.1, crate::Matrix::shape(&constant.0))?;
         Ok(crate::matrix::word::Num::with_cod(
             constant.0.shallow_clone(),
             [cod],
@@ -76,7 +76,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::matrix::word::Num<tch::Tensor> {
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::matrix::word::Num<tch::Tensor> {
     fn clone(&self) -> Self {
-        let cod = crate::matrix::sort::Word::new_unchecked(
+        let cod = crate::matrix::word::Word::new_unchecked(
             self.width(),
             crate::Matrix::shape(self.tensor()),
         );

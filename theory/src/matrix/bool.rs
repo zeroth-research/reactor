@@ -15,14 +15,87 @@ information to compute its [`Boundary`]:
   `c` of the shape `[1, 1]`.
 */
 
-use super::sort::Bool;
 use crate::Matrix;
+use crate::zero::Real0;
 use base::boundary::{Boundary, Poly};
+use base::differentiable::Differentiable;
 use base::mono;
 use derive_more::From;
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 use std::fmt;
+
+/// The sort of boolean matrices with the given `[rows, cols]` shape.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(
+        frozen,
+        from_py_object,
+        eq,
+        str,
+        get_all,
+        module = "reactor.matrix.bool"
+    )
+)]
+pub struct Bool {
+    shape: [usize; 2],
+}
+
+impl Bool {
+    /// Boolean matrices of the given shape, as [`Bool::new`], but panics if
+    /// `shape` is empty.
+    pub fn new_unchecked(shape: [usize; 2]) -> Self {
+        Self::new(shape).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
+    }
+}
+
+/// Python matches a `Bool` by `shape`.
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Bool {
+    /// Boolean matrices of the given shape; fails unless the shape has at
+    /// least one row and one column.
+    #[cfg_attr(feature = "pyo3", new)]
+    pub fn new(shape: [usize; 2]) -> Result<Self, crate::Error> {
+        super::check_shape(shape)?;
+        Ok(Bool { shape })
+    }
+
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("shape",)
+    }
+
+    /// The tangent sort `T(self)`: the sort of the rate of change of its
+    /// values.
+    #[cfg(feature = "pyo3")]
+    #[pyo3(name = "tangent")]
+    fn tangent(&self) -> Real0 {
+        Differentiable::tangent(self)
+    }
+}
+
+impl fmt::Display for Bool {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let [i, j] = self.shape;
+        write!(f, "Bool([{i}, {j}])")
+    }
+}
+
+/// Booleans are discrete, so their tangent is trivial: the singleton sort
+/// [`Real0`].
+impl Differentiable for Bool {
+    type Tangent = Real0;
+
+    fn tangent(self) -> Real0 {
+        Real0
+    }
+}
 
 /// A constant boolean matrix literal, held in a tensor of type `T`.
 #[derive(Debug)]
@@ -31,9 +104,11 @@ pub struct Truth<T> {
 }
 
 impl<T: Matrix> Truth<T> {
-    /// The constant held in `tensor`, writing the boolean matrix of its shape.
-    pub fn new(tensor: T) -> Self {
-        Truth { tensor }
+    /// The constant held in `tensor`, writing the boolean matrix of its
+    /// shape; fails unless it has at least one row and one column.
+    pub fn new(tensor: T) -> Result<Self, crate::Error> {
+        super::check_shape(tensor.shape())?;
+        Ok(Truth { tensor })
     }
 
     /// The constant held in `tensor`, writing the boolean matrix of `cod`; fails
@@ -222,67 +297,67 @@ impl<T: Matrix> Boundary<Bool> for Truth<T> {
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new(self.tensor.shape())].into()
+        mono![Bool::new_unchecked(self.tensor.shape())].into()
     }
 }
 
 impl Boundary<Bool> for And {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new(self.shape); 2].into()
+        mono![Bool::new_unchecked(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new(self.shape)].into()
+        mono![Bool::new_unchecked(self.shape)].into()
     }
 }
 
 impl Boundary<Bool> for Or {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new(self.shape); 2].into()
+        mono![Bool::new_unchecked(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new(self.shape)].into()
+        mono![Bool::new_unchecked(self.shape)].into()
     }
 }
 
 impl Boundary<Bool> for Xor {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new(self.shape); 2].into()
+        mono![Bool::new_unchecked(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new(self.shape)].into()
+        mono![Bool::new_unchecked(self.shape)].into()
     }
 }
 
 impl Boundary<Bool> for Not {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new(self.shape)].into()
+        mono![Bool::new_unchecked(self.shape)].into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new(self.shape)].into()
+        mono![Bool::new_unchecked(self.shape)].into()
     }
 }
 
 impl Boundary<Bool> for Eq {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new(self.shape); 2].into()
+        mono![Bool::new_unchecked(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new(self.shape)].into()
+        mono![Bool::new_unchecked(self.shape)].into()
     }
 }
 
 impl Boundary<Bool> for Ne {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new(self.shape); 2].into()
+        mono![Bool::new_unchecked(self.shape); 2].into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new(self.shape)].into()
+        mono![Bool::new_unchecked(self.shape)].into()
     }
 }
 
@@ -330,11 +405,11 @@ impl fmt::Display for Ne {
 
 impl Boundary<Bool> for Ite {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new(self.shape); 3].into()
+        mono![Bool::new_unchecked(self.shape); 3].into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new(self.shape)].into()
+        mono![Bool::new_unchecked(self.shape)].into()
     }
 }
 
@@ -801,15 +876,15 @@ pub mod broadcast {
     impl Boundary<Bool> for Ite {
         fn dom(&self) -> Poly<Bool> {
             mono![
-                Bool::new([1, 1]),
-                Bool::new(self.shape),
-                Bool::new(self.shape)
+                Bool::new_unchecked([1, 1]),
+                Bool::new_unchecked(self.shape),
+                Bool::new_unchecked(self.shape)
             ]
             .into()
         }
 
         fn cod(&self) -> Poly<Bool> {
-            mono![Bool::new(self.shape)].into()
+            mono![Bool::new_unchecked(self.shape)].into()
         }
     }
 

@@ -10,7 +10,10 @@ import torch
 import numpy as np
 import z3
 
-from reactor.matrix.sort import Real, Int, Bool, Word
+from reactor.matrix.real import Real
+from reactor.matrix.int import Int
+from reactor.matrix.bool import Bool
+from reactor.matrix.word import Word
 from reactor import matrix
 from reactor.matrix import Skip
 from reactor.eval import eval_itype

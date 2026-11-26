@@ -34,9 +34,10 @@ to matrices. As they write booleans, their boundary is in [`Sort`], the
 sorts of the theory, rather than in [`Real`].
 */
 
-use super::sort::{Bool, Real};
+use super::bool::Bool;
 use crate::Matrix;
 use base::boundary::{Boundary, Poly};
+use base::differentiable::Differentiable;
 use base::mono;
 use derive_more::From;
 #[cfg(feature = "pyo3")]
@@ -44,11 +45,108 @@ use pyo3::prelude::*;
 use std::fmt;
 use subenum::subenum;
 
+/// The sort of real matrices with the given `[rows, cols]` shape, graded by
+/// their `degree`: values of degree `d` are `d`-th order rates of change,
+/// and plain reals have degree 0.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(
+        frozen,
+        from_py_object,
+        eq,
+        str,
+        get_all,
+        module = "reactor.matrix.real"
+    )
+)]
+pub struct Real {
+    degree: u8,
+    shape: [usize; 2],
+}
+
+impl Real {
+    /// Real matrices of the given shape, of the given `degree`: the
+    /// `degree`-th order rates of change of plain ones. Outside this crate,
+    /// they are written with the tangent, `T(Real::new_unchecked(shape))`.
+    pub(crate) fn with_degree(shape: [usize; 2], degree: u8) -> Self {
+        Real { degree, shape }
+    }
+
+    /// Plain real matrices of the given shape, as [`Real::new`], but panics
+    /// if `shape` is empty.
+    pub fn new_unchecked(shape: [usize; 2]) -> Self {
+        Self::new(shape).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    pub fn degree(&self) -> u8 {
+        self.degree
+    }
+
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
+    }
+}
+
+/// Python matches a `Real` by `shape`.
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Real {
+    /// Plain real matrices of the given shape, of degree 0; those of a
+    /// higher degree are their tangents, `T(Real(shape))`. Fails unless the
+    /// shape has at least one row and one column.
+    #[cfg_attr(feature = "pyo3", new)]
+    pub fn new(shape: [usize; 2]) -> Result<Self, crate::Error> {
+        super::check_shape(shape)?;
+        Ok(Real { degree: 0, shape })
+    }
+
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("shape",)
+    }
+
+    /// The tangent sort `T(self)`: the sort of the rate of change of its
+    /// values.
+    #[cfg(feature = "pyo3")]
+    #[pyo3(name = "tangent")]
+    fn tangent(&self) -> Real {
+        Differentiable::tangent(self)
+    }
+}
+
+impl fmt::Display for Real {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let [i, j] = self.shape;
+        match self.degree {
+            0 => write!(f, "Real([{i}, {j}])"),
+            1 => write!(f, "T(Real([{i}, {j}]))"),
+            d => write!(f, "T^{d}(Real([{i}, {j}]))"),
+        }
+    }
+}
+
+/// The rate of change of a real matrix is a real matrix of the same shape,
+/// one degree higher.
+impl Differentiable for Real {
+    type Tangent = Real;
+
+    fn tangent(self) -> Real {
+        Real {
+            degree: self
+                .degree
+                .checked_add(1)
+                .expect("real sort degree out of range"),
+            shape: self.shape,
+        }
+    }
+}
+
 /// The sorts of the theory, as in the signature of SMT-LIB2's `Reals`:
 /// real matrices, and the booleans of the Core theory, which comparisons
-/// write, together with [`Zero`](crate::sort::Zero). It is the subset
-/// [`matrix::sort::Reals`](crate::matrix::sort::Reals) of the sorts of all theories.
-pub use super::sort::Reals as Sort;
+/// write, together with [`Zero`](crate::zero::Real0). It is the subset
+/// [`matrix::Reals`](crate::matrix::Reals) of the sorts of all theories.
+pub use super::Reals as Sort;
 
 /// A constant real matrix literal, held in a tensor of type `T`, of a
 /// degree: a constant rate of change, such as the `1` of `ẋ = 1`, is of
@@ -230,6 +328,7 @@ impl<T: Matrix> Linear<T> {
     /// shape `[n, k]`.
     pub fn with_dom(a: T, dom: [Real; 1]) -> Result<Self, crate::Error> {
         let [x] = dom;
+        super::check_shape(a.shape())?;
         let ([_, n], [rows, k]) = (a.shape(), x.shape());
         if rows != n {
             return Err(crate::matrix::unexpected_dom(
@@ -249,6 +348,7 @@ impl<T: Matrix> Linear<T> {
     /// matrix of shape `[m, k]`.
     pub fn with_cod(a: T, cod: [Real; 1]) -> Result<Self, crate::Error> {
         let [x] = cod;
+        super::check_shape(a.shape())?;
         let ([m, _], [rows, k]) = (a.shape(), x.shape());
         if rows != m {
             return Err(crate::matrix::unexpected_cod(
@@ -1096,7 +1196,7 @@ impl Boundary<Sort> for Lt {
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new(self.shape).into()].into()
+        mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
@@ -1106,7 +1206,7 @@ impl Boundary<Sort> for Le {
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new(self.shape).into()].into()
+        mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
@@ -1116,7 +1216,7 @@ impl Boundary<Sort> for Gt {
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new(self.shape).into()].into()
+        mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
@@ -1126,7 +1226,7 @@ impl Boundary<Sort> for Ge {
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new(self.shape).into()].into()
+        mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
@@ -1136,7 +1236,7 @@ impl Boundary<Sort> for Eq {
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new(self.shape).into()].into()
+        mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
@@ -1146,7 +1246,7 @@ impl Boundary<Sort> for Ne {
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new(self.shape).into()].into()
+        mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
@@ -1228,7 +1328,7 @@ impl Boundary<Real> for Argmax {
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new([1, 1])].into()
+        mono![Real::new_unchecked([1, 1])].into()
     }
 }
 
@@ -1271,7 +1371,7 @@ impl fmt::Display for Lt {
 impl Boundary<Sort> for Ite {
     fn dom(&self) -> Poly<Sort> {
         mono![
-            Bool::new(self.shape).into(),
+            Bool::new_unchecked(self.shape).into(),
             Real::with_degree(self.shape, self.degree).into(),
             Real::with_degree(self.shape, self.degree).into()
         ]
@@ -2717,7 +2817,7 @@ pub mod broadcast {
     impl Boundary<Sort> for Ite {
         fn dom(&self) -> Poly<Sort> {
             mono![
-                Bool::new([1, 1]).into(),
+                Bool::new_unchecked([1, 1]).into(),
                 Real::with_degree(self.shape, self.degree).into(),
                 Real::with_degree(self.shape, self.degree).into()
             ]

@@ -19,7 +19,10 @@ from typing import Any, Dict, List, Set, Tuple, Union, Callable
 
 from .reactor import Wire, Term, Var, X
 from .matrix import Havoc
-from .matrix.sort import Bool, Real, Int, Word
+from .matrix.bool import Bool
+from .matrix.real import Real
+from .matrix.int import Int
+from .matrix.word import Word
 from .builder import TermBuilder, builder_for
 
 

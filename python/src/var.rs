@@ -4,18 +4,18 @@ use pyo3::basic::CompareOp;
 use pyo3::prelude::*;
 use pyo3::types::PyNotImplemented;
 use std::hash::{DefaultHasher, Hash, Hasher};
-use theory::matrix::sort;
+use theory::matrix;
 
 #[pyclass(module = "reactor", frozen, from_py_object)] // eq, hash, ord are implemented manually for compat with polymorphic __richcmp__
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub(crate) struct Var {
-    base: reactive::Var<sort::Any>,
+    base: reactive::Var<matrix::Any>,
 }
 
 #[pymethods]
 impl Var {
     #[new]
-    pub(crate) fn new(dtype: sort::Any) -> Self {
+    pub(crate) fn new(dtype: matrix::Any) -> Self {
         let base = reactive::Var::new(dtype);
         Self { base }
     }
@@ -41,7 +41,7 @@ impl Var {
         let ordering = if let Ok(var) = other.extract::<PyRef<Var>>() {
             self.base.cmp(&var.base)
         } else if let Ok(wire) = other.extract::<PyRef<Wire>>() {
-            let ltc: &dataflow::diagram::Wire<sort::Any> = &self.base;
+            let ltc: &dataflow::diagram::Wire<matrix::Any> = &self.base;
             ltc.cmp(wire.base())
         } else {
             return Ok(PyNotImplemented::get(py).into_any());
@@ -65,7 +65,7 @@ impl Var {
 }
 
 impl Var {
-    pub(crate) fn base(&self) -> &reactive::Var<sort::Any> {
+    pub(crate) fn base(&self) -> &reactive::Var<matrix::Any> {
         &self.base
     }
 }
@@ -73,15 +73,15 @@ impl Var {
 /// For keying purposes, a python `Var` is its base var: the borrowed view
 /// hashes and compares identically (the wrapper's `Hash`/`Eq`/`Ord` all
 /// delegate to the base), so maps keyed by `Var` can be probed with a
-/// `&reactive::Var<sort::Any>` directly.
-impl std::borrow::Borrow<reactive::Var<sort::Any>> for Var {
-    fn borrow(&self) -> &reactive::Var<sort::Any> {
+/// `&reactive::Var<matrix::Any>` directly.
+impl std::borrow::Borrow<reactive::Var<matrix::Any>> for Var {
+    fn borrow(&self) -> &reactive::Var<matrix::Any> {
         &self.base
     }
 }
 
-impl From<reactive::Var<sort::Any>> for Var {
-    fn from(base: reactive::Var<sort::Any>) -> Self {
+impl From<reactive::Var<matrix::Any>> for Var {
+    fn from(base: reactive::Var<matrix::Any>) -> Self {
         Self { base }
     }
 }

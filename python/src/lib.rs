@@ -18,10 +18,10 @@ use crate::module::Module;
 use crate::term::Term;
 use crate::var::Var;
 use crate::wire::Wire;
-use theory::matrix::sort;
+use theory::matrix;
 
 /// The operations of all theories, with their tensors held as `tch::Tensor`s.
-pub(crate) type Any = theory::matrix::Any<tch::Tensor>;
+pub(crate) type Op = theory::matrix::Op<tch::Tensor>;
 
 #[pymodule]
 fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -35,23 +35,19 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(var::d, m)?)?;
     m.add_function(wrap_pyfunction!(tangent, m)?)?;
 
-    // A special case: the operation `Zero`, writing the only value of the
-    // singleton sort `sort.ZeroSort` shared by all theories, is at the top
-    // level, not in a namespace of its own.
-    m.add_class::<theory::zero::Zero>()?;
-
-    // The other operations and the sorts, in namespaces mirroring the
-    // `theory` crate: `sort` holds the sorts shared by all theories, the
-    // singleton `ZeroSort`, which Rust calls `sort::Zero`; `matrix`
-    // holds the structural operations, with a namespace per theory and for
-    // the sorts. The operations carrying tensors come from `theory::torch`,
-    // the others from `theory::matrix`.
+    // The sorts and operations, in namespaces mirroring the `theory` crate:
+    // `zero` holds the singleton sort `Real0`, shared by all theories,
+    // and the operation `Zero`, writing its only value; `matrix` holds the
+    // structural operations, with a namespace per theory holding its sort and
+    // its operations. The operations carrying tensors come from
+    // `theory::torch`, the others from `theory::matrix`.
     let mut namespaces = Vec::new();
     {
-        let sort = PyModule::new(py, "sort")?;
-        sort.add_class::<theory::sort::Zero>()?;
-        m.add("sort", &sort)?;
-        namespaces.push(("sort", sort));
+        let zero = PyModule::new(py, "zero")?;
+        zero.add_class::<theory::zero::Real0>()?;
+        zero.add_class::<theory::zero::Zero>()?;
+        m.add("zero", &zero)?;
+        namespaces.push(("zero", zero));
     }
     {
         let matrix = PyModule::new(py, "matrix")?;
@@ -59,6 +55,7 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         matrix.add_class::<theory::matrix::Skip>()?;
         {
             let real = PyModule::new(py, "real")?;
+            real.add_class::<theory::matrix::real::Real>()?;
             real.add_class::<theory::torch::real::Num>()?;
             real.add_class::<theory::torch::real::Scale>()?;
             real.add_class::<theory::torch::real::Linear>()?;
@@ -94,6 +91,7 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         }
         {
             let int = PyModule::new(py, "int")?;
+            int.add_class::<theory::matrix::int::Int>()?;
             int.add_class::<theory::torch::int::Num>()?;
             int.add_class::<theory::torch::int::Scale>()?;
             int.add_class::<theory::torch::int::Linear>()?;
@@ -129,6 +127,7 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         }
         {
             let bool = PyModule::new(py, "bool")?;
+            bool.add_class::<theory::matrix::bool::Bool>()?;
             bool.add_class::<theory::torch::bool::Truth>()?;
             bool.add_class::<theory::matrix::bool::And>()?;
             bool.add_class::<theory::matrix::bool::Or>()?;
@@ -148,6 +147,7 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         }
         {
             let word = PyModule::new(py, "word")?;
+            word.add_class::<theory::matrix::word::Word>()?;
             word.add_class::<theory::torch::word::Num>()?;
             word.add_class::<theory::matrix::word::Concat>()?;
             word.add_class::<theory::matrix::word::Extract>()?;
@@ -206,15 +206,6 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             matrix.add("word", &word)?;
             namespaces.push(("matrix.word", word));
         }
-        {
-            let sort = PyModule::new(py, "sort")?;
-            sort.add_class::<theory::matrix::sort::Real>()?;
-            sort.add_class::<theory::matrix::sort::Int>()?;
-            sort.add_class::<theory::matrix::sort::Bool>()?;
-            sort.add_class::<theory::matrix::sort::Word>()?;
-            matrix.add("sort", &sort)?;
-            namespaces.push(("matrix.sort", sort));
-        }
         m.add("matrix", &matrix)?;
         namespaces.push(("matrix", matrix));
     }
@@ -238,10 +229,10 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
 /// The tangent sort `T(sort)`: the sort of the rate of change of the values
 /// of `sort`, one degree higher for a real, and the singleton
-/// `sort.ZeroSort()` for a discrete sort.
+/// `zero.Real0()` for a discrete sort.
 #[pyfunction]
 #[pyo3(name = "T")]
-fn tangent(sort: sort::Any) -> sort::Any {
+fn tangent(sort: matrix::Any) -> matrix::Any {
     base::differentiable::T(sort)
 }
 
@@ -259,7 +250,7 @@ where
 
 fn try_var_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = reactive::Var<sort::Any>>> {
+) -> PyResult<impl Iterator<Item = reactive::Var<matrix::Any>>> {
     // TODO: make base take result iterator to avoid unwrap
     let seq = try_iter_borrow::<Var>(seq)?;
     let seq = seq.into_iter().map(Result::unwrap);
@@ -269,10 +260,12 @@ fn try_var_iter_cloned(
 
 fn try_term_iter_cloned<T>(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = dataflow::diagram::Term<T, sort::Any>>>
+) -> PyResult<impl Iterator<Item = dataflow::diagram::Term<T, matrix::Any>>>
 where
-    dataflow::diagram::Term<Any, sort::Any>: TryInto<dataflow::diagram::Term<T, sort::Any>>,
-    <dataflow::diagram::Term<Any, sort::Any> as TryInto<dataflow::diagram::Term<T, sort::Any>>>::Error: Debug,
+    dataflow::diagram::Term<Op, matrix::Any>: TryInto<dataflow::diagram::Term<T, matrix::Any>>,
+    <dataflow::diagram::Term<Op, matrix::Any> as TryInto<
+        dataflow::diagram::Term<T, matrix::Any>,
+    >>::Error: Debug,
 {
     // TODO: make base take result iterator to avoid unwrap
     let seq = try_iter_borrow::<Term>(seq)?;
@@ -283,7 +276,7 @@ where
 
 fn try_wire_iter_cloned(
     seq: &Bound<'_, PyAny>,
-) -> PyResult<impl Iterator<Item = dataflow::diagram::Wire<sort::Any>>> {
+) -> PyResult<impl Iterator<Item = dataflow::diagram::Wire<matrix::Any>>> {
     // TODO: make base take result iterator to avoid unwrap
     let seq = seq.try_iter()?.map(|i| -> PyResult<_> {
         let i = i?;
@@ -306,7 +299,7 @@ fn try_wire_iter_cloned(
 /// variables (e.g. a lambda), or any iterable of variables (preferably a
 /// set); `None` hides nothing.
 pub(crate) enum Hide<'py> {
-    Set(HashSet<reactive::Var<sort::Any>>),
+    Set(HashSet<reactive::Var<matrix::Any>>),
     Call(
         &'py Bound<'py, PyAny>,
         // errors raised by the callable, surfaced after the base call
@@ -328,7 +321,7 @@ impl<'py> Hide<'py> {
     }
 
     /// The predicate handed to the base constructors.
-    pub(crate) fn as_fn(&self) -> impl Fn(&reactive::Var<sort::Any>) -> bool + '_ {
+    pub(crate) fn as_fn(&self) -> impl Fn(&reactive::Var<matrix::Any>) -> bool + '_ {
         move |var| match self {
             Hide::Set(set) => set.contains(var),
             Hide::Call(hide, err) => {

@@ -9,7 +9,10 @@ import pytest
 
 import reactor
 from reactor import Wire, T, Var, TheoryError
-from reactor.matrix.sort import Bool, Int, Real, Word
+from reactor.matrix.bool import Bool
+from reactor.matrix.int import Int
+from reactor.matrix.real import Real
+from reactor.matrix.word import Word
 from reactor import matrix
 from reactor.eval import eval_itype
 from reactor.expr import expr, cast, ite, collecting, IExpr, RExpr, BExpr, SExpr, UExpr, X

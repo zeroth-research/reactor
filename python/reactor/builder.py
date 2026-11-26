@@ -16,8 +16,11 @@ import torch
 from .reactor import Wire, Term, Var
 from .matrix import Skip, real, int as int_, bool as bool_, word
 from .matrix.word import signed, unsigned
-from .sort import ZeroSort
-from .matrix.sort import Real, Int, Bool, Word
+from .zero import Real0
+from .matrix.real import Real
+from .matrix.int import Int
+from .matrix.bool import Bool
+from .matrix.word import Word
 
 
 def _wire(t) -> Wire:
@@ -33,7 +36,7 @@ def _wire(t) -> Wire:
         raise TypeError(f'_wire() unexpected type(t)={type(t)}')
 
 
-def _dtype(t) -> Real | Int | Bool | Word | ZeroSort:
+def _dtype(t) -> Real | Int | Bool | Word | Real0:
     return _wire(t).dtype
 
 
@@ -232,7 +235,7 @@ class TermBuilder:
 
     # --- ops that no theory provides ---
 
-    def uninterpreted(self, name: str, sort: Real | Int | Bool | Word | ZeroSort) -> Term:
+    def uninterpreted(self, name: str, sort: Real | Int | Bool | Word | Real0) -> Term:
         raise TheoryError(f"uninterpreted functions are not supported (`{name}`)")
 
     def sin(self, a) -> Term:

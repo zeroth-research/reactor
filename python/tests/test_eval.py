@@ -5,8 +5,12 @@ multi-step execution of hand-built modules.
 """
 import pytest
 import torch
-from reactor import Wire, Term, Module, T, Var, X, Zero
-from reactor.matrix.sort import Bool, Real, Int, Word
+from reactor import Wire, Term, Module, T, Var, X
+from reactor.zero import Zero
+from reactor.matrix.bool import Bool
+from reactor.matrix.real import Real
+from reactor.matrix.int import Int
+from reactor.matrix.word import Word
 from reactor import matrix
 from reactor.matrix import Skip, Havoc
 from reactor.eval import eval_itype, execute_init, execute_update

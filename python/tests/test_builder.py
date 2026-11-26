@@ -4,7 +4,8 @@ import pytest
 import torch
 
 from reactor import T, Wire, TheoryError, matrix
-from reactor.matrix.sort import Real, Int
+from reactor.matrix.real import Real
+from reactor.matrix.int import Int
 from reactor.builder import builder_for, RealTermBuilder
 from reactor.eval import eval_itype
 

@@ -49,9 +49,12 @@ import torch
 
 from . import reactor
 from .reactor import Term, Wire, Var
-from .reactor import matrix, Zero
-from .sort import ZeroSort
-from .matrix.sort import Real, Int, Bool, Word
+from .reactor import matrix
+from .zero import Zero, Real0
+from .matrix.real import Real
+from .matrix.int import Int
+from .matrix.bool import Bool
+from .matrix.word import Word
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +117,7 @@ def _wrap(wire, *, next=None, value=None, signed=False, tag=None) -> "Expr":
             return SExpr(wire, next=next, value=value, tag=tag)
         case Word() if not signed:
             return UExpr(wire, next=next, value=value, tag=tag)
-        case ZeroSort():
+        case Real0():
             # the singleton: a value with no operations, only ever written as is
             return Expr(wire, next=next, value=value, tag=tag)
     raise TypeError(f"no Expr class for sort {wire.dtype}")
@@ -145,7 +148,7 @@ class Expr:
         return self._wire
 
     @property
-    def dtype(self) -> Real | Int | Bool | Word | ZeroSort:
+    def dtype(self) -> Real | Int | Bool | Word | Real0:
         return self._wire.dtype
 
     @property
@@ -630,13 +633,13 @@ def _const(value, sort, *, signed, tag=None) -> Expr:
 
     # the singleton sort, the rate of change of discrete values: its only value is
     # written by the operation `Zero()`, given as is, unambiguously, and no literal
-    if sort is ZeroSort or isinstance(sort, ZeroSort):
+    if sort is Real0 or isinstance(sort, Real0):
         if not isinstance(value, Zero):
             raise TypeError(
-                f"expr(): the rate of change of discrete values, of the sort Zero, is "
+                f"expr(): the rate of change of discrete values, of the sort Real0, is "
                 f"written `Zero()`, got {value!r}"
             )
-        term = Term.constant(Zero(), [Wire(ZeroSort())])
+        term = Term.constant(Zero(), [Wire(Real0())])
         _emit(term)
         return _wrap(term.write[0], value=value, tag=tag)
 
