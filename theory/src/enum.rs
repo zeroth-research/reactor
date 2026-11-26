@@ -30,14 +30,16 @@ one datatype, each enumeration a constraint of membership.
 
 pub use crate::Any as Sort;
 use crate::bool::Bool;
+use crate::zero::Real0;
 use base::boundary::{Boundary, Poly};
+use base::differentiable::Differentiable;
 use base::mono;
 use derive_more::From;
+#[cfg(feature = "pyo3")]
+use pyo3::prelude::*;
 use std::fmt;
 // `Into`, the operation, shadows the trait of the prelude, whose `into` this
 // module still calls.
-use crate::zero::Real0;
-use base::differentiable::Differentiable;
 use std::convert::Into as _;
 
 /// An enumeration: the sort whose values are the symbolic constants it names,
@@ -47,6 +49,10 @@ use std::convert::Into as _;
 /// set, so that two enumerations of the same values, in whatever order, are
 /// the same sort. It holds them sorted and without repetitions.
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.enum")
+)]
 pub struct Enum {
     /// The values, strictly increasing: sorted, without repetitions, and never
     /// empty. Membership, inclusion and union rely on it.
@@ -130,6 +136,49 @@ impl Enum {
     }
 }
 
+/// Python builds it from its values, any iterable of strings, as a
+/// `frozenset`, and matches it by them, sorted.
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Enum {
+    /// A string is not taken for the iterable of its characters: the values
+    /// of an enumeration are names, never letters.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    fn py_new(values: &Bound<'_, PyAny>) -> PyResult<Self> {
+        if values.is_instance_of::<pyo3::types::PyString>() {
+            return Err(pyo3::exceptions::PyTypeError::new_err(
+                "expected an iterable of the values of the enumeration, got a str",
+            ));
+        }
+        let values = values
+            .try_iter()?
+            .map(|v| v?.extract::<String>())
+            .collect::<PyResult<Vec<_>>>()?;
+        Ok(Self::new(values)?)
+    }
+
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("values",)
+    }
+
+    /// The symbolic constants of the enumeration, sorted.
+    #[cfg(feature = "pyo3")]
+    #[getter(values)]
+    fn py_values(&self) -> Vec<String> {
+        self.values.clone()
+    }
+
+    /// The tangent sort `T(self)`: the sort of the rate of change of its
+    /// values.
+    #[cfg(feature = "pyo3")]
+    #[pyo3(name = "tangent")]
+    fn py_tangent(&self) -> Real0 {
+        Differentiable::tangent(self)
+    }
+}
+
 /// Writes it as it is built, with its values sorted: `Enum(["busy", "idle"])`.
 impl fmt::Display for Enum {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -166,6 +215,10 @@ impl Differentiable for &Enum {
 
 /// A symbolic constant of an enumeration: one of its values.
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.enum")
+)]
 pub struct Sym {
     value: String,
     sort: Enum,
@@ -196,6 +249,10 @@ impl Sym {
 /// SMT-LIB2: the function from the datatype of `dom` to that of `cod` mapping
 /// each constructor to the one of its name.
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.enum")
+)]
 pub struct Into {
     dom: Enum,
     cod: Enum,
@@ -218,6 +275,10 @@ impl Into {
 ///
 /// SMT-LIB2: `(= x y)`.
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.enum")
+)]
 pub struct Eq {
     sort: Enum,
 }
@@ -226,6 +287,10 @@ pub struct Eq {
 ///
 /// SMT-LIB2: `(distinct x y)`.
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.enum")
+)]
 pub struct Ne {
     sort: Enum,
 }
@@ -235,6 +300,10 @@ pub struct Ne {
 ///
 /// SMT-LIB2: `(ite c x y)`.
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.enum")
+)]
 pub struct Ite {
     sort: Enum,
 }
@@ -417,6 +486,206 @@ impl fmt::Display for Op {
             Op::Eq(op) => op.fmt(f),
             Op::Ne(op) => op.fmt(f),
             Op::Ite(op) => op.fmt(f),
+        }
+    }
+}
+
+// The Python constructors of the operations: each is built from the
+// parameters its sorts do not determine, then its domain, when it reads
+// anything, a single sort bare and several as a list, and optionally its
+// codomain, which must agree; and matches by them the same way.
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl Sym {
+    /// Python builds it from its value, and its codomain `cod`, the
+    /// enumeration holding it.
+    #[new]
+    fn py_new(value: &str, cod: Enum) -> Result<Self, crate::Error> {
+        Self::with_cod(value, [cod])
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("value", "cod")
+    }
+
+    /// The symbolic constant.
+    #[getter]
+    fn value(&self) -> &str {
+        &self.value
+    }
+
+    /// The enumeration it writes.
+    #[getter(cod)]
+    fn py_cod(&self) -> Enum {
+        self.sort.clone()
+    }
+}
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl Into {
+    /// Python builds it from its domain `dom` and its codomain `cod`, which
+    /// its domain does not determine: an enumeration holding all its values.
+    #[new]
+    fn py_new(dom: Enum, cod: Enum) -> Result<Self, crate::Error> {
+        Self::new(dom, cod)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        crate::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        crate::py_sorts(py, Boundary::cod(self))
+    }
+}
+
+// The constructors of the comparisons, each reading two values of an
+// enumeration.
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl Eq {
+    /// Python builds it from its domain `dom`, two values of the same
+    /// enumeration; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Enum; 2], cod: Option<Sort>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom(dom), cod)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        crate::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        crate::py_sorts(py, Boundary::cod(self))
+    }
+}
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl Ne {
+    /// Python builds it from its domain `dom`, two values of the same
+    /// enumeration; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Enum; 2], cod: Option<Sort>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom(dom), cod)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        crate::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        crate::py_sorts(py, Boundary::cod(self))
+    }
+}
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl Ite {
+    /// Python builds it from its domain `dom`, the condition, a boolean of
+    /// the shape `[1, 1]`, and two branches of the same enumeration; its
+    /// codomain `cod`, when given, must be the one it writes.
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Sort; 3], cod: Option<Sort>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom(dom), cod)
+    }
+
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        crate::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        crate::py_sorts(py, Boundary::cod(self))
+    }
+}
+
+/// Extracts an operation on enumerations from an instance of its class.
+#[cfg(feature = "pyo3")]
+impl<'a, 'py> FromPyObject<'a, 'py> for Op {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        if let Ok(op) = ob.extract::<Sym>() {
+            return Ok(Op::Sym(op));
+        }
+        if let Ok(op) = ob.extract::<Into>() {
+            return Ok(Op::Into(op));
+        }
+        if let Ok(op) = ob.extract::<Eq>() {
+            return Ok(Op::Eq(op));
+        }
+        if let Ok(op) = ob.extract::<Ne>() {
+            return Ok(Op::Ne(op));
+        }
+        if let Ok(op) = ob.extract::<Ite>() {
+            return Ok(Op::Ite(op));
+        }
+        Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            "expected an operation on enumerations, got {}",
+            ob.get_type()
+        )))
+    }
+}
+
+/// Converts an operation on enumerations into an instance of its class.
+#[cfg(feature = "pyo3")]
+impl<'py> IntoPyObject<'py> for Op {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        match self {
+            Op::Sym(op) => op.into_pyobject(py).map(Bound::into_any),
+            Op::Into(op) => op.into_pyobject(py).map(Bound::into_any),
+            Op::Eq(op) => op.into_pyobject(py).map(Bound::into_any),
+            Op::Ne(op) => op.into_pyobject(py).map(Bound::into_any),
+            Op::Ite(op) => op.into_pyobject(py).map(Bound::into_any),
         }
     }
 }

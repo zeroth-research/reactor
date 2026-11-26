@@ -43,8 +43,8 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // The sorts and the other operations, in namespaces mirroring the
     // `theory` crate: `zero` holds the singleton sort `Real0`, shared by all
     // theories, and the operation `Zero`, writing its only value; `real`,
-    // `int`, `bool` and `word` each hold the sort of their theory and its
-    // operations. The operations carrying tensors come from `theory::torch`,
+    // `int`, `bool`, `word`, `enum` and `event` each hold the sort of their
+    // theory and its operations. The operations carrying tensors come from `theory::torch`,
     // the others from the module of their theory.
     let mut namespaces = Vec::new();
     {
@@ -206,6 +206,28 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         }
         m.add("word", &word)?;
         namespaces.push(("word", word));
+    }
+    {
+        let r#enum = PyModule::new(py, "enum")?;
+        r#enum.add_class::<theory::r#enum::Enum>()?;
+        r#enum.add_class::<theory::r#enum::Sym>()?;
+        r#enum.add_class::<theory::r#enum::Into>()?;
+        r#enum.add_class::<theory::r#enum::Eq>()?;
+        r#enum.add_class::<theory::r#enum::Ne>()?;
+        r#enum.add_class::<theory::r#enum::Ite>()?;
+        m.add("enum", &r#enum)?;
+        namespaces.push(("enum", r#enum));
+    }
+    {
+        let event = PyModule::new(py, "event")?;
+        event.add_class::<theory::event::Event>()?;
+        event.add_class::<theory::event::Eq>()?;
+        event.add_class::<theory::event::Ne>()?;
+        event.add_class::<theory::event::Toggle>()?;
+        event.add_class::<theory::event::Hold>()?;
+        event.add_class::<theory::event::Ite>()?;
+        m.add("event", &event)?;
+        namespaces.push(("event", event));
     }
 
     // Each namespace takes its dotted name in the package that holds this

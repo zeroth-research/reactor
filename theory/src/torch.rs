@@ -93,7 +93,7 @@ fn check_affine(a: &tch::Tensor, b: &tch::Tensor) -> Result<(), crate::Error> {
 
 /// Converts an operation of any theory into its Python class, through the
 /// conversion of its theory; the structural operations are classes of their
-/// own. The operations of the scalar theories have no Python classes yet.
+/// own.
 impl<'py> IntoPyObject<'py> for crate::Op<tch::Tensor> {
     type Target = PyAny;
     type Output = Bound<'py, PyAny>;
@@ -110,9 +110,8 @@ impl<'py> IntoPyObject<'py> for crate::Op<tch::Tensor> {
             Op::Havoc(op) => op.into_pyobject(py).map(Bound::into_any),
             Op::Skip(op) => op.into_pyobject(py).map(Bound::into_any),
             Op::Zero(op) => op.into_pyobject(py).map(Bound::into_any),
-            op @ (Op::Enum(_) | Op::Event(_)) => Err(pyo3::exceptions::PyTypeError::new_err(
-                format!("the operation {op} has no Python class yet"),
-            )),
+            Op::Enum(op) => op.into_pyobject(py),
+            Op::Event(op) => op.into_pyobject(py),
         }
     }
 }

@@ -187,8 +187,7 @@ impl Differentiable for Words {
     }
 }
 
-/// Extracts a sort from an instance of its class: the sorts of the scalar
-/// theories, [`Enum`] and [`Event`], have none yet.
+/// Extracts a sort from an instance of its class.
 #[cfg(feature = "pyo3")]
 impl<'a, 'py> FromPyObject<'a, 'py> for Any {
     type Error = PyErr;
@@ -206,11 +205,17 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Any {
         if let Ok(s) = ob.extract::<Word>() {
             return Ok(Any::Word(s));
         }
+        if let Ok(s) = ob.extract::<Enum>() {
+            return Ok(Any::Enum(s));
+        }
+        if let Ok(s) = ob.extract::<Event>() {
+            return Ok(Any::Event(s));
+        }
         if let Ok(s) = ob.extract::<Real0>() {
             return Ok(Any::Zero(s));
         }
         Err(PyTypeError::new_err(format!(
-            "expected a sort: Real, Int, Bool, Word or Real0, got {}",
+            "expected a sort: Real, Int, Bool, Word, Enum, Event or Real0, got {}",
             ob.get_type()
         )))
     }
@@ -241,8 +246,7 @@ macro_rules! extract_subset {
 #[cfg(feature = "pyo3")]
 extract_subset!(Reals, Ints, Words);
 
-/// Converts a sort into an instance of its class; fails for the sorts of the
-/// scalar theories, which have none yet.
+/// Converts a sort into an instance of its class.
 #[cfg(feature = "pyo3")]
 impl<'py> IntoPyObject<'py> for Any {
     type Target = PyAny;
@@ -255,10 +259,9 @@ impl<'py> IntoPyObject<'py> for Any {
             Any::Int(s) => s.into_pyobject(py).map(Bound::into_any),
             Any::Bool(s) => s.into_pyobject(py).map(Bound::into_any),
             Any::Word(s) => s.into_pyobject(py).map(Bound::into_any),
+            Any::Enum(s) => s.into_pyobject(py).map(Bound::into_any),
+            Any::Event(s) => s.into_pyobject(py).map(Bound::into_any),
             Any::Zero(s) => s.into_pyobject(py).map(Bound::into_any),
-            s @ (Any::Enum(_) | Any::Event(_)) => Err(PyTypeError::new_err(format!(
-                "the sort {s} has no Python class yet"
-            ))),
         }
     }
 }
@@ -384,6 +387,43 @@ where
                 "the operation reading this domain writes {}, not {expected}",
                 op.cod()
             )));
+        }
+    }
+    Ok(op)
+}
+
+/// The sorts of a domain or codomain as Python gives it: a sort alone, or a
+/// list of them.
+#[cfg(feature = "pyo3")]
+fn py_mono(ob: &Bound<'_, PyAny>) -> PyResult<Poly<Any>> {
+    let sorts = match ob.extract::<Any>() {
+        Ok(s) => vec![s],
+        Err(_) => ob.extract::<Vec<Any>>()?,
+    };
+    Ok(sorts
+        .into_iter()
+        .collect::<base::boundary::Mono<Any>>()
+        .into())
+}
+
+/// The operation `op`, whose boundary its type fixes, checked against the
+/// domain `dom` and the codomain `cod` that a Python constructor is given,
+/// when it is: those must be the ones of `op`.
+#[cfg(feature = "pyo3")]
+pub(crate) fn check_boundary<O: Boundary<Any> + fmt::Display>(
+    op: O,
+    dom: Option<&Bound<'_, PyAny>>,
+    cod: Option<&Bound<'_, PyAny>>,
+) -> PyResult<O> {
+    for (name, given, fixed) in [("domain", dom, op.dom()), ("codomain", cod, op.cod())] {
+        if let Some(given) = given {
+            let given = py_mono(given)?;
+            if given != fixed {
+                return Err(Error(format!(
+                    "the operation {op} has the {name} {fixed}, not {given}"
+                ))
+                .into());
+            }
         }
     }
     Ok(op)
@@ -724,10 +764,10 @@ impl<T: Matrix> Boundary<Any> for Op<T> {
 }
 
 /// Extracts an operation from a Python object, trying each theory in turn
-/// through its own extraction: real, integer, boolean, and then bit-vector
-/// operations, and then the structural ones. The operations of each theory
+/// through its own extraction: real, integer, boolean, bit-vector,
+/// enumeration and event operations, and then the structural ones. The operations of each theory
 /// are distinct Python classes, so at most one theory accepts a given
-/// object. The operations of the scalar theories have no Python classes yet.
+/// object.
 #[cfg(feature = "pyo3")]
 impl<'a, 'py, T> FromPyObject<'a, 'py> for Op<T>
 where
@@ -751,6 +791,12 @@ where
         if let Ok(op) = ob.extract::<word::BV<T>>() {
             return Ok(Op::Word(op));
         }
+        if let Ok(op) = ob.extract::<r#enum::Op>() {
+            return Ok(Op::Enum(op));
+        }
+        if let Ok(op) = ob.extract::<event::Op>() {
+            return Ok(Op::Event(op));
+        }
         if let Ok(op) = ob.extract::<Havoc>() {
             return Ok(Op::Havoc(op));
         }
@@ -761,8 +807,7 @@ where
             return Ok(Op::Zero(op));
         }
         Err(PyTypeError::new_err(format!(
-            "expected an operation of real, integer, boolean or bit-vector \
-             arithmetic, got {}",
+            "expected an operation of a theory, or a structural one, got {}",
             ob.get_type()
         )))
     }

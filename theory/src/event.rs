@@ -26,6 +26,8 @@ use base::boundary::{Boundary, Poly};
 use base::differentiable::Differentiable;
 use base::mono;
 use derive_more::From;
+#[cfg(feature = "pyo3")]
+use pyo3::prelude::*;
 use std::fmt;
 
 /// The sort of events: a value that, as a boolean, has two states, but is only
@@ -33,11 +35,32 @@ use std::fmt;
 /// event happens when its value changes, so that only the change, not the
 /// state, means anything.
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash, Default)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.event")
+)]
 pub struct Event;
 
+/// Python builds it from nothing, and matches it by nothing.
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Event {
+    #[cfg_attr(feature = "pyo3", new)]
     pub fn new() -> Self {
         Event
+    }
+
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__(py: Python<'_>) -> Bound<'_, pyo3::types::PyTuple> {
+        pyo3::types::PyTuple::empty(py)
+    }
+
+    /// The tangent sort `T(self)`: the sort of the rate of change of its
+    /// values.
+    #[cfg(feature = "pyo3")]
+    #[pyo3(name = "tangent")]
+    fn tangent(&self) -> Real0 {
+        Differentiable::tangent(self)
     }
 }
 
@@ -61,6 +84,10 @@ impl Differentiable for Event {
 ///
 /// SMT-LIB2: `(= x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.event")
+)]
 pub struct Eq;
 
 impl Boundary<Sort> for Eq {
@@ -84,6 +111,10 @@ impl fmt::Display for Eq {
 ///
 /// SMT-LIB2: `(distinct x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.event")
+)]
 pub struct Ne;
 
 impl Boundary<Sort> for Ne {
@@ -106,6 +137,10 @@ impl fmt::Display for Ne {
 ///
 /// SMT-LIB2: `(not x)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.event")
+)]
 pub struct Toggle;
 
 impl Boundary<Sort> for Toggle {
@@ -128,6 +163,10 @@ impl fmt::Display for Toggle {
 ///
 /// SMT-LIB2: `x`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.event")
+)]
 pub struct Hold;
 
 impl Boundary<Sort> for Hold {
@@ -151,6 +190,10 @@ impl fmt::Display for Hold {
 ///
 /// SMT-LIB2: `(ite c x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.event")
+)]
 pub struct Ite;
 
 impl Boundary<Sort> for Ite {
@@ -214,6 +257,206 @@ impl fmt::Display for Op {
             Op::Toggle(op) => op.fmt(f),
             Op::Hold(op) => op.fmt(f),
             Op::Ite(op) => op.fmt(f),
+        }
+    }
+}
+
+// The Python constructors of the operations: each has no parameters and a
+// boundary its type fixes, so its domain and codomain are optional, and
+// checked when given; each matches by them.
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl Eq {
+    /// Python builds it from nothing; its domain `dom` and codomain
+    /// `cod`, when given, must be the ones it reads and writes.
+    #[new]
+    #[pyo3(signature = (dom = None, cod = None))]
+    fn py_new(dom: Option<&Bound<'_, PyAny>>, cod: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
+        crate::check_boundary(Eq, dom, cod)
+    }
+
+    /// Its domain, then its codomain.
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        crate::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        crate::py_sorts(py, Boundary::cod(self))
+    }
+}
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl Ne {
+    /// Python builds it from nothing; its domain `dom` and codomain
+    /// `cod`, when given, must be the ones it reads and writes.
+    #[new]
+    #[pyo3(signature = (dom = None, cod = None))]
+    fn py_new(dom: Option<&Bound<'_, PyAny>>, cod: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
+        crate::check_boundary(Ne, dom, cod)
+    }
+
+    /// Its domain, then its codomain.
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        crate::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        crate::py_sorts(py, Boundary::cod(self))
+    }
+}
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl Toggle {
+    /// Python builds it from nothing; its domain `dom` and codomain
+    /// `cod`, when given, must be the ones it reads and writes.
+    #[new]
+    #[pyo3(signature = (dom = None, cod = None))]
+    fn py_new(dom: Option<&Bound<'_, PyAny>>, cod: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
+        crate::check_boundary(Toggle, dom, cod)
+    }
+
+    /// Its domain, then its codomain.
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        crate::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        crate::py_sorts(py, Boundary::cod(self))
+    }
+}
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl Hold {
+    /// Python builds it from nothing; its domain `dom` and codomain
+    /// `cod`, when given, must be the ones it reads and writes.
+    #[new]
+    #[pyo3(signature = (dom = None, cod = None))]
+    fn py_new(dom: Option<&Bound<'_, PyAny>>, cod: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
+        crate::check_boundary(Hold, dom, cod)
+    }
+
+    /// Its domain, then its codomain.
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        crate::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        crate::py_sorts(py, Boundary::cod(self))
+    }
+}
+
+#[cfg(feature = "pyo3")]
+#[pymethods]
+impl Ite {
+    /// Python builds it from nothing; its domain `dom` and codomain
+    /// `cod`, when given, must be the ones it reads and writes.
+    #[new]
+    #[pyo3(signature = (dom = None, cod = None))]
+    fn py_new(dom: Option<&Bound<'_, PyAny>>, cod: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
+        crate::check_boundary(Ite, dom, cod)
+    }
+
+    /// Its domain, then its codomain.
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads: the sort alone when it reads one, else their list.
+    #[getter(dom)]
+    fn py_dom<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        crate::py_sorts(py, Boundary::dom(self))
+    }
+
+    /// The sort it writes.
+    #[getter(cod)]
+    fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        crate::py_sorts(py, Boundary::cod(self))
+    }
+}
+
+/// Extracts an operation on events from an instance of its class.
+#[cfg(feature = "pyo3")]
+impl<'a, 'py> FromPyObject<'a, 'py> for Op {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        if let Ok(op) = ob.extract::<Eq>() {
+            return Ok(Op::Eq(op));
+        }
+        if let Ok(op) = ob.extract::<Ne>() {
+            return Ok(Op::Ne(op));
+        }
+        if let Ok(op) = ob.extract::<Toggle>() {
+            return Ok(Op::Toggle(op));
+        }
+        if let Ok(op) = ob.extract::<Hold>() {
+            return Ok(Op::Hold(op));
+        }
+        if let Ok(op) = ob.extract::<Ite>() {
+            return Ok(Op::Ite(op));
+        }
+        Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            "expected an operation on events, got {}",
+            ob.get_type()
+        )))
+    }
+}
+
+/// Converts an operation on events into an instance of its class.
+#[cfg(feature = "pyo3")]
+impl<'py> IntoPyObject<'py> for Op {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        match self {
+            Op::Eq(op) => op.into_pyobject(py).map(Bound::into_any),
+            Op::Ne(op) => op.into_pyobject(py).map(Bound::into_any),
+            Op::Toggle(op) => op.into_pyobject(py).map(Bound::into_any),
+            Op::Hold(op) => op.into_pyobject(py).map(Bound::into_any),
+            Op::Ite(op) => op.into_pyobject(py).map(Bound::into_any),
         }
     }
 }
