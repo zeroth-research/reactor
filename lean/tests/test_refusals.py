@@ -91,6 +91,20 @@ def test_a_cert_file_sibling_that_cannot_be_written(tmp_path):
     assert err.startswith("error: --cert-file: ")
 
 
+@pytest.mark.parametrize("path", ["my-cert.lean", "2cert.lean",
+                                  "my-certs/Cert.lean"])
+def test_a_cert_file_that_gives_no_lean_module_name_writes_nothing(tmp_path,
+                                                                    path):
+    """The encodings beside the certificate import it by its module name,
+    which a file or directory name that is no Lean name does not give:
+    `import out.my-cert` does not parse."""
+    (tmp_path / "lakefile.toml").write_text("")
+    out = tmp_path / "out"
+    err = _refused(reactor(COUNTER, "--cert-file", str(out / path)))
+    assert "which is no Lean module name" in err
+    assert not out.exists()
+
+
 def test_a_refusal_of_the_module_is_not_the_cert_files(tmp_path, monkeypatch):
     """Only what cannot be written is `--cert-file`'s; a refusal of the
     module reads as it does without the flag."""

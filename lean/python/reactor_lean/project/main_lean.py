@@ -36,7 +36,7 @@ def _elem_parser(sort) -> "tuple[str, str, str]":
     stored into the array.
     """
     if isinstance(sort, Bool):
-        return ":=", "parseBool", "v"
+        return "←", "parseBoolOrFail", "v"
     if isinstance(sort, Int):
         return "←", "parseIntOrFail", "v"
     assert isinstance(sort, Word), sort
@@ -72,9 +72,15 @@ def generate_main_lean(ctx: LeanContext) -> str:
     lines.append("")
 
     # Static helpers
-    lines.append(
-        'def parseBool (s : String) : Bool := s.trimAscii.toString == "true" || s.trimAscii.toString == "1"'
-    )
+    # A line's tokens are what is between its spaces, however many.
+    lines.append("def tokens (line : String) : Array String :=")
+    lines.append('  ((line.trimAscii.toString.splitOn " ").filter (· != "")).toArray')
+    lines.append("")
+    lines.append("def parseBoolOrFail (s : String) : IO Bool := do")
+    lines.append("  match s.trimAscii.toString with")
+    lines.append('  | "true" | "1" => pure true')
+    lines.append('  | "false" | "0" => pure false')
+    lines.append('  | t => throw (.userError s!"Invalid boolean: {t}")')
     lines.append('def showBool (b : Bool) : String := if b then "1" else "0"')
     lines.append("def showWord {w : Nat} (x : BitVec w) : String := toString x.toNat")
     lines.append("")
@@ -90,7 +96,7 @@ def generate_main_lean(ctx: LeanContext) -> str:
         " : String :="
     )
     lines.append(
-        "  let vals := (List.ofFn fun i => List.ofFn fun j => [f (mat i j)]).flatten.flatten"
+        "  let vals := (List.ofFn fun i => List.ofFn fun j => f (mat i j)).flatten"
     )
     lines.append('  String.intercalate " " vals')
     lines.append("")
@@ -162,14 +168,14 @@ def main : IO Unit := do
   let stdin ← IO.getStdin
   let line0 ← stdin.getLine
   if line0.trimAscii.toString.isEmpty then return
-  let extl0 ← parseExtl (line0.trimAscii.toString.splitOn " " |>.toArray)
+  let extl0 ← parseExtl (tokens line0)
   let mut state := init extl0
   let mut extlPrev := extl0
   IO.println (showCtrl state)
   repeat do
     let line ← stdin.getLine
     if line.trimAscii.toString.isEmpty then break
-    let extl ← parseExtl (line.trimAscii.toString.splitOn " " |>.toArray)
+    let extl ← parseExtl (tokens line)
     let state' := update state extlPrev extl
     IO.println (showCtrl state')
     state := state'

@@ -15,11 +15,14 @@ And a generated project with an executable, built and run.
 """
 import subprocess
 import tempfile
+from functools import partial
 from pathlib import Path
 
 import pytest
+import torch
 
 import testdata
+from reactor import Bool, Module, Term, Var, X, tensor
 from lake import lake_build
 from testdata import LAKE_PROJECT
 
@@ -77,20 +80,37 @@ def test_argmax_scalar_equiv_build(generate_lean_files):
     assert not sorry_lines, "ArgmaxScalar proof used sorry:\n" + "\n".join(sorry_lines)
 
 
+def _and_of_two_bools() -> Module:
+    """`s` is the `And` of the round's two Bool inputs: a line of two
+    tokens."""
+    s, p, q = Var(Bool([1, 1])), Var(Bool([1, 1])), Var(Bool([1, 1]))
+    init = [Term(tensor.bool.Const(torch.tensor([[False]])), [X(s)])]
+    update = [Term(tensor.bool.And([1, 1]), [X(s)], [X(p), X(q)])]
+    return Module.sequential([s, p, q], init, update)
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize(
-    "fixture,stdin,expected",
+    "make,runs",
     [
         # LIA: x starts at 0, increments each step, resets at 10
-        ("counter", "x\nx\nx\n", ["0", "1", "2"]),
+        pytest.param(partial(testdata.fixture, "counter"),
+                     [("x\nx\nx\n", ["0", "1", "2"])], id="counter"),
         # BV: two-bit counter with enable=1 counts 00, 10, 01, 11; a word
         # is printed as the number it holds, which is how it is read.
-        ("twobit", "1\n1\n1\n", ["0", "0", "1", "0", "0", "1"]),
+        pytest.param(partial(testdata.fixture, "twobit"),
+                     [("1\n1\n1\n", ["0", "0", "1", "0", "0", "1"])],
+                     id="twobit"),
+        # A line's tokens are what is between its spaces, however many; a
+        # Bool is `true`/`1` or `false`/`0`, and any other token ends the
+        # run. The first line is `init`'s, which reads no input.
+        pytest.param(_and_of_two_bools,
+                     [("1 1\n1 0\n1  1\n", ["0", "0", "1"]),
+                      ("1 1\n1 2\n", "Invalid boolean: 2")],
+                     id="two_bools"),
     ],
 )
-def test_generated_executable_builds_and_runs(
-    generate_lean_files, fixture, stdin, expected
-):
+def test_generated_executable_builds_and_runs(generate_lean_files, make, runs):
     """`reactor -x` end to end: generate a project, build `main`, run it.
 
     The only coverage the executable path has. Its three generated pieces
@@ -113,7 +133,7 @@ def test_generated_executable_builds_and_runs(
     if reactlib_checkout() is None:
         pytest.skip(f"no ReactLib checkout: set ${REACTLIB_ENV}")
 
-    ctx = LeanContext(testdata.fixture(fixture))
+    ctx = LeanContext(make())
     with tempfile.TemporaryDirectory() as tmp:
         project = create_project(
             Path(tmp), ctx, "Rea", executable=True,
@@ -131,17 +151,25 @@ def test_generated_executable_builds_and_runs(
             f"stdout:\n{build.stdout[-2000:]}\nstderr:\n{build.stderr[-800:]}"
         )
 
-        run = subprocess.run(
-            [str(project / ".lake" / "build" / "bin" / "main")],
-            input=stdin,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-        assert run.returncode == 0, f"executable failed: {run.stderr[-500:]}"
-        assert run.stdout.split() == expected, (
-            f"unexpected trace: {run.stdout.split()}"
-        )
+        # Each run is its input, and the trace it prints or, as a string,
+        # the error it ends with.
+        for stdin, expected in runs:
+            run = subprocess.run(
+                [str(project / ".lake" / "build" / "bin" / "main")],
+                input=stdin,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if isinstance(expected, str):
+                assert run.returncode != 0 and expected in run.stderr, (
+                    f"expected `{expected}`, got {run.returncode}: "
+                    f"{run.stderr[-500:]}")
+                continue
+            assert run.returncode == 0, f"executable failed: {run.stderr[-500:]}"
+            assert run.stdout.split() == expected, (
+                f"unexpected trace: {run.stdout.split()}"
+            )
 
 
 @pytest.mark.slow

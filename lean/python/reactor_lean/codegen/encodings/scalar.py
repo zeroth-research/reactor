@@ -258,7 +258,6 @@ def to_lean_scalar_equiv(ctx: LeanContext) -> str:
             + simp_extras
             + [_recon_name(w) for w in _recon_wires(ctx)]
             + argmax_eq_lemmas
-            + ["Fin.cons_zero", "Fin.cons_succ"]
         )
         return [
             # `fin_cases` enumerates every index of every wire, so the cost

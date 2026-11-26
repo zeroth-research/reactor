@@ -168,7 +168,7 @@ def test_main_lean_bool_module():
     m = _make_twobitcounter()
     src = generate_main_lean(LeanContext(m))
 
-    assert "parseBool" in src
+    assert "parseBoolOrFail" in src
     assert "parseExtl" in src
     assert "showCtrl" in src
     assert "def main" in src

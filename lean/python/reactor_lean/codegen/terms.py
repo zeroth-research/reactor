@@ -36,10 +36,7 @@ def product_type(wires: list[Wire]) -> str:
     """Build a right-nested product type: [w1, w2] -> 'Bool × Bool', [w1] -> 'Bool'."""
     if not wires:
         return "Unit"
-    if len(wires) == 1:
-        return dtype_to_lean_type(wires[0])
-    parts = [dtype_to_lean_type(w) for w in wires]
-    return " × ".join(parts)
+    return " × ".join(dtype_to_lean_type(w) for w in wires)
 
 
 def build_tuple(exprs: list[str]) -> str:
@@ -198,10 +195,7 @@ def product_type_scalar(wires: list[Wire]) -> str:
     """
     if not wires:
         return "Unit"
-    parts = flat_layout(wires).element_types()
-    if len(parts) == 1:
-        return parts[0]
-    return " × ".join(parts)
+    return " × ".join(flat_layout(wires).element_types())
 
 
 def _constant_expr_scalar(term, w: "Wire", constants: ConstantRegistry) -> str:

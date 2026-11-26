@@ -5,8 +5,9 @@
 to be proved of it; `codegen.context.lean_context` checks that the module
 has a Lean form, and `proof.render.lean_certificate` renders the
 certificate; `generate` writes the project, or `standalone` the
-certificate file asked for and the encodings beside it. Each stage refuses what it cannot carry out (`Refused`), and
-`main` prints that as one `error:` line.
+certificate file asked for and the encodings beside it. Each stage
+refuses what it cannot carry out (`Refused`), and `main` prints that as
+one `error:` line.
 
 The certificate states its obligations and proves each by `sorry`: the
 proofs are a prover's to write, into `Certificate/Proofs.lean`, which
@@ -18,7 +19,8 @@ A *module file* is a Python file that defines a ``module()`` function (or
 class) returning a :class:`reactor.Module` (or a ``reactor_lean.parse.Named``
 one, for claims in its own names).
 
-Generate a bare Lean project (all certificate fields left as ``sorry``)::
+Generate a bare Lean project (``P`` and ``ranking`` left as ``sorry``, the
+invariant and the assumptions on the inputs ``True``)::
 
     uv run reactor mymodule.py -o out/ -p MyProject
 
@@ -70,6 +72,7 @@ returns a :class:`reactor.Module`::
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from .. import parse
@@ -170,9 +173,20 @@ def standalone(cert_file: str, ctx: LeanContext,
                lean_cert: LeanCertificate) -> None:
     """`--cert-file`: a self-contained certificate and its sibling encodings.
 
-    No project: the predicates are the ones supplied.
+    No project: the predicates are the ones supplied. The encodings import
+    the certificate by its Lake module name, so a path that gives it none
+    (`my-cert.lean`) is refused before anything is written.
     """
     out = Path(cert_file)
+    layout = Layout(base=out.stem, prefix=lake_module_prefix(out.parent),
+                    flat=True, directory=out.parent)
+    module_name = layout.lean_module("")
+    if not all(_LEAN_NAME.fullmatch(part) for part in module_name.split(".")):
+        raise SystemExit(
+            f"error: --cert-file: the encodings beside it would import it as "
+            f"`{module_name}`, which is no Lean module name: each part is "
+            "letters, digits and `_`, not beginning with a digit"
+        )
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(generate_standalone_cert_lean(ctx, lean_cert))
@@ -182,8 +196,6 @@ def standalone(cert_file: str, ctx: LeanContext,
         # same imports. The functional encoding is already inlined in the
         # standalone certificate above, which is the base they import.
         m2l = ModuleToLean4(ctx)
-        layout = Layout(base=out.stem, prefix=lake_module_prefix(out.parent),
-                        flat=True, directory=out.parent)
         for enc in ENCODINGS:
             if enc.cert_file:
                 path = write_encoding(enc, m2l, layout, out.stem)
@@ -194,6 +206,10 @@ def standalone(cert_file: str, ctx: LeanContext,
         raise SystemExit(f"error: {e}") from e
     except OSError as e:
         raise SystemExit(f"error: --cert-file: {e}") from e
+
+
+# One part of a Lean module name, as a file or directory name gives it.
+_LEAN_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 def lake_module_prefix(directory: Path) -> str:

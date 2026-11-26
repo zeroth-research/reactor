@@ -154,6 +154,17 @@ def test_no_cache_is_none_and_a_directory_that_is_no_cache_is_refused(
     assert lake_cache() == (tmp_path / "c").resolve()
 
 
+@pytest.mark.parametrize("text", ["{\"packages\": [", "{}", "[]"],
+                         ids=["truncated", "no_packages", "no_object"])
+def test_a_manifest_that_is_none_is_refused(tmp_path, text):
+    """A cache whose manifest cannot be read, cut short by an interrupted
+    copy say, is refused as one that is no cache is."""
+    cache = _cache(tmp_path / "c")
+    (cache / "lake-manifest.json").write_text(text)
+    with pytest.raises(Refused, match="is not a Lake manifest"):
+        cached_manifest(cache, project_requires(), name="P", project=tmp_path)
+
+
 def test_the_manifest_holds_the_cached_packages_and_the_projects_paths(
         monkeypatch, tmp_path):
     """The cache's git packages, the transitive ones too; not the path

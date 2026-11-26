@@ -56,9 +56,6 @@ class RelSyntax:
     noncomp: str  # `LeanContext.noncomputable`
     slot_ty: Callable[[int], str]  # codomain of slot `i`'s body
     project: Callable[[str, int], str]  # slot `i` of a state expression
-    # Extra `simp only` lemmas the `*_eq` proofs need. The scalar domain's
-    # bodies come out of `Fin.cons`, the matrix domain's do not.
-    eq_simp: "tuple[str, ...]" = ()
 
 
 @dataclass(frozen=True)
@@ -88,7 +85,7 @@ def _eq_theorem(syn: RelSyntax, blk: RelBlock, i: int) -> "list[str]":
     `Matrix` meets a scalar and the equality is only propositional.
     """
     name = f"{blk.body_name}_{i}"
-    lemmas = ", ".join([blk.ref, name, *syn.eq_simp])
+    lemmas = ", ".join([blk.ref, name])
     return [
         f"theorem {name}_eq : ∀ {blk.ref_binders},",
         f"    {name} {blk.ref_args} = "
@@ -367,7 +364,6 @@ def atom_to_lean_rel(ctx: LeanContext) -> str:
         noncomp=ctx.noncomputable,
         slot_ty=lambda i: effect_type(ctx.ctrl_next[i]),
         project=lambda e, i: flat_slice(e, layout, ctx.ctrl_next[i]),
-        eq_simp=("Fin.cons_zero", "Fin.cons_succ"),
     )
 
     def _bodies(terms, groups) -> "list[str]":

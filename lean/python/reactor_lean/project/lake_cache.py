@@ -84,10 +84,16 @@ def held_packages(cache: Path, requires: Iterable[Require]) -> "tuple[dict, dict
     Refused for a git require of `requires` that the cache does not hold
     at the revision the lakefile asks for: lake would fetch it into the
     cache, or fetch another revision over the one every other project
-    builds against.
+    builds against. Refused too when the manifest cannot be read as one.
     """
-    cached = json.loads((cache / MANIFEST).read_text())
-    held = {e["name"]: e for e in cached["packages"] if e["type"] == "git"}
+    try:
+        cached = json.loads((cache / MANIFEST).read_text())
+        held = {e["name"]: e for e in cached["packages"] if e["type"] == "git"}
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        raise Refused(
+            f"${LAKE_CACHE_ENV}: {cache / MANIFEST} is not a Lake manifest "
+            f"({type(e).__name__}: {e})",
+        ) from e
     for r in requires:
         if r.path is not None:
             continue

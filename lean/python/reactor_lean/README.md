@@ -38,8 +38,7 @@ on the inputs (`--extl-assume`, or `--extl-assume-init` and
 and `(X @intf.N)` is interface variable N by position. See [Writing a claim
 on the command line](#writing-a-claim-on-the-command-line) for the full
 spelling. This stage translates the names to the internal `s{i}`, `e{i}`
-and `el{i}`, and everything after it uses those. They are translated back
-when a certificate is shown.
+and `el{i}`, and everything after it uses those.
 
 ### 3. Reactive module (`reactor.Module`)
 
@@ -100,7 +99,8 @@ its revision, before it writes any of the project; `just` sets it to
 [ReactLib]: https://github.com/zeroth-research/ReactLib
 
 The certificate in `Data.lean` is the one given by `--invariant` and
-`--ranking`; with none given, its predicates are `sorry`.
+`--ranking`. What is not given is left open: `P` and `ranking` as
+`sorry`, the invariant and the assumptions on the inputs as `True`.
 
 `--cert-file PATH.lean` writes a self-contained certificate instead, with
 the relational and scalar encodings beside it, and the run ends there.
@@ -266,57 +266,62 @@ ReactLib's, not Mathlib's (`Relational.Mat` says why).
 
 ## Encoding 2 — Scalar (`codegen/terms.py`, `codegen/encodings/scalar.py`)
 
-`translate_terms_scalar` is like `translate_terms_lean` but uses bare scalar types
-(`Bool`, `Int`, `Real`) instead of 1×1 matrices for all 1×1 wires:
+`translate_terms_scalar` is like `translate_terms_lean`, but over the
+entries of the wires rather than the wires: each parameter and the result
+are flat tuples with one component per entry (`product_type_scalar`, in
+the order `lowering.elements.flat_layout` gives), and a 1×1 wire is its
+bare element (`Bool`, `Int`, `Real`, `BitVec w`) rather than a 1×1 matrix:
 
 ```lean
 namespace Scalar
-@[simp] def update (ctrl: (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int)) ... : Int × Int :=
-  let x0 : Bool := (decide (ctrl.1 0 0 < ctrl.2 0 0))
-  let x1 : Int  := (1 : Int)
-  let x2 : Int  := (ctrl.1 0 0 + x1)
+@[simp] def update (ctrl: Int × Int) (extl_l: Unit) (extl_n: Unit) : Int × Int :=
+  let x0 : Bool := (decide (ctrl.1 < ctrl.2))
+  let x1 : Int := (1 : Int)
+  let x2 : Int := (ctrl.1 + x1)
   ...
   (x7, x8)
 end Scalar
 ```
 
-Key differences from functional:
-- Input parameter types are **unchanged** — they still accept `Matrix (Fin m) (Fin n) T`.
-- Input scalars are pre-extracted at the call site via `ctrl.1 0 0`.
-- All intermediate `let` bindings use `Bool`/`Int`/`Real` directly.
-- Output type is a product of bare scalars (e.g. `Int × Int`).
-- Non-scalar wires (actual matrices, `MatMul` results with shape `[m,n]`) fall
-  back to matrix types transparently.
-
-`codegen.encodings.common.scalar_bindings_with_recon` builds the input bindings: a
-one-element wire is bound to its bare accessor, so downstream ops receive bare
-values, and a wider one to a `let` that rebuilds its matrix from the elements.
+A wire with more than one entry is still a `Matrix` inside the body
+(`MatMul`, `Linear` and the like read and write matrices).
+`codegen.encodings.common.scalar_bindings_with_recon` builds the input
+bindings: a one-entry wire is bound to its component of the tuple
+(`ctrl.1`), and a wider one to a `let` that rebuilds its matrix from its
+components (`Matrix.mk fun i j => match i, j with | 0, 0 => ctrl.1 | …`).
 
 **Equivalence theorems** (`to_lean_scalar_equiv`) connect the scalar and
 functional encodings:
 
 ```lean
+@[simp, reducible] def unpack_ctrl (ctrl : (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int)) : Int × Int :=
+  (ctrl.1 0 0, ctrl.2 0 0)
+
 @[simp] def pack (r : Int × Int) : (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int) :=
   ((Matrix.mk fun _ _ => r.1), (Matrix.mk fun _ _ => r.2))
 
 theorem update_scalar_eq : ∀ (ctrl : (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int)) (extl_l : Unit) (extl_n : Unit),
     update ctrl extl_l extl_n = Scalar.pack (Scalar.update (Scalar.unpack_ctrl ctrl) extl_l extl_n) := by
   intro ctrl extl_l extl_n
-  simp only [Scalar.pack, Scalar.update, update, Scalar.unpack_ctrl, Fin.cons_zero, Fin.cons_succ]
+  simp only [Scalar.pack, Scalar.update, update, Scalar.unpack_ctrl]
   try rfl
   try (apply Prod.ext <;> funext i j <;> fin_cases i <;> fin_cases j <;> simp)
   ...
   all_goals try simp [← Matrix_1_1_eq]
 ```
 
-`Scalar.pack` wraps each scalar output back into a 1×1 matrix, as
-`Matrix.mk fun _ _ => r.i`, and `Scalar.unpack_*` reads a wire's elements out.
-The proof enumerates every index of every wire (`fin_cases`), or, for a 1×1
-wire, rewrites by `Fin.fin_one_eq_zero` (every `i : Fin 1` equals `0`).
+`Scalar.unpack_*` reads a group's entries out into its flat tuple, and
+`Scalar.pack` builds the state's matrices back from the result's. For a
+wire with more than one entry, a `recon_<elem>_<m>_<n>` lemma, also in the
+`simp only` list, states that the matrix rebuilt from its entries is the
+matrix itself. The proof enumerates every index of every wire
+(`fin_cases`), or, for a 1×1 wire, rewrites by `Fin.fin_one_eq_zero`
+(every `i : Fin 1` equals `0`).
 
-**Scalar encoding lives in its own file** (`<Name>Scalar.lean`), separate from
-the certificate.  It contains: functional `init`/`update`, `namespace Scalar`,
-and the equivalence theorems.
+**The scalar encoding is a file of its own**: `System/Scalar.lean` in a
+project, `<Name>Scalar.lean` beside a `--cert-file` certificate. It
+imports the functional encoding, and holds `namespace Scalar` and the
+equivalence theorems.
 
 ---
 
