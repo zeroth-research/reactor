@@ -129,7 +129,7 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         }
         {
             let bool = PyModule::new(py, "bool")?;
-            bool.add_class::<theory::torch::bool::Const>()?;
+            bool.add_class::<theory::torch::bool::Truth>()?;
             bool.add_class::<theory::matrix::bool::And>()?;
             bool.add_class::<theory::matrix::bool::Or>()?;
             bool.add_class::<theory::matrix::bool::Xor>()?;

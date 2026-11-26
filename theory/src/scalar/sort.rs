@@ -2,11 +2,13 @@
 # Sorts
 
 The sorts of the scalar theories: [`Enum`], the enumerations of symbolic
-constants, [`Bool`], the booleans that their comparisons write, and
-[`Event`], the events. [`Any`] holds them.
+constants, and [`Event`], the events. [`Any`] holds them. The booleans that
+their comparisons write, and the conditions of their choices read, are those
+of the matrix theories, of the shape `[1, 1]`:
+[`matrix::sort::Bool`](crate::matrix::sort::Bool).
 
 The sorts are defined here, and the operations on them in the modules of
-their theories: `enum`, [`bool`](mod@super::bool) and [`event`](super::event).
+their theories: `enum` and [`event`](super::event).
 
 All of them are discrete, so their tangent is trivial: the singleton sort
 [`Zero`], shared with the matrix theories. Each sort gives it, but [`Any`]
@@ -19,33 +21,6 @@ use crate::sort::Zero;
 use base::differentiable::Differentiable;
 use derive_more::From;
 use std::fmt;
-
-/// The sort of scalar booleans: the sort that the comparisons of the scalar
-/// theories write, and the conditions of their choices read.
-#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash, Default)]
-pub struct Bool;
-
-impl Bool {
-    pub fn new() -> Self {
-        Bool
-    }
-}
-
-impl fmt::Display for Bool {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Bool()")
-    }
-}
-
-/// The booleans are discrete, so their tangent is trivial: the singleton sort
-/// [`Zero`].
-impl Differentiable for Bool {
-    type Tangent = Zero;
-
-    fn tangent(self) -> Zero {
-        Zero
-    }
-}
 
 /// The sort of events: a value that, as a boolean, has two states, but is only
 /// ever compared, flipped, to signal an event, or kept, to signal none. An
@@ -204,7 +179,6 @@ impl Differentiable for &Enum {
 #[derive(Clone, PartialEq, Debug, Eq, Hash, From)]
 pub enum Any {
     Enum(Enum),
-    Bool(Bool),
     Event(Event),
 }
 
@@ -212,7 +186,6 @@ impl fmt::Display for Any {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Any::Enum(e) => e.fmt(f),
-            Any::Bool(b) => b.fmt(f),
             Any::Event(e) => e.fmt(f),
         }
     }

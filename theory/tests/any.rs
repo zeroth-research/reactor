@@ -36,11 +36,6 @@ fn the_other_sorts_keep_their_kind() {
     assert_eq!(Any::from(matrix::sort::Any::from(r)), Any::Matrix(r.into()));
     let e = scalar::sort::Event;
     assert_eq!(Any::from(scalar::sort::Any::from(e)), Any::Scalar(e.into()));
-    // a matrix boolean and a scalar boolean are different sorts
-    assert_ne!(
-        Any::from(matrix::sort::Any::from(matrix::sort::Bool::new([1, 1]))),
-        Any::from(scalar::sort::Any::from(scalar::sort::Bool))
-    );
 }
 
 #[test]
@@ -70,13 +65,17 @@ fn the_operations_of_both_kinds_lift_their_boundary() {
     assert_eq!(add.dom(), mono![real.clone(), real.clone()].into());
     assert_eq!(add.cod(), mono![real].into());
 
-    // a scalar operation, of the booleans, whose boundary is in Bool alone
-    let and: theory::Any<Mat> =
-        scalar::Any::from(scalar::bool::Any::from(scalar::bool::And)).into();
-    let boolean = Any::from(scalar::sort::Any::from(scalar::sort::Bool));
-    assert_eq!(and.dom(), mono![boolean.clone(), boolean.clone()].into());
-    assert_eq!(and.cod(), mono![boolean].into());
-    assert_eq!(and.to_string(), "And");
+    // a scalar operation, whose comparison writes a boolean of the matrix
+    // theories, of the shape [1, 1]
+    let ne: theory::Any<Mat> =
+        scalar::Any::from(scalar::event::Any::from(scalar::event::Ne)).into();
+    let event = Any::from(scalar::sort::Event);
+    assert_eq!(ne.dom(), mono![event.clone(), event].into());
+    assert_eq!(
+        ne.cod(),
+        mono![Any::from(matrix::sort::Bool::new([1, 1]))].into()
+    );
+    assert_eq!(ne.to_string(), "Ne");
 
     // the zero rate of change of a discrete matrix value writes the one Zero
     let zero: theory::Any<Mat> = matrix::Any::Zero(theory::zero::Zero).into();

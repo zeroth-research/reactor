@@ -6,12 +6,12 @@ encoded as a boolean whose change signals that the event happened, so its
 state alone means nothing: it is only compared, flipped or kept.
 
 - [`Eq`](struct@Eq), [`Ne`] — whether two events are in the same state or in
-  different ones, writing a [`Bool`]: an event happened between two of its
-  values when they differ.
+  different ones, writing a [`Bool`] of the shape `[1, 1]`: an event
+  happened between two of its values when they differ.
 - [`Toggle`] — the event flipped: an event happens.
 - [`Hold`] — the event kept: no event happens.
 - [`Ite`] — the choice `if c then x else y` between two events, by a
-  boolean `c`.
+  [`Bool`] `c` of the shape `[1, 1]`.
 
 The sort has no parameters, so neither do the operations: each is a unit
 value, determined by its type alone, and its boundary is fixed. In SMT-LIB2,
@@ -19,8 +19,9 @@ an event is a `Bool`, and its operations `=`, `distinct`, `not`, the
 identity and `ite`.
 */
 
-pub use super::sort::Any as Sort;
-use super::sort::{Bool, Event};
+use super::sort::Event;
+use crate::matrix::sort::Bool;
+pub use crate::sort::Any as Sort;
 use base::boundary::{Boundary, Poly};
 use base::mono;
 use derive_more::From;
@@ -38,7 +39,7 @@ impl Boundary<Sort> for Eq {
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool.into()].into()
+        mono![Bool::new([1, 1]).into()].into()
     }
 }
 
@@ -61,7 +62,7 @@ impl Boundary<Sort> for Ne {
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool.into()].into()
+        mono![Bool::new([1, 1]).into()].into()
     }
 }
 
@@ -116,7 +117,7 @@ impl fmt::Display for Hold {
 }
 
 /// Choice `if c then x else y` between two events `x` and `y`, by the boolean
-/// `c`, read first.
+/// `c`, of the shape `[1, 1]`, read first.
 ///
 /// SMT-LIB2: `(ite c x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
@@ -124,7 +125,7 @@ pub struct Ite;
 
 impl Boundary<Sort> for Ite {
     fn dom(&self) -> Poly<Sort> {
-        mono![Bool.into(), Event.into(), Event.into()].into()
+        mono![Bool::new([1, 1]).into(), Event.into(), Event.into()].into()
     }
 
     fn cod(&self) -> Poly<Sort> {

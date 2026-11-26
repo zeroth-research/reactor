@@ -78,7 +78,7 @@ def test_numeric_literal_needs_explicit_sort():
 
 def tensor_of_term(term):
     match term.itype:
-        case matrix.real.Const(t) | matrix.int.Const(t) | matrix.bool.Const(t) | matrix.word.Const(t):
+        case matrix.real.Const(t) | matrix.int.Const(t) | matrix.bool.Truth(t) | matrix.word.Const(t):
             return t
         case _:
             return None

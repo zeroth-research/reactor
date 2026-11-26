@@ -62,7 +62,7 @@ def test_var_derefs_to_wire():
 
 def test_module_sequential():
     x = Var(Bool([1, 1]))
-    init = [Term.constant(matrix.bool.Const(_bool_t(True), Bool([1, 1])), [X(x)])]
+    init = [Term.constant(matrix.bool.Truth(_bool_t(True), Bool([1, 1])), [X(x)])]
     update = [Term(Skip(Bool([1, 1])), [X(x)], [x])]
     _ = Module.sequential([x], init, update)
 
@@ -70,7 +70,7 @@ def test_module_sequential():
 def test_module_combinatorial():
     x = Var(Bool([1, 1]))
 
-    assign = [Term.constant(matrix.bool.Const(_bool_t(False), Bool([1, 1])), [X(x)])]
+    assign = [Term.constant(matrix.bool.Truth(_bool_t(False), Bool([1, 1])), [X(x)])]
     _ = Module.combinatorial([x], assign)
 
 
@@ -81,13 +81,13 @@ def test_module_parallel():
     w = Var(Bool([1, 1]))
     v = Var(Bool([1, 1]))
 
-    init = [Term.constant(matrix.bool.Const(_bool_t(False), Bool([1, 1])), [X(x)])]
+    init = [Term.constant(matrix.bool.Truth(_bool_t(False), Bool([1, 1])), [X(x)])]
     update = [Term(matrix.bool.And([Bool([1, 1]), Bool([1, 1])]), [X(x)], [x, X(y)])]
     p = Module.sequential([x, y], init, update)
 
     init = [
-        Term.constant(matrix.bool.Const(_bool_t(False), Bool([1, 1])), [X(v)]),
-        Term.constant(matrix.bool.Const(_bool_t(False), Bool([1, 1])), [X(y)]),
+        Term.constant(matrix.bool.Truth(_bool_t(False), Bool([1, 1])), [X(v)]),
+        Term.constant(matrix.bool.Truth(_bool_t(False), Bool([1, 1])), [X(y)]),
     ]
     update = [Term(matrix.bool.And([Bool([1, 1]), Bool([1, 1])]), [X(v)], [v, x]), Term(Skip(Bool([1, 1])), [X(y)], [x])]
     q = Module.sequential([x, y, v], init, update, hide=[v])

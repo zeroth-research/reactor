@@ -178,7 +178,7 @@ def test_boolean_vars_are_bool():
     """)
     assert name_map["b"].dtype == Bool([1, 1])
     init = module.atoms[0].init
-    assert any(isinstance(t.itype, matrix.bool.Const) for t in init)
+    assert any(isinstance(t.itype, matrix.bool.Truth) for t in init)
     assert any(isinstance(t.itype, matrix.bool.Not) for t in module.atoms[0].update)
 
 

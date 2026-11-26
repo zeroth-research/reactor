@@ -720,6 +720,28 @@ mod bool {
         mono![s, s].into()
     }
 
+    /// A matrix carrying its shape only, enough to compute boundaries.
+    #[derive(Debug, PartialEq)]
+    struct Mat([usize; 2]);
+
+    impl theory::Matrix for Mat {
+        fn shape(&self) -> [usize; 2] {
+            self.0
+        }
+    }
+
+    #[test]
+    fn a_truth_writes_the_booleans_of_the_shape_of_its_tensor() {
+        let op = Truth::new(Mat([2, 3]));
+        assert_eq!(op.dom(), Poly::unit());
+        assert_eq!(op.cod(), one(Bool::new([2, 3])));
+        assert_eq!(op.tensor(), &Mat([2, 3]));
+        // the same as given its codomain
+        let given = Truth::with_cod(Mat([2, 3]), [Bool::new([2, 3])]).unwrap();
+        assert_eq!(given.cod(), op.cod());
+        assert!(Truth::with_cod(Mat([2, 3]), [Bool::new([3, 2])]).is_err());
+    }
+
     #[test]
     fn pointwise_boundaries() {
         let b = Bool::new([2, 3]);

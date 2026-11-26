@@ -74,7 +74,7 @@ def interpret(itype):
             return lambda: _zeros(Real(shape))
 
         # constants
-        case matrix.bool.Const(t):
+        case matrix.bool.Truth(t):
             return lambda: _np.vectorize(_z3.BoolVal, otypes=[object])(t.detach().numpy())
         case matrix.real.Const(t):
             return lambda: _np.vectorize(_z3.RealVal, otypes=[object])(t.detach().numpy())

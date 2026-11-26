@@ -117,7 +117,7 @@ def test_nullary_operations_take_and_match_their_codomain_only():
         real.Zero(T(Real([1, 2]))),
         real.Const(torch.ones(1, 2), Real([1, 2])),
         int_.Const(torch.ones(1, 2, dtype=torch.int64), Int([1, 2])),
-        bool_.Const(torch.ones(1, 2, dtype=torch.bool), Bool([1, 2])),
+        bool_.Truth(torch.ones(1, 2, dtype=torch.bool), Bool([1, 2])),
         word.Const(torch.ones(1, 2, dtype=torch.int64), Word(4, [1, 2])),
         Havoc(Int([1, 2])),
         Zero(),
@@ -137,7 +137,7 @@ def test_the_codomain_of_constants_is_optional_when_their_tensor_determines_it()
     assert real.Const(torch.ones(1, 2)).cod == Real([1, 2])
     assert real.Const(torch.ones(1, 2), T(Real([1, 2]))).cod == T(Real([1, 2]))
     assert int_.Const(torch.ones(1, 2, dtype=torch.int64)).cod == Int([1, 2])
-    assert bool_.Const(torch.ones(1, 2, dtype=torch.bool)).cod == Bool([1, 2])
+    assert bool_.Truth(torch.ones(1, 2, dtype=torch.bool)).cod == Bool([1, 2])
     # the tensor of words does not determine their width
     with pytest.raises(TypeError):
         word.Const(torch.ones(1, 2, dtype=torch.int64))

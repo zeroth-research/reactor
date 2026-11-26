@@ -98,6 +98,42 @@ impl From<crate::scalar::sort::Any> for Any {
     }
 }
 
+impl From<crate::matrix::sort::Real> for Any {
+    fn from(s: crate::matrix::sort::Real) -> Self {
+        crate::matrix::sort::Any::from(s).into()
+    }
+}
+
+impl From<crate::matrix::sort::Int> for Any {
+    fn from(s: crate::matrix::sort::Int) -> Self {
+        crate::matrix::sort::Any::from(s).into()
+    }
+}
+
+impl From<crate::matrix::sort::Bool> for Any {
+    fn from(s: crate::matrix::sort::Bool) -> Self {
+        crate::matrix::sort::Any::from(s).into()
+    }
+}
+
+impl From<crate::matrix::sort::Word> for Any {
+    fn from(s: crate::matrix::sort::Word) -> Self {
+        crate::matrix::sort::Any::from(s).into()
+    }
+}
+
+impl From<crate::scalar::sort::Enum> for Any {
+    fn from(s: crate::scalar::sort::Enum) -> Self {
+        crate::scalar::sort::Any::from(s).into()
+    }
+}
+
+impl From<crate::scalar::sort::Event> for Any {
+    fn from(s: crate::scalar::sort::Event) -> Self {
+        crate::scalar::sort::Any::from(s).into()
+    }
+}
+
 impl From<Zero> for Any {
     fn from(z: Zero) -> Self {
         Any::Zero(z)

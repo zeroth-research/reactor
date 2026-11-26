@@ -47,7 +47,7 @@ CASES = [
     # constants, linear and affine maps
     (real.Const(RX), []),
     (int_.Const(IX), []),
-    (bool_.Const(BX), []),
+    (bool_.Truth(BX), []),
     (word.Const(WX, W), []),
     (real.Linear(A, R), [RX]),
     (int_.Linear(AI, I), [IX]),

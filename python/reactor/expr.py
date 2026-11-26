@@ -592,7 +592,7 @@ def _term_from_torch(value, sort):
     # the tensor is kept as given: no conversion of its elements
     integer = value.dtype in (torch.int, torch.long)
     if family is Bool and value.dtype == torch.bool:
-        op = matrix.bool.Const(value, cod)
+        op = matrix.bool.Truth(value, cod)
     elif family is Real and (value.dtype in (torch.half, torch.float, torch.double) or integer):
         op = matrix.real.Const(value, cod)
     elif family is Int and integer:

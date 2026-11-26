@@ -72,7 +72,7 @@ fn constants_are_built_from_tensors_of_their_theory_only() {
 
         let real = py.get_type::<real::Const>();
         let int = py.get_type::<int::Const>();
-        let boolean = py.get_type::<bool::Const>();
+        let boolean = py.get_type::<bool::Truth>();
         let word = py.get_type::<word::Const>();
 
         let reals = sort(py, Real::new([2, 3]));
@@ -275,13 +275,13 @@ fn any_extracts_constants_and_linear_maps_with_torch_tensors() {
 
         let bools = python(py, full(2, 3, 0.0, tch::Kind::Bool));
         let constant = py
-            .get_type::<bool::Const>()
+            .get_type::<bool::Truth>()
             .call1((&bools, sort(py, Bool::new([2, 3]))))
             .unwrap();
         let any = constant.extract::<matrix::Any<tch::Tensor>>().unwrap();
         assert!(matches!(
             any,
-            matrix::Any::Bool(matrix::bool::Prop::Const(_))
+            matrix::Any::Bool(matrix::bool::Prop::Truth(_))
         ));
 
         let a = python(py, full(4, 2, 1.0, tch::Kind::Int64));
@@ -368,7 +368,7 @@ fn constants_are_built_from_matrices_only() {
             |size: &[i64], kind| python(py, tch::Tensor::zeros(size, (kind, tch::Device::Cpu)));
         let real = py.get_type::<real::Const>();
         let int = py.get_type::<int::Const>();
-        let boolean = py.get_type::<bool::Const>();
+        let boolean = py.get_type::<bool::Truth>();
         let word = py.get_type::<word::Const>();
 
         // a codomain of a matrix, so that only the tensor is wrong

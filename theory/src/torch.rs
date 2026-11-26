@@ -9,7 +9,7 @@ torch tensors directly, as `matrix::real::Const<tch::Tensor>`. The Python
 
 The constants are Python classes of their own, one per theory, as a tensor
 alone does not tell the theory of its constant: [`real::Const`],
-[`int::Const`], [`bool::Const`] and [`word::Const`]. Each holds, in a
+[`int::Const`], [`bool::Truth`] and [`word::Const`]. Each holds, in a
 private field, a [`tch::Tensor`] of the element kind of its theory, checked
 on construction, and [`word::Const`] its width too. A [`tch::Tensor`] is not
 `Sync`, which a Python class must be, so each class implements `Sync`

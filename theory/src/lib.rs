@@ -100,7 +100,7 @@ impl<T: Matrix> Boundary<sort::Any> for Any<T> {
     fn dom(&self) -> Poly<sort::Any> {
         match self {
             Any::Matrix(op) => op.dom().map(sort::Any::from),
-            Any::Scalar(op) => op.dom().map(sort::Any::from),
+            Any::Scalar(op) => op.dom(),
             Any::Havoc(op) => op.dom(),
             Any::Skip(op) => op.dom(),
             Any::Zero(op) => op.dom(),
@@ -110,7 +110,7 @@ impl<T: Matrix> Boundary<sort::Any> for Any<T> {
     fn cod(&self) -> Poly<sort::Any> {
         match self {
             Any::Matrix(op) => op.cod().map(sort::Any::from),
-            Any::Scalar(op) => op.cod().map(sort::Any::from),
+            Any::Scalar(op) => op.cod(),
             Any::Havoc(op) => op.cod(),
             Any::Skip(op) => op.cod(),
             Any::Zero(op) => op.cod(),

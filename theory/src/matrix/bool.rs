@@ -5,7 +5,7 @@ Defines one type per operation on the sort [`Bool`] of boolean matrices. Every
 operation reads and writes boolean matrices, and carries enough
 information to compute its [`Boundary`]:
 
-- [`Const`] — a constant boolean matrix literal.
+- [`Truth`] — a constant boolean matrix literal.
 - [`And`], [`Or`], [`Xor`] — pointwise conjunction, disjunction and
   exclusive disjunction.
 - [`Not`] — pointwise negation.
@@ -26,11 +26,16 @@ use std::fmt;
 
 /// A constant boolean matrix literal, held in a tensor of type `T`.
 #[derive(Debug)]
-pub struct Const<T> {
+pub struct Truth<T> {
     tensor: T,
 }
 
-impl<T: Matrix> Const<T> {
+impl<T: Matrix> Truth<T> {
+    /// The constant held in `tensor`, writing the boolean matrix of its shape.
+    pub fn new(tensor: T) -> Self {
+        Truth { tensor }
+    }
+
     /// The constant held in `tensor`, writing the boolean matrix of `cod`; fails
     /// unless `tensor` is of its shape.
     pub fn with_cod(tensor: T, cod: [Bool; 1]) -> Result<Self, crate::Error> {
@@ -41,11 +46,11 @@ impl<T: Matrix> Const<T> {
                 &cod,
             ));
         }
-        Ok(Const { tensor })
+        Ok(Truth { tensor })
     }
 }
 
-impl<T> Const<T> {
+impl<T> Truth<T> {
     /// The tensor holding the constant.
     pub fn tensor(&self) -> &T {
         &self.tensor
@@ -135,7 +140,7 @@ pub struct Ite {
 /// SMT-LIB2's `Core` theory, with their boundary in [`Bool`].
 #[derive(Debug, From)]
 pub enum Prop<T> {
-    Const(Const<T>),
+    Truth(Truth<T>),
     And(And),
     Or(Or),
     Xor(Xor),
@@ -148,11 +153,11 @@ pub enum Prop<T> {
 
 impl<T> Clone for Prop<T>
 where
-    Const<T>: Clone,
+    Truth<T>: Clone,
 {
     fn clone(&self) -> Self {
         match self {
-            Prop::Const(op) => Prop::Const(op.clone()),
+            Prop::Truth(op) => Prop::Truth(op.clone()),
             Prop::And(op) => Prop::And(*op),
             Prop::Or(op) => Prop::Or(*op),
             Prop::Xor(op) => Prop::Xor(*op),
@@ -168,7 +173,7 @@ where
 impl<T: fmt::Display> fmt::Display for Prop<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Prop::Const(op) => op.fmt(f),
+            Prop::Truth(op) => op.fmt(f),
             Prop::And(op) => op.fmt(f),
             Prop::Or(op) => op.fmt(f),
             Prop::Xor(op) => op.fmt(f),
@@ -184,7 +189,7 @@ impl<T: fmt::Display> fmt::Display for Prop<T> {
 impl<T: Matrix> Boundary<Bool> for Prop<T> {
     fn dom(&self) -> Poly<Bool> {
         match self {
-            Prop::Const(op) => op.dom(),
+            Prop::Truth(op) => op.dom(),
             Prop::And(op) => op.dom(),
             Prop::Or(op) => op.dom(),
             Prop::Xor(op) => op.dom(),
@@ -198,7 +203,7 @@ impl<T: Matrix> Boundary<Bool> for Prop<T> {
 
     fn cod(&self) -> Poly<Bool> {
         match self {
-            Prop::Const(op) => op.cod(),
+            Prop::Truth(op) => op.cod(),
             Prop::And(op) => op.cod(),
             Prop::Or(op) => op.cod(),
             Prop::Xor(op) => op.cod(),
@@ -211,7 +216,7 @@ impl<T: Matrix> Boundary<Bool> for Prop<T> {
     }
 }
 
-impl<T: Matrix> Boundary<Bool> for Const<T> {
+impl<T: Matrix> Boundary<Bool> for Truth<T> {
     fn dom(&self) -> Poly<Bool> {
         Poly::unit()
     }
@@ -281,7 +286,7 @@ impl Boundary<Bool> for Ne {
     }
 }
 
-impl<T: fmt::Display> fmt::Display for Const<T> {
+impl<T: fmt::Display> fmt::Display for Truth<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.tensor)
     }
@@ -341,12 +346,12 @@ impl fmt::Display for Ite {
 
 /// Extracts an operation of propositional logic from a Python object,
 /// trying each operation in turn: those carrying no data through their own
-/// classes, and [`Const`] through the extraction that the tensor type `T`
+/// classes, and [`Truth`] through the extraction that the tensor type `T`
 /// provides.
 #[cfg(feature = "pyo3")]
 impl<'a, 'py, T> pyo3::FromPyObject<'a, 'py> for Prop<T>
 where
-    Const<T>: pyo3::FromPyObject<'a, 'py>,
+    Truth<T>: pyo3::FromPyObject<'a, 'py>,
 {
     type Error = pyo3::PyErr;
 
@@ -377,8 +382,8 @@ where
         if let Ok(op) = ob.extract::<broadcast::Ite>() {
             return Ok(Prop::BroadcastIte(op));
         }
-        if let Ok(op) = ob.extract::<Const<T>>() {
-            return Ok(Prop::Const(op));
+        if let Ok(op) = ob.extract::<Truth<T>>() {
+            return Ok(Prop::Truth(op));
         }
         Err(pyo3::exceptions::PyTypeError::new_err(format!(
             "expected an operation of propositional logic, got {}",

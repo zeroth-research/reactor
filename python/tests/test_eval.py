@@ -101,8 +101,8 @@ def test_boolean_logic():
     c = Var(Bool([1, 1]))
 
     init = [
-        Term(matrix.bool.Const(torch.tensor([[True]]), Bool([1, 1])), [X(a)]),
-        Term(matrix.bool.Const(torch.tensor([[False]]), Bool([1, 1])), [X(b)]),
+        Term(matrix.bool.Truth(torch.tensor([[True]]), Bool([1, 1])), [X(a)]),
+        Term(matrix.bool.Truth(torch.tensor([[False]]), Bool([1, 1])), [X(b)]),
         Term(matrix.bool.Not(Bool([1, 1])), [X(c)], [X(a)]),
     ]
     update = [
@@ -137,7 +137,7 @@ def test_ite():
     x = Var(Int([1, 1]))
 
     init = [
-        Term(matrix.bool.Const(torch.tensor([[True]]), Bool([1, 1])), [X(cond)]),
+        Term(matrix.bool.Truth(torch.tensor([[True]]), Bool([1, 1])), [X(cond)]),
         Term(matrix.int.Const(torch.tensor([[0]], dtype=torch.int64), Int([1, 1])), [X(x)]),
     ]
 
@@ -293,8 +293,8 @@ def _make_twobitcounter():
     enable = Var(Bool([1, 1]))
 
     init = [
-        Term(matrix.bool.Const(torch.tensor([[False]]), Bool([1, 1])), [X(b0)]),
-        Term(matrix.bool.Const(torch.tensor([[False]]), Bool([1, 1])), [X(b1)]),
+        Term(matrix.bool.Truth(torch.tensor([[False]]), Bool([1, 1])), [X(b0)]),
+        Term(matrix.bool.Truth(torch.tensor([[False]]), Bool([1, 1])), [X(b1)]),
     ]
 
     not_b0 = Wire(Bool([1, 1]))

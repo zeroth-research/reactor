@@ -10,9 +10,9 @@ writes, and so enough information to compute its [`Boundary`]:
 - [`Into`] — a value of an enumeration, as one of another that holds all its
   values.
 - [`Eq`](struct@Eq), [`Ne`] — equality and disequality of two values of an
-  enumeration, writing a [`Bool`].
+  enumeration, writing a [`Bool`] of the shape `[1, 1]`.
 - [`Ite`] — the choice `if c then x else y` between two values of an
-  enumeration, by a boolean `c`.
+  enumeration, by a [`Bool`] `c` of the shape `[1, 1]`.
 
 SMT-LIB2 has no anonymous enumerations: it declares an enumeration as a
 datatype of nullary constructors, `(declare-datatypes ((E 0)) (((idle)
@@ -28,8 +28,9 @@ codomain, or the identity when all the symbolic constants of a model are of
 one datatype, each enumeration a constraint of membership.
 */
 
-pub use super::sort::Any as Sort;
-use super::sort::{Bool, Enum};
+use super::sort::Enum;
+use crate::matrix::sort::Bool;
+pub use crate::sort::Any as Sort;
 use base::boundary::{Boundary, Poly};
 use base::mono;
 use derive_more::From;
@@ -105,7 +106,7 @@ pub struct Ne {
 }
 
 /// Choice `if c then x else y` between two values `x` and `y` of an
-/// enumeration, by the boolean `c`, read first.
+/// enumeration, by the boolean `c`, of the shape `[1, 1]`, read first.
 ///
 /// SMT-LIB2: `(ite c x y)`.
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
@@ -147,12 +148,19 @@ impl Ne {
 
 impl Ite {
     /// The choice reading the boolean condition and the branches of `dom`;
-    /// fails unless the branches are of the same enumeration.
+    /// fails unless the condition is a boolean of the shape `[1, 1]` and the
+    /// branches of the same enumeration.
     pub fn with_dom(dom: [Sort; 3]) -> Result<Self, crate::Error> {
+        use super::sort::Any as S;
+        use crate::matrix::sort::Any as M;
         match dom {
-            [Sort::Bool(_), Sort::Enum(x), Sort::Enum(y)] if x == y => Ok(Ite { sort: x }),
+            [
+                Sort::Matrix(M::Bool(c)),
+                Sort::Scalar(S::Enum(x)),
+                Sort::Scalar(S::Enum(y)),
+            ] if c.shape() == [1, 1] && x == y => Ok(Ite { sort: x }),
             _ => Err(crate::matrix::unexpected_dom(
-                "a condition Bool and two branches of the same enumeration",
+                "a condition Bool([1, 1]) and two branches of the same enumeration",
                 &dom,
             )),
         }
@@ -201,7 +209,7 @@ impl Boundary<Sort> for Eq {
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool.into()].into()
+        mono![Bool::new([1, 1]).into()].into()
     }
 }
 
@@ -211,14 +219,14 @@ impl Boundary<Sort> for Ne {
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Bool.into()].into()
+        mono![Bool::new([1, 1]).into()].into()
     }
 }
 
 impl Boundary<Sort> for Ite {
     fn dom(&self) -> Poly<Sort> {
         mono![
-            Bool.into(),
+            Bool::new([1, 1]).into(),
             self.sort.clone().into(),
             self.sort.clone().into()
         ]

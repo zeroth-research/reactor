@@ -220,7 +220,7 @@ class TermBuilder:
         tensor = torch.atleast_2d(tensor)  # theory const ops require a 2-D initializer
         cod = output_wire.dtype if output_wire is not None else None
         if isinstance(cod, Bool) or (cod is None and tensor.dtype == torch.bool):
-            op = bool_.Const(tensor.to(torch.bool), cod)
+            op = bool_.Truth(tensor.to(torch.bool), cod)
         else:
             op = self._const(tensor, cod)
         return Term.constant(op, [output_wire or Wire(op.cod)])

@@ -31,7 +31,7 @@ def _const_op(value, sort):
     integer, or a word reduced modulo 2^width."""
     match sort:
         case Bool():
-            return matrix.bool.Const(torch.tensor([[bool(value)]]), sort)
+            return matrix.bool.Truth(torch.tensor([[bool(value)]]), sort)
         case Int():
             return matrix.int.Const(torch.tensor([[int(value)]], dtype=torch.int64), sort)
         case Word(w):
