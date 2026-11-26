@@ -66,15 +66,14 @@ fn the_operations_of_every_theory_lift_their_boundary() {
     assert_eq!(add.dom(), mono![real.clone(), real.clone()].into());
     assert_eq!(add.cod(), mono![real].into());
 
-    // a scalar operation, whose comparison writes a boolean of the shape [1, 1]
-    let ne: Op = event::Op::from(event::Ne).into();
-    let event = Any::from(Event);
-    assert_eq!(ne.dom(), mono![event.clone(), event].into());
+    // a scalar operation, whose test writes a boolean of the shape [1, 1]
+    let test: Op = event::Op::from(event::Test).into();
+    assert_eq!(test.dom(), mono![Any::from(Event)].into());
     assert_eq!(
-        ne.cod(),
+        test.cod(),
         mono![Any::from(Bool::new_unchecked([1, 1]))].into()
     );
-    assert_eq!(ne.to_string(), "Ne");
+    assert_eq!(test.to_string(), "Test");
 
     // the zero rate of change of a discrete value writes the one Real0
     let zero = Op::Zero(theory::zero::Zero);

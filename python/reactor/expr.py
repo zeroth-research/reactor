@@ -10,10 +10,13 @@ are split by *operation family* (the sort picks the class):
     BExpr  — Boolean       Bool           &  |  ~  ^
     SExpr  — Signed word   Word           arithmetic + bitwise + width, signed  // % and comparisons
     UExpr  — Unsigned word Word           arithmetic + bitwise + width, unsigned // % and comparisons
+    NExpr  — Enumeration   Enum           == != (-> BExpr), its constants written as strings
+    EExpr  — Event         Event          recv(e) (-> BExpr);
+                                          its constants True (set), False (reset)
 
 The operations are those of the namespace of the operands' sort, ``reactor.real``,
-``.int``, ``.bool`` or ``.word``, built from the operands' sorts, their domain: ``x + y`` on
-``Real([2, 3])`` builds ``real.Add([Real([2, 3]), Real([2, 3])])``, and writes the sort of
+``.int``, ``.bool``, ``.word``, ``.enum`` or ``.event``, built from the operands' sorts,
+their domain: ``x + y`` on ``Real([2, 3])`` builds ``real.Add([Real([2, 3]), Real([2, 3])])``, and writes the sort of
 its codomain.
 
 An ``Expr`` itself is a pure handle — it stores its wire, the ``next`` wire (for a
@@ -27,6 +30,7 @@ Construction and coercion go through ``expr()``:
 
     expr(var)                                  # a variable, or a bare wire
     expr(True)                                 # a Bool constant
+    expr("idle")                               # a symbolic constant, of Enum(["idle"])
     expr(3, sort=Real)                         # a numeric constant (sort is REQUIRED)
     expr(5, sort=Word(32, [1, 1]), signed=True)
     expr(var, tag="x")                         # `tag` is a display label only, no meaning
@@ -53,6 +57,8 @@ from .int import Int
 from .bool import Bool
 from .word import Word
 from .zero import Real0
+from .enum import Enum
+from .event import Event
 from . import real as _rl
 from .real import broadcast as _rb
 from . import int as _ii
@@ -64,6 +70,8 @@ from .word import broadcast as _wb
 from .word import signed as _ws
 from .word import unsigned as _wu
 from . import zero as _zz
+from . import enum as _en
+from . import event as _ev
 from .reactor import Term, Wire, Var
 
 __all__ = [
@@ -76,6 +84,8 @@ __all__ = [
     "WExpr",
     "SExpr",
     "UExpr",
+    "NExpr",
+    "EExpr",
     "expr",
     "cast",
     "X",
@@ -83,6 +93,7 @@ __all__ = [
     "ite",
     "relu",
     "argmax",
+    "recv",
 ]
 
 
@@ -105,6 +116,11 @@ def _family(sort) -> str:
             return "Bool"
         case Word(w):
             return f"Word{w}"
+        # the values of different enumerations meet in the union of their values
+        case Enum():
+            return "Enum"
+        case Event():
+            return "Event"
     raise TypeError(f"unknown sort: {sort}")
 
 
@@ -145,6 +161,10 @@ def _wrap(wire, *, next=None, value=None, signed=False, tag=None) -> "Expr":
             return SExpr(wire, next=next, value=value, tag=tag)
         case Word() if not signed:
             return UExpr(wire, next=next, value=value, tag=tag)
+        case Enum():
+            return NExpr(wire, next=next, value=value, tag=tag)
+        case Event():
+            return EExpr(wire, next=next, value=value, tag=tag)
         case Real0():
             # the singleton: a value with no operations, only ever written as is
             return Expr(wire, next=next, value=value, tag=tag)
@@ -157,7 +177,8 @@ def _wrap(wire, *, next=None, value=None, signed=False, tag=None) -> "Expr":
 
 
 class Expr:
-    """Shared plumbing; instances are always one of IExpr / RExpr / BExpr / SExpr / UExpr (via ``expr()``)."""
+    """Shared plumbing; instances are always one of IExpr / RExpr / BExpr / SExpr / UExpr / NExpr /
+    EExpr (via ``expr()``), or, of the sort Real0, an Expr itself."""
 
     def __init__(self, wire, *, next=None, value=None, tag=None):
         if next is not None and next.dtype != wire.dtype:
@@ -176,13 +197,8 @@ class Expr:
         return self._wire
 
     @property
-    def dtype(self) -> Real | Int | Bool | Word | Real0:
+    def dtype(self) -> Real | Int | Bool | Word | Enum | Event | Real0:
         return self._wire.dtype
-
-    @property
-    def shape(self) -> list:
-        """The ``[rows, cols]`` matrix shape of this expression's wire sort (always 2-D)."""
-        return self._wire.dtype.shape
 
     @property
     def tag(self):
@@ -191,22 +207,20 @@ class Expr:
 
     # --- coercion (raw literal -> Expr of my sort; never converts an Expr) ---
     def _coerce(self, o) -> "Expr":
+        """The other operand `o` of an operation of mine: an Expr as is, a raw literal as
+        an Expr of my sort; either way, of my family and signedness, or it raises."""
         # a coerced literal inherits this expr's signedness (so `5 + xs` and `xs + 5`
         # agree for a signed word `xs`); it is ignored for other sorts. A scalar literal
         # is broadcast to my shape, as the operations are pointwise on equal shapes.
-        if isinstance(o, Expr):
-            return o
-        if self.shape != [1, 1]:
-            if isinstance(o, torch.Tensor) and o.numel() == 1:
-                o = o.reshape(())
-            if isinstance(o, (bool, int, float)) or (isinstance(o, torch.Tensor) and o.dim() == 0):
-                o = torch.as_tensor(o).expand(self.shape).clone()
-        # a literal takes my sort, shape included: of another shape, as the other factor
-        # of `@` may be, it is not coerced but built with `expr()`
-        return expr(o, sort=self.dtype, signed=isinstance(self, SExpr))
-
-    def _coerce_same(self, o) -> "Expr":
-        o = self._coerce(o)
+        if not isinstance(o, Expr):
+            if self.shape != [1, 1]:
+                if isinstance(o, torch.Tensor) and o.numel() == 1:
+                    o = o.reshape(())
+                if isinstance(o, (bool, int, float)) or (isinstance(o, torch.Tensor) and o.dim() == 0):
+                    o = torch.as_tensor(o).expand(self.shape).clone()
+            # a literal takes my sort, shape included: of another shape, as the other
+            # factor of `@` may be, it is not coerced but built with `expr()`
+            o = expr(o, sort=self.dtype, signed=isinstance(self, SExpr))
         if _family(self.dtype) != _family(o.dtype):
             raise TypeError(f"cannot combine {self.dtype} and {o.dtype} implicitly; use cast()")
         if isinstance(self, SExpr) != isinstance(o, SExpr):
@@ -220,22 +234,22 @@ class Expr:
             "and & | ~ to combine predicates"
         )
 
-    # --- build helpers (emit the term, wrap the result by its sort) ---
-    def _result(self, term: Term) -> "Expr":
-        _emit(term)
-        return _wrap(term.write[0], signed=isinstance(self, SExpr))
-
-    def _apply(self, op, *args: "Expr") -> "Expr":
-        """The Term of `op` reading `args`, writing a wire of its codomain."""
-        return self._result(Term(op, [Wire(op.cod)], [a._wire for a in args]))
+    # --- build helpers (emit the term, writing a wire of the codomain of its operation,
+    # and wrap that wire by its sort, with my signedness) ---
+    def _nullary(self, op, *, value=None) -> "Expr":
+        """The constant Term of `op`, reading nothing, of the value `value`."""
+        _emit(term := Term.constant(op, [Wire(op.cod)]))
+        return _wrap(term.write[0], value=value, signed=isinstance(self, SExpr))
 
     def _unary(self, op) -> "Expr":
         """The Term of `op` reading me."""
-        return self._apply(op, self)
+        _emit(term := Term(op, [Wire(op.cod)], [self._wire]))
+        return _wrap(term.write[0], signed=isinstance(self, SExpr))
 
     def _binary(self, op, o: "Expr") -> "Expr":
         """The Term of `op` reading me and `o`."""
-        return self._apply(op, self, o)
+        _emit(term := Term(op, [Wire(op.cod)], [self._wire, o._wire]))
+        return _wrap(term.write[0], signed=isinstance(self, SExpr))
 
     @override
     def __repr__(self) -> str:
@@ -251,6 +265,11 @@ class Expr:
 class AExpr(Expr):
     """The arithmetic shared by integers and reals: the product, by a variable or by a
     constant, and the operations with the operands reversed."""
+
+    @property
+    def shape(self) -> list:
+        """The ``[rows, cols]`` matrix shape of my sort (always 2-D)."""
+        return self.dtype.shape
 
     def __mul__(self, o):
         self_is_constant = self._value is not None
@@ -289,11 +308,11 @@ class IExpr(AExpr):
     """Integer arithmetic (Int): the operations of `_rr.int`; `/` is Euclidean division."""
 
     def __add__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ii.Add([self.dtype, o.dtype]), o)
 
     def __sub__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ii.Sub([self.dtype, o.dtype]), o)
 
     def _mul(self, o) -> "Expr":
@@ -301,7 +320,7 @@ class IExpr(AExpr):
         assert isinstance(o, Expr) and o._value is None, "the other factor must be a variable"
         assert self._value is None, "a constant factor goes second, as a Scale"
         assert o.shape == self.shape, f"cannot multiply {self.shape} and {o.shape} pointwise"
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ii.Mul([self.dtype, o.dtype]), o)
 
     def _scale(self, c) -> "Expr":
@@ -319,36 +338,36 @@ class IExpr(AExpr):
         return self._unary(_ii.Abs(self.dtype))
 
     def __truediv__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ii.Div([self.dtype, o.dtype]), o)
 
     def __matmul__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ii.MatMul([self.dtype, o.dtype]), o)
 
     # comparisons -> Bool -> BExpr
     def __eq__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ii.Eq([self.dtype, o.dtype]), o)
 
     def __ne__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ii.Ne([self.dtype, o.dtype]), o)
 
     def __lt__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ii.Lt([self.dtype, o.dtype]), o)
 
     def __le__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ii.Le([self.dtype, o.dtype]), o)
 
     def __gt__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ii.Gt([self.dtype, o.dtype]), o)
 
     def __ge__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ii.Ge([self.dtype, o.dtype]), o)
 
 
@@ -357,11 +376,11 @@ class RExpr(AExpr):
     off the degrees of their operands."""
 
     def __add__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_rl.Add([self.dtype, o.dtype]), o)
 
     def __sub__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_rl.Sub([self.dtype, o.dtype]), o)
 
     def _mul(self, o) -> "Expr":
@@ -369,7 +388,7 @@ class RExpr(AExpr):
         assert isinstance(o, Expr) and o._value is None, "the other factor must be a variable"
         assert self._value is None, "a constant factor goes second, as a Scale"
         assert o.shape == self.shape, f"cannot multiply {self.shape} and {o.shape} pointwise"
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         # the degrees of the factors add up
         return self._binary(_rl.Mul([self.dtype, o.dtype]), o)
 
@@ -387,38 +406,38 @@ class RExpr(AExpr):
         return self._unary(_rl.Abs(self.dtype))
 
     def __truediv__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         # the degree of the divisor is taken off that of the dividend
         return self._binary(_rl.Div([self.dtype, o.dtype]), o)
 
     def __matmul__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         # the degrees of the factors add up
         return self._binary(_rl.MatMul([self.dtype, o.dtype]), o)
 
     # comparisons -> Bool -> BExpr
     def __eq__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_rl.Eq([self.dtype, o.dtype]), o)
 
     def __ne__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_rl.Ne([self.dtype, o.dtype]), o)
 
     def __lt__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_rl.Lt([self.dtype, o.dtype]), o)
 
     def __le__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_rl.Le([self.dtype, o.dtype]), o)
 
     def __gt__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_rl.Gt([self.dtype, o.dtype]), o)
 
     def __ge__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_rl.Ge([self.dtype, o.dtype]), o)
 
 
@@ -428,28 +447,33 @@ class RExpr(AExpr):
 
 
 class BExpr(Expr):
+    @property
+    def shape(self) -> list:
+        """The ``[rows, cols]`` matrix shape of my sort (always 2-D)."""
+        return self.dtype.shape
+
     def __eq__(self, o):
-        o = self._coerce_same(o)
-        return self._apply(_bl.Eq([self.dtype, o.dtype]), self, o)
+        o = self._coerce(o)
+        return self._binary(_bl.Eq([self.dtype, o.dtype]), o)
 
     def __ne__(self, o):
-        o = self._coerce_same(o)
-        return self._apply(_bl.Ne([self.dtype, o.dtype]), self, o)
+        o = self._coerce(o)
+        return self._binary(_bl.Ne([self.dtype, o.dtype]), o)
 
     def __and__(self, o):
-        o = self._coerce_same(o)
-        return self._apply(_bl.And([self.dtype, o.dtype]), self, o)
+        o = self._coerce(o)
+        return self._binary(_bl.And([self.dtype, o.dtype]), o)
 
     def __or__(self, o):
-        o = self._coerce_same(o)
-        return self._apply(_bl.Or([self.dtype, o.dtype]), self, o)
+        o = self._coerce(o)
+        return self._binary(_bl.Or([self.dtype, o.dtype]), o)
 
     def __xor__(self, o):
-        o = self._coerce_same(o)
-        return self._apply(_bl.Xor([self.dtype, o.dtype]), self, o)
+        o = self._coerce(o)
+        return self._binary(_bl.Xor([self.dtype, o.dtype]), o)
 
     def __invert__(self):
-        return self._apply(_bl.Not(self.dtype), self)
+        return self._unary(_bl.Not(self.dtype))
 
 
 # ---------------------------------------------------------------------------
@@ -463,29 +487,34 @@ class WExpr(Expr):
     equality and the bitwise operations, which do not depend on the sign."""
 
     @property
+    def shape(self) -> list:
+        """The ``[rows, cols]`` matrix shape of my sort (always 2-D)."""
+        return self.dtype.shape
+
+    @property
     def width(self) -> int:
         """The number of bits of the words of my sort."""
         return self.dtype.width
 
     def __eq__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ww.Eq([self.dtype, o.dtype]), o)
 
     def __ne__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ww.Ne([self.dtype, o.dtype]), o)
 
     # arithmetic, modulo 2^width
     def __add__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ww.Add([self.dtype, o.dtype]), o)
 
     def __sub__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ww.Sub([self.dtype, o.dtype]), o)
 
     def __mul__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ww.Mul([self.dtype, o.dtype]), o)
 
     def __radd__(self, o):  return self._coerce(o).__add__(self)
@@ -499,15 +528,15 @@ class WExpr(Expr):
 
     # bitwise, width-preserving
     def __and__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ww.And([self.dtype, o.dtype]), o)
 
     def __or__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ww.Or([self.dtype, o.dtype]), o)
 
     def __xor__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ww.Xor([self.dtype, o.dtype]), o)
 
     def __invert__(self):
@@ -519,28 +548,28 @@ class SExpr(WExpr):
     `word.signed`."""
 
     def __floordiv__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ws.Div([self.dtype, o.dtype]), o)
 
     def __mod__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ws.Mod([self.dtype, o.dtype]), o)
 
     # comparisons write booleans
     def __lt__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ws.Lt([self.dtype, o.dtype]), o)
 
     def __le__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ws.Le([self.dtype, o.dtype]), o)
 
     def __gt__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ws.Gt([self.dtype, o.dtype]), o)
 
     def __ge__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_ws.Ge([self.dtype, o.dtype]), o)
 
 
@@ -549,29 +578,89 @@ class UExpr(WExpr):
     `word.unsigned`."""
 
     def __floordiv__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_wu.Div([self.dtype, o.dtype]), o)
 
     def __mod__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_wu.Rem([self.dtype, o.dtype]), o)
 
     # comparisons write booleans
     def __lt__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_wu.Lt([self.dtype, o.dtype]), o)
 
     def __le__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_wu.Le([self.dtype, o.dtype]), o)
 
     def __gt__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_wu.Gt([self.dtype, o.dtype]), o)
 
     def __ge__(self, o):
-        o = self._coerce_same(o)
+        o = self._coerce(o)
         return self._binary(_wu.Ge([self.dtype, o.dtype]), o)
+
+
+# ---------------------------------------------------------------------------
+# NExpr — enumeration (Enum): the operations of `enum`
+# ---------------------------------------------------------------------------
+
+
+class NExpr(Expr):
+    """Enumerations (Enum): symbolic constants, written as strings, which admit only
+    equality and choice. Values of different enumerations compare as values of the union
+    of theirs, as in nuXmv; so does a string: `x == "done"`, of `x` of
+    `Enum(["idle", "busy"])`, compares in `Enum(["idle", "busy", "done"])`, never equal."""
+
+    def _cast(self, sort: Enum) -> "NExpr":
+        """Me, as a value of the enumeration `sort`, which must hold mine: as is when of
+        it, else converted into it by `Into`."""
+        return self if self.dtype == sort else self._unary(_en.Into(self.dtype, sort))
+
+    def _coerce(self, o) -> "NExpr":
+        """The other operand `o` of an operation of mine, in the union of my enumeration
+        and its values: a string as a constant of it, built there, and a value of an
+        enumeration cast into it; I am cast into its sort with `_cast`."""
+        match o:
+            case str() if o in self.dtype:
+                return self._nullary(_en.Sym(o, self.dtype), value=o)
+            case str():
+                return self._nullary(_en.Sym(o, self.dtype | Enum([o])), value=o)
+            case NExpr():
+                return o._cast(self.dtype | o.dtype)
+            case _:
+                raise TypeError(f"cannot combine {self.dtype} and {o!r}: compare with a "
+                                f"string or a value of an enumeration")
+
+    def __eq__(self, o):
+        o = self._coerce(o)
+        a = self._cast(o.dtype)
+        return a._binary(_en.Eq([o.dtype, o.dtype]), o)
+
+    def __ne__(self, o):
+        o = self._coerce(o)
+        a = self._cast(o.dtype)
+        return a._binary(_en.Ne([o.dtype, o.dtype]), o)
+
+
+# ---------------------------------------------------------------------------
+# EExpr — event (Event): the operations of `event`
+# ---------------------------------------------------------------------------
+
+
+class EExpr(Expr):
+    """Events (Event): a value that is whether the event happens in the step that writes
+    it, set, by ``True``, when it does and reset, by ``False``, when it does not.
+    ``recv(e)`` is whether it happens in this step: ``ite(recv(e), a, b)``.
+
+    Open issue: ``Skip`` repeats an event. Kept as is, as an update returning its latched
+    value does, the value of an event that happened stays set, so that the event happens
+    again in every step until it is reset; the same holds wherever its owner does not
+    update. An event should happen only in the step that sets it, which needs to be
+    addressed (see the module docs of the event theory).
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -587,6 +676,8 @@ def expr(value, *, sort=None, signed=False, tag=None) -> Expr:
         return _wrap(value, signed=signed, tag=tag)
     elif isinstance(value, bool) and sort is None:
         return _const(value, Bool, signed=signed, tag=tag)
+    elif isinstance(value, str) and sort is None:
+        return _const(value, Enum, signed=signed, tag=tag)
     else:
         return _const(value, sort, signed=signed, tag=tag)
 
@@ -671,6 +762,25 @@ def _const(value, sort, *, signed, tag=None) -> Expr:
         _emit(term)
         return _wrap(term.write[0], value=value, tag=tag)
 
+    # a symbolic constant, a string, of the enumeration made of it alone, as in nuXmv,
+    # unless given another enumeration, which must hold it
+    if sort is Enum and isinstance(value, str):
+        sort = Enum([value])
+    if sort is Enum or isinstance(sort, Enum):
+        if not isinstance(value, str):
+            raise TypeError(f"expr(): a value of {sort} is a string, got {value!r}")
+        term = Term.constant(_en.Sym(value, sort), [Wire(sort)])
+        _emit(term)
+        return _wrap(term.write[0], value=value, tag=tag)
+
+    # an event is set, by `True`, when it happens, and reset, by `False`, when it does not
+    if sort is Event or isinstance(sort, Event):
+        if not isinstance(value, bool):
+            raise TypeError(f"expr(): an event is True (set) or False (reset), got {value!r}")
+        op = _ev.Set() if value else _ev.Reset()
+        _emit(term := Term.constant(op, [Wire(op.cod)]))
+        return _wrap(term.write[0], value=value, tag=tag)
+
     # build term
     if isinstance(value, torch.Tensor):
         term, value = _term_from_torch(value, sort)
@@ -701,8 +811,15 @@ def _resolve_sort(sort, shape) -> Real | Int | Bool | Word:
 
 
 def cast(e: Expr, sort) -> Expr:
-    """Explicit sort conversion. Only trivial (same-sort) casts are supported for now;
-    a genuine conversion op is not yet in the IR."""
+    """Explicit sort conversion: a value of an enumeration into one holding all its values,
+    by `Into`, and otherwise only trivial (same-sort) casts, for now; a genuine conversion
+    op between the matrix sorts is not yet in the IR."""
+    if isinstance(e, NExpr) and isinstance(sort, Enum):
+        return e._cast(sort)
+    if isinstance(e, EExpr) and (sort is Event or isinstance(sort, Event)):
+        return e
+    if isinstance(e, NExpr | EExpr) or isinstance(sort, Enum | Event) or sort in (Enum, Event):
+        raise TypeError(f"cannot cast {e.dtype} to {sort}")
     target = _resolve_sort(sort, e.shape)
     if e.dtype == target:
         return e
@@ -730,7 +847,8 @@ def d(v: Expr) -> Expr:
 def ite(cond: "BExpr", iftrue, iffalse) -> Expr:
     if not isinstance(cond, BExpr):
         raise TypeError(f"ite(): the condition must be a boolean expression, got {cond!r}")
-    a, b = iftrue, iffalse
+    # a symbolic constant is of its own enumeration, whatever the other branch
+    a, b = (expr(v) if isinstance(v, str) else v for v in (iftrue, iffalse))
     if not isinstance(a, Expr) and not isinstance(b, Expr):
         raise TypeError("ite(): at least one branch must be an Expr")
     if not isinstance(a, Expr):
@@ -740,8 +858,15 @@ def ite(cond: "BExpr", iftrue, iffalse) -> Expr:
     if _family(a.dtype) != _family(b.dtype):
         raise TypeError(f"ite branches have different sorts {a.dtype}, {b.dtype}; use cast()")
     # a condition of the shape of the branches chooses pointwise; a scalar one, the whole
-    # matrix, by the choice of the theory that broadcasts it
+    # matrix, by the choice of the theory that broadcasts it; the scalars, of an
+    # enumeration or an event, are chosen by a scalar condition only
     match a:
+        case NExpr() if cond.shape == [1, 1]:
+            b = a._coerce(b)
+            a = a._cast(b.dtype)
+            choice = _en.Ite
+        case EExpr() if cond.shape == [1, 1]:
+            choice = _ev.Ite
         case RExpr() if cond.shape == a.shape:
             choice = _rl.Ite
         case RExpr() if cond.shape == [1, 1]:
@@ -758,13 +883,28 @@ def ite(cond: "BExpr", iftrue, iffalse) -> Expr:
             choice = _ww.Ite
         case WExpr() if cond.shape == [1, 1]:
             choice = _wb.Ite
+        case NExpr() | EExpr():
+            raise TypeError(
+                f"ite(): the condition of a choice between scalars must be a scalar, "
+                f"[1, 1]; got {cond.shape}"
+            )
         case _:
             raise TypeError(
                 f"ite(): the condition must be of the shape {a.shape} of the branches, "
                 f"choosing pointwise, or a scalar, [1, 1], choosing the whole matrix; "
                 f"got {cond.shape}"
             )
-    return a._apply(choice([cond.dtype, a.dtype, b.dtype]), cond, a, b)
+    op = choice([cond.dtype, a.dtype, b.dtype])
+    _emit(term := Term(op, [Wire(op.cod)], [cond.wire, a.wire, b.wire]))
+    return _wrap(term.write[0], signed=isinstance(a, SExpr))
+
+
+def recv(e: "EExpr") -> "BExpr":
+    """Whether the event `e` is received: whether it happens in this step, its next value
+    set, ``X(e) = 1``."""
+    if not isinstance(e, EExpr):
+        raise TypeError(f"recv() needs an event, got {e!r}")
+    return X(e)._unary(_ev.Test())
 
 
 def relu(e: Expr) -> Expr:

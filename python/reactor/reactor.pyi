@@ -17,7 +17,7 @@ a single sort bare and several as a list, and optionally its codomain, which mus
 (`real.Add([x, y])`, `word.Extract(i, j, x)`); an operation that reads nothing is built
 from its codomain (`real.Zero(x)`, `Havoc(x)`), except `zero.Zero()`, whose codomain,
 the singleton sort, carries no information, and the operations on events, whose domain
-and codomain are fixed and so optional (`event.Toggle()`). The sorts and operations of
+and codomain are fixed and so optional (`event.Test()`). The sorts and operations of
 the namespaces are typed loosely here, as `Sort` and `Op`: a stub file cannot describe
 the nested namespaces of a single extension module. A `Var` bundles the latched, next
 (`X(v)`), and derivative (`d(v)`) wires of a state variable and stands for its latched

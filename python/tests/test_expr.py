@@ -488,3 +488,141 @@ def test_tag_is_a_label_with_no_logical_meaning():
     # untagged leaves and derived expressions simply have no tag
     assert expr(True).tag is None
     assert (x & True).tag is None
+
+
+# --- enumerations and events ---------------------------------------------------
+
+from reactor.enum import Enum
+from reactor.event import Event
+from reactor import enum as _en, event as _ev
+from reactor.expr import NExpr, EExpr, recv
+
+MODE = Enum({"idle", "busy"})
+COND = Bool([1, 1])
+
+
+def test_a_string_is_a_constant_of_the_enumeration_made_of_it():
+    with collecting() as terms:
+        e = expr("idle")
+    assert isinstance(e, NExpr) and e.dtype == Enum({"idle"}) and not hasattr(e, "shape")
+    assert terms[0].itype == _en.Sym("idle", Enum({"idle"}))
+    # the family leaves the enumeration to the constant, as for the other sorts
+    assert expr("idle", sort=Enum).dtype == Enum({"idle"})
+    # given an enumeration, of it, which must hold it
+    assert expr("idle", sort=MODE).dtype == MODE
+    with pytest.raises(ValueError):
+        expr("done", sort=MODE)
+    with pytest.raises(TypeError):
+        expr(1, sort=MODE)
+    with pytest.raises(TypeError):
+        expr(1, sort=Enum)
+
+
+def test_enumerations_compare_by_equality_only():
+    x = expr(Var(MODE))
+    with collecting() as terms:
+        b = x == "idle"
+    assert isinstance(b, BExpr) and b.dtype == COND
+    # the constant is of the enumeration of `x`
+    assert [t.itype for t in terms] == [_en.Sym("idle", MODE), _en.Eq([MODE, MODE])]
+    assert (x != "busy").dtype == COND
+    with pytest.raises(TypeError):
+        x < "busy"
+    with pytest.raises(TypeError):
+        x + "busy"
+    # a string is no number
+    with pytest.raises(TypeError):
+        expr(Var(INT)) == "idle"
+
+
+def test_different_enumerations_compare_in_the_union_of_their_values():
+    other = Enum({"busy", "done"})
+    x, y = expr(Var(MODE)), expr(Var(other))
+    union = Enum({"idle", "busy", "done"})
+    with collecting() as terms:
+        x == y
+    assert [t.itype for t in terms] == [
+        _en.Into(other, union),
+        _en.Into(MODE, union),
+        _en.Eq([union, union]),
+    ]
+    # a string is a constant of the union of the other operand's enumeration and itself
+    with collecting() as terms:
+        x == "done"
+    assert [t.itype for t in terms] == [
+        _en.Sym("done", union),
+        _en.Into(MODE, union),
+        _en.Eq([union, union]),
+    ]
+
+
+def test_cast_converts_an_enumeration_into_a_larger_one():
+    x = expr(Var(MODE))
+    large = Enum({"idle", "busy", "done"})
+    assert cast(x, MODE) is x
+    assert cast(x, large).dtype == large
+    with pytest.raises(ValueError):
+        cast(x, Enum({"idle"}))
+    with pytest.raises(TypeError):
+        cast(x, INT)
+
+
+def test_ite_chooses_between_enumerations_by_a_scalar_condition():
+    x = expr(Var(MODE))
+    c = x == "idle"
+    with collecting() as terms:
+        r = ite(c, "busy", x)
+    assert isinstance(r, NExpr) and r.dtype == MODE
+    assert terms[-1].itype == _en.Ite([COND, MODE, MODE])
+    # of different enumerations, in the union of their values
+    y = expr(Var(Enum({"done"})))
+    assert ite(c, x, y).dtype == Enum({"idle", "busy", "done"})
+    # of two constants, in the enumeration of the two
+    assert ite(c, "on", "off").dtype == Enum({"on", "off"})
+    with pytest.raises(TypeError):
+        ite(expr(Var(Bool([2, 2]))), x, x)
+
+
+def test_an_event_is_set_or_reset_and_tested():
+    v = Var(Event())
+    e = expr(v)
+    assert isinstance(e, EExpr) and e.dtype == Event() and not hasattr(e, "shape")
+    with collecting() as terms:
+        s, r = expr(True, sort=Event()), expr(False, sort=Event)
+        happens = recv(e)
+    assert isinstance(s, EExpr) and isinstance(r, EExpr)
+    assert isinstance(happens, BExpr) and happens.dtype == COND
+    assert [t.itype for t in terms] == [_ev.Set(), _ev.Reset(), _ev.Test()]
+    # an event is True or False
+    with pytest.raises(TypeError):
+        expr(1, sort=Event())
+    with pytest.raises(TypeError):
+        recv(expr(Var(COND)))
+
+
+def test_an_event_has_no_boolean_operations():
+    e = expr(Var(Event()))
+    # nor is it a condition: `recv(e)` is
+    with pytest.raises(TypeError):
+        ite(e, "on", "off")
+    with pytest.raises(TypeError):
+        e & e
+    with pytest.raises(TypeError):
+        ~e
+
+
+def test_ite_chooses_between_events_by_a_scalar_condition():
+    e, f = expr(Var(Event())), expr(Var(Event()))
+    with collecting() as terms:
+        r = ite(recv(e), True, f)
+    assert isinstance(r, EExpr)
+    assert [t.itype for t in terms] == [_ev.Test(), _ev.Set(), _ev.Ite()]
+
+
+def test_enumerations_and_events_do_not_mix():
+    x, e = expr(Var(MODE)), expr(Var(Event()))
+    with pytest.raises(TypeError):
+        x == e
+    with pytest.raises(TypeError):
+        ite(x == "idle", x, e)
+

@@ -57,14 +57,14 @@ import inspect
 import reactor as _rr
 from .reactor import Module as _Module, Term as _Term, Var, Skip, T
 
-from .expr import expr, cast, ite, relu, argmax, collecting, Expr, X as expr_X, d as expr_d  # re-exported for authoring
+from .expr import expr, cast, ite, relu, argmax, recv, collecting, Expr, X as expr_X, d as expr_d  # re-exported for authoring
 
 # Public authoring surface: `from reactor.sugar import Module, expr, X, d, ite, cast, ...`
 # The rate of change of a discrete variable, returned by ``delay`` for it: the operation
 # ``reactor.zero.Zero()``, reading nothing.
 from .zero import Zero
 
-__all__ = ["Module", "expr", "cast", "ite", "relu", "argmax", "Expr", "X", "d", "Var", "Zero"]
+__all__ = ["Module", "expr", "cast", "ite", "relu", "argmax", "recv", "Expr", "X", "d", "Var", "Zero"]
 
 
 def _as_tuple(r) -> tuple:

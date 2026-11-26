@@ -1,22 +1,34 @@
 /*!
 # Events
 
-Defines the sort [`Event`] of events, and one type per operation on it. An event is
-encoded as a boolean whose change signals that the event happened, so its
-state alone means nothing: it is only compared, flipped or kept.
+Defines the sort [`Event`] of events, and one type per operation on it. An event
+is encoded as a boolean whose value is whether the event happens in the step
+that writes it: set when it happens, reset when it does not.
 
-- [`Eq`](struct@Eq), [`Ne`] — whether two events are in the same state or in
-  different ones, writing a [`Bool`] of the shape `[1, 1]`: an event
-  happened between two of its values when they differ.
-- [`Toggle`] — the event flipped: an event happens.
-- [`Hold`] — the event kept: no event happens.
+- [`Set`] — the event happening: writes `1`.
+- [`Reset`] — the event not happening: writes `0`.
+- [`Test`] — whether the event happens: whether it is set, `= 1`, writing a
+  [`Bool`] of the shape `[1, 1]`.
 - [`Ite`] — the choice `if c then x else y` between two events, by a
-  [`Bool`] `c` of the shape `[1, 1]`.
+  [`Bool`] `c` of the shape `[1, 1]`: the event set when `c` and `x`, or when
+  not `c` and `y`.
 
 The sort has no parameters, so neither do the operations: each is a unit
 value, determined by its type alone, and its boundary is fixed. In SMT-LIB2,
-an event is a `Bool`, and its operations `=`, `distinct`, `not`, the
-identity and `ite`.
+an event is a `Bool`, and its operations `true`, `false`, the identity and
+`ite`.
+
+## Open issue: `Skip` repeats an event
+
+This encoding is not yet sound under `Skip`. An event that happened in one step
+is set, and `Skip`, the identity of every sort, keeps its value, so that the
+event happens again in the next step, and in every step after it, until it is
+reset. This is the case wherever the next value of an event is its latched
+value: returned as is by an update, in a step in which the module that owns it
+does not update, and while values are held, as in a jump or a flow. An event
+should instead happen only in the step in which it is set, and be reset
+wherever it is not written, which `Skip` does not do; this needs to be
+addressed, by `Skip` on events, or by the encoding.
 */
 
 pub use crate::Any as Sort;
@@ -30,10 +42,9 @@ use derive_more::From;
 use pyo3::prelude::*;
 use std::fmt;
 
-/// The sort of events: a value that, as a boolean, has two states, but is only
-/// ever compared, flipped, to signal an event, or kept, to signal none. An
-/// event happens when its value changes, so that only the change, not the
-/// state, means anything.
+/// The sort of events: a value that, as a boolean, is whether the event
+/// happens in the step that writes it, set when it does and reset when it does
+/// not.
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash, Default)]
 #[cfg_attr(
     feature = "pyo3",
@@ -80,72 +91,19 @@ impl Differentiable for Event {
     }
 }
 
-/// Whether two events `x` and `y` are in the same state.
+/// The event happening: set, `1`.
 ///
-/// SMT-LIB2: `(= x y)`.
+/// SMT-LIB2: `true`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.event")
 )]
-pub struct Eq;
+pub struct Set;
 
-impl Boundary<Sort> for Eq {
+impl Boundary<Sort> for Set {
     fn dom(&self) -> Poly<Sort> {
-        mono![Event.into(), Event.into()].into()
-    }
-
-    fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new_unchecked([1, 1]).into()].into()
-    }
-}
-
-impl fmt::Display for Eq {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Eq")
-    }
-}
-
-/// Whether two events `x` and `y` are in different states: whether an event
-/// happened, of `x` and `y` the value of an event before and after.
-///
-/// SMT-LIB2: `(distinct x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
-#[cfg_attr(
-    feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.event")
-)]
-pub struct Ne;
-
-impl Boundary<Sort> for Ne {
-    fn dom(&self) -> Poly<Sort> {
-        mono![Event.into(), Event.into()].into()
-    }
-
-    fn cod(&self) -> Poly<Sort> {
-        mono![Bool::new_unchecked([1, 1]).into()].into()
-    }
-}
-
-impl fmt::Display for Ne {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Ne")
-    }
-}
-
-/// The event `x` flipped: an event happens.
-///
-/// SMT-LIB2: `(not x)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
-#[cfg_attr(
-    feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.event")
-)]
-pub struct Toggle;
-
-impl Boundary<Sort> for Toggle {
-    fn dom(&self) -> Poly<Sort> {
-        mono![Event.into()].into()
+        Poly::unit()
     }
 
     fn cod(&self) -> Poly<Sort> {
@@ -153,13 +111,40 @@ impl Boundary<Sort> for Toggle {
     }
 }
 
-impl fmt::Display for Toggle {
+impl fmt::Display for Set {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Toggle")
+        write!(f, "Set")
     }
 }
 
-/// The event `x` kept: no event happens.
+/// The event not happening: reset, `0`.
+///
+/// SMT-LIB2: `false`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.event")
+)]
+pub struct Reset;
+
+impl Boundary<Sort> for Reset {
+    fn dom(&self) -> Poly<Sort> {
+        Poly::unit()
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        mono![Event.into()].into()
+    }
+}
+
+impl fmt::Display for Reset {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Reset")
+    }
+}
+
+/// Whether the event `x` happens: whether it is set, `x = 1`, writing a
+/// [`Bool`] of the shape `[1, 1]`.
 ///
 /// SMT-LIB2: `x`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
@@ -167,26 +152,26 @@ impl fmt::Display for Toggle {
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.event")
 )]
-pub struct Hold;
+pub struct Test;
 
-impl Boundary<Sort> for Hold {
+impl Boundary<Sort> for Test {
     fn dom(&self) -> Poly<Sort> {
         mono![Event.into()].into()
     }
 
     fn cod(&self) -> Poly<Sort> {
-        mono![Event.into()].into()
+        mono![Bool::new_unchecked([1, 1]).into()].into()
     }
 }
 
-impl fmt::Display for Hold {
+impl fmt::Display for Test {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Hold")
+        write!(f, "Test")
     }
 }
 
 /// Choice `if c then x else y` between two events `x` and `y`, by the boolean
-/// `c`, of the shape `[1, 1]`, read first.
+/// `c`, of the shape `[1, 1]`, read first: a conditional set or reset.
 ///
 /// SMT-LIB2: `(ite c x y)`.
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
@@ -220,30 +205,27 @@ impl fmt::Display for Ite {
 /// The operations on events, with their boundary in [`Sort`].
 #[derive(Clone, Copy, PartialEq, Debug, Eq, Hash, From)]
 pub enum Op {
-    Eq(Eq),
-    Ne(Ne),
-    Toggle(Toggle),
-    Hold(Hold),
+    Set(Set),
+    Reset(Reset),
+    Test(Test),
     Ite(Ite),
 }
 
 impl Boundary<Sort> for Op {
     fn dom(&self) -> Poly<Sort> {
         match self {
-            Op::Eq(op) => op.dom(),
-            Op::Ne(op) => op.dom(),
-            Op::Toggle(op) => op.dom(),
-            Op::Hold(op) => op.dom(),
+            Op::Set(op) => op.dom(),
+            Op::Reset(op) => op.dom(),
+            Op::Test(op) => op.dom(),
             Op::Ite(op) => op.dom(),
         }
     }
 
     fn cod(&self) -> Poly<Sort> {
         match self {
-            Op::Eq(op) => op.cod(),
-            Op::Ne(op) => op.cod(),
-            Op::Toggle(op) => op.cod(),
-            Op::Hold(op) => op.cod(),
+            Op::Set(op) => op.cod(),
+            Op::Reset(op) => op.cod(),
+            Op::Test(op) => op.cod(),
             Op::Ite(op) => op.cod(),
         }
     }
@@ -252,10 +234,9 @@ impl Boundary<Sort> for Op {
 impl fmt::Display for Op {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Op::Eq(op) => op.fmt(f),
-            Op::Ne(op) => op.fmt(f),
-            Op::Toggle(op) => op.fmt(f),
-            Op::Hold(op) => op.fmt(f),
+            Op::Set(op) => op.fmt(f),
+            Op::Reset(op) => op.fmt(f),
+            Op::Test(op) => op.fmt(f),
             Op::Ite(op) => op.fmt(f),
         }
     }
@@ -267,13 +248,13 @@ impl fmt::Display for Op {
 
 #[cfg(feature = "pyo3")]
 #[pymethods]
-impl Eq {
+impl Set {
     /// Python builds it from nothing; its domain `dom` and codomain
     /// `cod`, when given, must be the ones it reads and writes.
     #[new]
     #[pyo3(signature = (dom = None, cod = None))]
     fn py_new(dom: Option<&Bound<'_, PyAny>>, cod: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
-        crate::check_boundary(Eq, dom, cod)
+        crate::check_boundary(Set, dom, cod)
     }
 
     /// Its domain, then its codomain.
@@ -297,13 +278,13 @@ impl Eq {
 
 #[cfg(feature = "pyo3")]
 #[pymethods]
-impl Ne {
+impl Reset {
     /// Python builds it from nothing; its domain `dom` and codomain
     /// `cod`, when given, must be the ones it reads and writes.
     #[new]
     #[pyo3(signature = (dom = None, cod = None))]
     fn py_new(dom: Option<&Bound<'_, PyAny>>, cod: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
-        crate::check_boundary(Ne, dom, cod)
+        crate::check_boundary(Reset, dom, cod)
     }
 
     /// Its domain, then its codomain.
@@ -327,43 +308,13 @@ impl Ne {
 
 #[cfg(feature = "pyo3")]
 #[pymethods]
-impl Toggle {
+impl Test {
     /// Python builds it from nothing; its domain `dom` and codomain
     /// `cod`, when given, must be the ones it reads and writes.
     #[new]
     #[pyo3(signature = (dom = None, cod = None))]
     fn py_new(dom: Option<&Bound<'_, PyAny>>, cod: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
-        crate::check_boundary(Toggle, dom, cod)
-    }
-
-    /// Its domain, then its codomain.
-    #[classattr]
-    fn __match_args__() -> (&'static str, &'static str) {
-        ("dom", "cod")
-    }
-
-    /// The sorts it reads: the sort alone when it reads one, else their list.
-    #[getter(dom)]
-    fn py_dom<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
-    }
-
-    /// The sort it writes.
-    #[getter(cod)]
-    fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
-    }
-}
-
-#[cfg(feature = "pyo3")]
-#[pymethods]
-impl Hold {
-    /// Python builds it from nothing; its domain `dom` and codomain
-    /// `cod`, when given, must be the ones it reads and writes.
-    #[new]
-    #[pyo3(signature = (dom = None, cod = None))]
-    fn py_new(dom: Option<&Bound<'_, PyAny>>, cod: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
-        crate::check_boundary(Hold, dom, cod)
+        crate::check_boundary(Test, dom, cod)
     }
 
     /// Its domain, then its codomain.
@@ -421,17 +372,14 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Op {
     type Error = PyErr;
 
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        if let Ok(op) = ob.extract::<Eq>() {
-            return Ok(Op::Eq(op));
+        if let Ok(op) = ob.extract::<Set>() {
+            return Ok(Op::Set(op));
         }
-        if let Ok(op) = ob.extract::<Ne>() {
-            return Ok(Op::Ne(op));
+        if let Ok(op) = ob.extract::<Reset>() {
+            return Ok(Op::Reset(op));
         }
-        if let Ok(op) = ob.extract::<Toggle>() {
-            return Ok(Op::Toggle(op));
-        }
-        if let Ok(op) = ob.extract::<Hold>() {
-            return Ok(Op::Hold(op));
+        if let Ok(op) = ob.extract::<Test>() {
+            return Ok(Op::Test(op));
         }
         if let Ok(op) = ob.extract::<Ite>() {
             return Ok(Op::Ite(op));
@@ -452,10 +400,9 @@ impl<'py> IntoPyObject<'py> for Op {
 
     fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
         match self {
-            Op::Eq(op) => op.into_pyobject(py).map(Bound::into_any),
-            Op::Ne(op) => op.into_pyobject(py).map(Bound::into_any),
-            Op::Toggle(op) => op.into_pyobject(py).map(Bound::into_any),
-            Op::Hold(op) => op.into_pyobject(py).map(Bound::into_any),
+            Op::Set(op) => op.into_pyobject(py).map(Bound::into_any),
+            Op::Reset(op) => op.into_pyobject(py).map(Bound::into_any),
+            Op::Test(op) => op.into_pyobject(py).map(Bound::into_any),
             Op::Ite(op) => op.into_pyobject(py).map(Bound::into_any),
         }
     }

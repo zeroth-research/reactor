@@ -11,8 +11,9 @@ mod sort {
     #[test]
     fn an_enumeration_is_the_set_of_its_values() {
         let e = Enum::new(["idle", "busy"]).unwrap();
-        // the order and the repetitions of its values do not matter
-        assert_eq!(e, Enum::new(["busy", "idle", "busy"]).unwrap());
+        // the order of its values does not matter, and none is repeated
+        assert_eq!(e, Enum::new(["busy", "idle"]).unwrap());
+        assert!(Enum::new(["busy", "idle", "busy"]).is_err());
         assert_ne!(e, Enum::new(["idle", "busy", "done"]).unwrap());
         assert_eq!(e.len(), 2);
         assert!(e.contains("idle") && e.contains("busy"));
@@ -195,27 +196,26 @@ mod r#enum {
 
 /// Tests for `event`.
 mod event {
-    use base::boundary::Boundary;
+    use base::boundary::{Boundary, Poly};
     use base::mono;
     use theory::bool::Bool;
     use theory::event::Event;
     use theory::event::*;
 
     #[test]
-    fn comparisons_read_two_events_and_write_a_bool() {
-        for op in [Op::from(Eq), Op::from(Ne)] {
-            assert_eq!(op.dom(), mono![Event.into(), Event.into()].into());
-            assert_eq!(op.cod(), mono![Bool::new_unchecked([1, 1]).into()].into());
+    fn set_and_reset_read_nothing_and_write_an_event() {
+        for op in [Op::from(Set), Op::from(Reset)] {
+            assert_eq!(op.dom(), Poly::unit());
+            assert_eq!(op.cod(), mono![Event.into()].into());
         }
+        assert_ne!(Op::from(Set), Op::from(Reset));
     }
 
     #[test]
-    fn toggle_and_hold_read_an_event_and_write_one() {
-        for op in [Op::from(Toggle), Op::from(Hold)] {
-            assert_eq!(op.dom(), mono![Event.into()].into());
-            assert_eq!(op.cod(), mono![Event.into()].into());
-        }
-        assert_ne!(Op::from(Toggle), Op::from(Hold));
+    fn test_reads_an_event_and_writes_a_bool() {
+        let op = Op::from(Test);
+        assert_eq!(op.dom(), mono![Event.into()].into());
+        assert_eq!(op.cod(), mono![Bool::new_unchecked([1, 1]).into()].into());
     }
 
     #[test]
@@ -236,10 +236,9 @@ mod event {
     #[test]
     fn display() {
         for (op, name) in [
-            (Op::from(Eq), "Eq"),
-            (Op::from(Ne), "Ne"),
-            (Op::from(Toggle), "Toggle"),
-            (Op::from(Hold), "Hold"),
+            (Op::from(Set), "Set"),
+            (Op::from(Reset), "Reset"),
+            (Op::from(Test), "Test"),
             (Op::from(Ite), "Ite"),
         ] {
             assert_eq!(op.to_string(), name);
@@ -293,10 +292,10 @@ mod op {
                 "Eq",
             ),
             (
-                event::Op::from(event::Toggle).into(),
+                event::Op::from(event::Set).into(),
+                Poly::unit(),
                 mono![Any::from(Event)].into(),
-                mono![Any::from(Event)].into(),
-                "Toggle",
+                "Set",
             ),
         ];
         for (op, dom, cod, name) in cases {
@@ -307,8 +306,8 @@ mod op {
     }
 
     #[test]
-    fn the_comparisons_write_the_booleans_of_the_matrix_theories() {
-        let op: Op = event::Op::from(event::Ne).into();
+    fn the_tests_write_the_booleans_of_the_matrix_theories() {
+        let op: Op = event::Op::from(event::Test).into();
         assert_eq!(
             op.cod(),
             mono![Any::Bool(Bool::new_unchecked([1, 1]))].into()

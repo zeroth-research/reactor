@@ -60,9 +60,9 @@ pub struct Enum {
 }
 
 impl Enum {
-    /// The enumeration of the symbolic constants `values`, a set: their order
-    /// and repetitions do not matter. Fails when there are none, as a sort
-    /// with no values cannot be written.
+    /// The enumeration of the symbolic constants `values`, each given once:
+    /// their order does not matter. Fails when there are none, as a sort with
+    /// no values cannot be written, or when one is repeated.
     pub fn new<I>(values: I) -> Result<Self, crate::Error>
     where
         I: IntoIterator,
@@ -70,11 +70,16 @@ impl Enum {
     {
         let mut values: Vec<String> = values.into_iter().map(std::convert::Into::into).collect();
         values.sort();
-        values.dedup();
         if values.is_empty() {
             return Err(crate::Error(
                 "an enumeration must have at least one value".to_string(),
             ));
+        }
+        if let Some(w) = values.windows(2).find(|w| w[0] == w[1]) {
+            return Err(crate::Error(format!(
+                "the value {:?} of an enumeration is repeated",
+                w[0]
+            )));
         }
         Ok(Enum { values })
     }
@@ -136,8 +141,9 @@ impl Enum {
     }
 }
 
-/// Python builds it from its values, any iterable of strings, as a
-/// `frozenset`, and matches it by them, sorted.
+/// Python builds it from its values, any iterable of distinct strings, and
+/// matches it by them, sorted; `|` is the union of enumerations, and `in` the
+/// membership of a value.
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Enum {
     /// A string is not taken for the iterable of its characters: the values
@@ -176,6 +182,21 @@ impl Enum {
     #[pyo3(name = "tangent")]
     fn py_tangent(&self) -> Real0 {
         Differentiable::tangent(self)
+    }
+
+    /// The union `self | other`: the enumeration of the values of both.
+    #[cfg(feature = "pyo3")]
+    fn __or__(&self, other: &Self) -> Self {
+        self.union(other)
+    }
+
+    /// The membership `value in self`: whether `value` is one of its
+    /// symbolic constants; never for a value that is not a string.
+    #[cfg(feature = "pyo3")]
+    fn __contains__(&self, value: &Bound<'_, PyAny>) -> bool {
+        value
+            .extract::<&str>()
+            .is_ok_and(|value| self.contains(value))
     }
 }
 
