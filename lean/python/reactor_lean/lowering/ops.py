@@ -202,30 +202,11 @@ OPS: tuple[Op, ...] = (
         scalar=lambda a: f"(if {a[0]} then {a[1]} else {a[2]})",
     ),
     # ── bitwise ───────────────────────────────────────────────────────
-    # BitVec's own operators, mapped over the matrix.
-    Op(
-        "Not",
-        WORD,
-        mat=lambda a: mat_mk(f"~~~({a[0]} i j)", "i", "j"),
-        scalar=lambda a: f"(~~~{a[0]})",
-    ),
-    Op(
-        "And",
-        WORD,
-        mat=lambda a: mat_mk(f"({a[0]} i j) &&& ({a[1]} i j)", "i", "j"),
-        scalar=lambda a: f"({a[0]} &&& {a[1]})",
-    ),
-    Op(
-        "Or",
-        WORD,
-        mat=lambda a: mat_mk(f"({a[0]} i j) ||| ({a[1]} i j)", "i", "j"),
-        scalar=lambda a: f"({a[0]} ||| {a[1]})",
-    ),
-    Op(
-        "Xor",
-        WORD,
-        mat=lambda a: mat_mk(f"({a[0]} i j) ^^^ ({a[1]} i j)", "i", "j"),
-        scalar=lambda a: f"({a[0]} ^^^ {a[1]})",
+    # BitVec's own operators, entry by entry.
+    _pointwise("Not", WORD, lambda a: f"(~~~{a[0]})"),
+    *(
+        _pointwise(name, WORD, lambda a, sym=sym: f"({a[0]} {sym} {a[1]})")
+        for name, sym in (("And", "&&&"), ("Or", "|||"), ("Xor", "^^^"))
     ),
     *(
         _pointwise(name, WORD, lambda a, sym=sym: f"(~~~({a[0]} {sym} {a[1]}))")
@@ -245,31 +226,16 @@ OPS: tuple[Op, ...] = (
         scalar=lambda a: f"({a[0]} - {a[1]})",
     ),
     # `*` on two `Matrix`es is their matrix product (Mathlib's), so the
-    # pointwise product is spelled out entry by entry.
-    Op(
-        "Mul",
-        ("int", "real", "word"),
-        mat=lambda a: mat_mk(f"{a[0]} i j * {a[1]} i j", "i", "j"),
-        scalar=lambda a: f"({a[0]} * {a[1]})",
-    ),
+    # pointwise product is taken entry by entry.
+    _pointwise("Mul", ("int", "real", "word"), lambda a: f"({a[0]} * {a[1]})"),
     # Lean's `/` and `%` on `Int` are Euclidean, as SMT-LIB's `div` and
     # `mod` are, and by zero give what the theory gives (0, the dividend).
     *(
-        Op(
-            name,
-            ("int",),
-            mat=lambda a, sym=sym: mat_mk(f"{a[0]} i j {sym} {a[1]} i j", "i", "j"),
-            scalar=lambda a, sym=sym: f"({a[0]} {sym} {a[1]})",
-        )
+        _pointwise(name, ("int",), lambda a, sym=sym: f"({a[0]} {sym} {a[1]})")
         for name, sym in (("Div", "/"), ("Mod", "%"))
     ),
     # Lean's `x / 0` on `Real` is 0.
-    Op(
-        "Div",
-        ("real",),
-        mat=lambda a: mat_mk(f"{a[0]} i j / {a[1]} i j", "i", "j"),
-        scalar=lambda a: f"({a[0]} / {a[1]})",
-    ),
+    _pointwise("Div", ("real",), lambda a: f"({a[0]} / {a[1]})"),
     Op(
         "Neg",
         ("int", "real", "word"),
@@ -278,12 +244,7 @@ OPS: tuple[Op, ...] = (
     ),
     # Mathlib's `|x|`, entry by entry. Bracketed: `||x||` lexes as two
     # `||`, and a bare `|x|` in a `match` arm reads as the next arm.
-    Op(
-        "Abs",
-        NUM,
-        mat=lambda a: mat_mk(f"|({a[0]} i j)|", "i", "j"),
-        scalar=lambda a: f"(|{a[0]}|)",
-    ),
+    _pointwise("Abs", NUM, lambda a: f"(|{a[0]}|)"),
     Op(
         "Abs",
         SIGNED,
@@ -296,19 +257,9 @@ OPS: tuple[Op, ...] = (
     # `/` on `BitVec` gives 0; `smtUDiv` and `smtSDiv` are SMT-LIB's.
     _pointwise("Div", UNSIGNED, lambda a: f"(BitVec.smtUDiv {a[0]} {a[1]})"),
     _pointwise("Div", SIGNED, lambda a: f"(BitVec.smtSDiv {a[0]} {a[1]})"),
-    Op(
-        "Rem",
-        UNSIGNED,
-        mat=lambda a: mat_mk(f"BitVec.umod ({a[0]} i j) ({a[1]} i j)", "i", "j"),
-        scalar=lambda a: f"(BitVec.umod {a[0]} {a[1]})",
-    ),
+    _pointwise("Rem", UNSIGNED, lambda a: f"(BitVec.umod {a[0]} {a[1]})"),
     _pointwise("Rem", SIGNED, lambda a: f"(BitVec.srem {a[0]} {a[1]})"),
-    Op(
-        "Mod",
-        SIGNED,
-        mat=lambda a: mat_mk(f"BitVec.smod ({a[0]} i j) ({a[1]} i j)", "i", "j"),
-        scalar=lambda a: f"(BitVec.smod {a[0]} {a[1]})",
-    ),
+    _pointwise("Mod", SIGNED, lambda a: f"(BitVec.smod {a[0]} {a[1]})"),
     # ── comparisons: write Bool ───────────────────────────────────────
     *(
         _pointwise(name, NUM, lambda a, f=f: f"(decide ({f(a[0], a[1])}))")
@@ -428,12 +379,7 @@ OPS: tuple[Op, ...] = (
     _pointwise("Concat", WORD, lambda a: f"({a[0]} ++ {a[1]})"),
     # ── casts between the theories' sorts ─────────────────────────────
     *(
-        Op(
-            name,
-            ("cast",),
-            mat=lambda a, one=one: mat_mk(one(f"({a[0]} i j)"), "i", "j"),
-            scalar=lambda a, one=one: one(a[0]),
-        )
+        _pointwise(name, ("cast",), lambda a, one=one: one(a[0]))
         for name, one in (
             ("ToReal", lambda x: f"(({x} : Int) : Real)"),
             ("ToInt", lambda x: f"⌊{x}⌋"),

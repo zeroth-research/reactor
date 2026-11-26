@@ -561,12 +561,21 @@ def test_linear_with_a_bias_that_differs_across_columns_has_no_lean_form():
 
 
 # ──────────────────────────────────────────────────────────────
-# The word ops the circuit encoding stood in for are `BitVec`'s
+# An op of the entries is its scalar form entry by entry
 # ──────────────────────────────────────────────────────────────
 
 
 @pytest.mark.parametrize("op, args, scalar", [
+    (tensor.word.Not(4, S), ["a"], "(~~~a)"),
+    (tensor.word.And(4, S), ["a", "b"], "(a &&& b)"),
     (tensor.word.Nand(4, S), ["a", "b"], "(~~~(a &&& b))"),
+    (tensor.int.Mul(S), ["a", "b"], "(a * b)"),
+    (tensor.int.Mod(S), ["a", "b"], "(a % b)"),
+    (tensor.real.Div(S), ["a", "b"], "(a / b)"),
+    (tensor.int.Abs(S), ["a"], "(|a|)"),
+    (tensor.cast.ToReal(S), ["a"], "((a : Int) : Real)"),
+    (tensor.word.unsigned.Rem(4, S), ["a", "b"], "(BitVec.umod a b)"),
+    (tensor.word.signed.Mod(4, S), ["a", "b"], "(BitVec.smod a b)"),
     (tensor.word.unsigned.Div(4, S), ["a", "b"], "(BitVec.smtUDiv a b)"),
     (tensor.word.signed.Div(4, S), ["a", "b"], "(BitVec.smtSDiv a b)"),
     (tensor.word.signed.Rem(4, S), ["a", "b"], "(BitVec.srem a b)"),
@@ -580,9 +589,10 @@ def test_linear_with_a_bias_that_differs_across_columns_has_no_lean_form():
     (tensor.word.Repeat(2, 4, S), ["a"], "(BitVec.replicate 2 a)"),
     (tensor.word.Concat([4, 2], S), ["a", "b"], "(a ++ b)"),
 ])
-def test_a_word_op_is_bitvecs_own_entry_by_entry(op, args, scalar):
-    """Bare on a scalar; on a matrix, the same entry by entry. A rotation,
-    `Extract`, `Extend` and `Repeat` print the amounts the op carries."""
+def test_an_op_of_the_entries_is_its_scalar_form_entry_by_entry(op, args, scalar):
+    """Bare on a scalar; on a matrix, the same entry by entry. A word op is
+    `BitVec`'s own, and a rotation, `Extract`, `Extend` and `Repeat` print
+    the amounts the op carries."""
     assert scalar_emitter(op)(args) == scalar
     entries = [f"({a} i j)" for a in args]
     assert mat_emitter(op)(args) == f"(Matrix.mk fun i j => {scalar_emitter(op)(entries)})"
@@ -623,6 +633,6 @@ def test_abs_is_written_entry_by_entry_and_on_a_bare_scalar():
     """Bracketed either way: `||x||` would lex as two `||`, and a bare
     `|x|` in a `match` arm reads as the next arm."""
     lean = ModuleToLean4(LeanContext(_abs_module([2, 1]))).to_lean_functional()
-    assert ":= (Matrix.mk fun i j => |(x1 i j)|)" in lean
+    assert ":= (Matrix.mk fun i j => (|(x1 i j)|))" in lean
     scalar = ModuleToLean4(LeanContext(_abs_module([1, 1]))).to_lean_scalar()
     assert "Int := (|x1|)" in scalar
