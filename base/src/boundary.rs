@@ -63,6 +63,12 @@ impl<G> Mono<G> {
         Self(Vec::new())
     }
 
+    /// Whether it is the unit type `I`: the empty tuple, of no base types. A
+    /// product type is never the empty type `0`, so it has no `is_zero`.
+    pub fn is_unit(&self) -> bool {
+        self.0.is_empty()
+    }
+
     /// The base types of the tuple, in order.
     pub fn iter(&self) -> std::slice::Iter<'_, G> {
         self.0.iter()
@@ -170,6 +176,16 @@ impl<G> Poly<G> {
     /// The unit type `I`, as a sum: a single variant, the empty tuple.
     pub fn unit() -> Self {
         Self(vec![Mono::unit()])
+    }
+
+    /// Whether it is the empty type `0`: the sum with no variants.
+    pub fn is_zero(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Whether it is the unit type `I`: a single variant, the empty tuple.
+    pub fn is_unit(&self) -> bool {
+        matches!(self.0.as_slice(), [m] if m.is_unit())
     }
 }
 

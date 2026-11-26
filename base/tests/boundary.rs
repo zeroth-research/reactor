@@ -367,3 +367,16 @@ fn display_uses_display_of_base_types() {
         "(Real ⊗ Real) ⊕ (Int ⊗ Bool ⊗ Real) ⊕ I ⊕ String"
     );
 }
+
+#[test]
+fn the_units_and_zero_are_told_apart() {
+    assert!(Mono::<char>::unit().is_unit() && mono("").is_unit());
+    assert!(!mono("x").is_unit());
+
+    let (unit, zero) = (Poly::<char>::unit(), Poly::<char>::zero());
+    assert!(unit.is_unit() && !unit.is_zero());
+    assert!(zero.is_zero() && !zero.is_unit());
+    // neither a product of base types, nor a sum of more than one unit
+    assert!(!poly(&["x"]).is_unit() && !poly(&["x"]).is_zero());
+    assert!(!poly(&["", ""]).is_unit());
+}
