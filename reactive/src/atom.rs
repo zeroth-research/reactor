@@ -459,7 +459,7 @@ where
     I: Combinatorial<S>,
     J: Sequential<S>,
     F: Differential<S>,
-    S: Clone + Debug,
+    S: Clone + Debug + Eq,
 {
     /// Constructs a **sequential atom**: behaviour that evolves over discrete
     /// time steps.
@@ -999,7 +999,7 @@ where
     I: Combinatorial<S>,
     J: Sequential<S>,
     F: Differential<S>,
-    S: Clone + Debug,
+    S: Clone + Debug + Eq,
 {
     /// Constructs a **sequential module**: behaviour that evolves over
     /// discrete time steps.

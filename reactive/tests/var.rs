@@ -1,7 +1,6 @@
 mod common;
 
-use common::Sort;
-use dataflow::diagram::Term;
+use common::{Sort, mk_op};
 use dataflow::diagram::Wire;
 use reactive::Var;
 use reactive::var::{X, X_ref, d, d_ref};
@@ -67,16 +66,14 @@ fn variable_casts_to_its_wires() {
 
 #[test]
 fn variables_pass_into_term_constructors() {
-    use crate::Term;
-
     let x = Var::new(Sort("real"));
 
     // a variable stands for its latched wire in a term position
-    let t = Term::constant("HAVOC", [x]).unwrap();
+    let t = term!(mk_op("HAVOC"), [x]).unwrap();
     assert_eq!(t.write().iter().next().map(Wire::id), Some(x.id()));
 
     // and its views pass as well: x' = x
-    let t = Term::function("ID", [X(x)], [x]).unwrap();
+    let t = term!(mk_op("ID"), [X(x)], [x]).unwrap();
     assert_eq!(t.write().iter().next().map(Wire::id), Some(X(x).id()));
     assert_eq!(t.read().iter().next().map(Wire::id), Some(x.id()));
 }

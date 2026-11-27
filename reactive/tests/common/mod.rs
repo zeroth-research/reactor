@@ -2,6 +2,7 @@
 //! uninterpreted `Ops` theory and the example modules built over it.
 #![allow(dead_code)]
 
+use base::boundary::{Boundary, Mono, Poly};
 use base::differentiable::Differentiable;
 use dataflow::diagram::Term;
 use dataflow::diagram::Wire;
@@ -29,49 +30,120 @@ impl Display for Sort {
     }
 }
 
+/// The uninterpreted instructions of the tests: a name, and the sorts it reads
+/// and writes, which [`term!`] takes from the wires of its term.
 #[derive(Clone, Debug)]
 #[allow(unused)]
-pub struct Ops(pub &'static str);
+pub struct Ops {
+    pub name: &'static str,
+    pub dom: Vec<Sort>,
+    pub cod: Vec<Sort>,
+}
 
 impl Combinatorial<Sort> for Ops {
-    fn havoc(_range: &Sort) -> Self {
-        Ops("HAVOC")
+    fn havoc(range: &Sort) -> Self {
+        Ops::new("HAVOC", vec![], vec![*range])
     }
 }
 
 impl Sequential<Sort> for Ops {
-    fn skip(_range: &Sort) -> Self {
-        Ops("SKIP")
+    fn skip(range: &Sort) -> Self {
+        Ops::new("SKIP", vec![*range], vec![*range])
     }
 }
 
 impl Differential<Sort> for Ops {
-    fn zero(_range: &Sort) -> Self {
-        Ops("ZERO")
+    fn zero(range: &Sort) -> Self {
+        Ops::new("ZERO", vec![], vec![*range])
     }
 }
 
 impl Display for Ops {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.name)
     }
+}
+
+impl Ops {
+    pub fn new(name: &'static str, dom: Vec<Sort>, cod: Vec<Sort>) -> Self {
+        Ops { name, dom, cod }
+    }
+}
+
+impl Boundary<Sort> for Ops {
+    fn dom(&self) -> Poly<Sort> {
+        self.dom.iter().copied().collect::<Mono<_>>().into()
+    }
+
+    fn cod(&self) -> Poly<Sort> {
+        self.cod.iter().copied().collect::<Mono<_>>().into()
+    }
+}
+
+/// An instruction that takes its boundary from the sorts of the wires it
+/// reads, `dom`, and writes, `cod`.
+pub trait Typed {
+    fn typed(self, dom: Vec<Sort>, cod: Vec<Sort>) -> Self;
+}
+
+impl Typed for Ops {
+    fn typed(self, dom: Vec<Sort>, cod: Vec<Sort>) -> Self {
+        Ops { dom, cod, ..self }
+    }
+}
+
+fn wires<D: Into<Wire<Sort>>>(wires: impl IntoIterator<Item = D>) -> Vec<Wire<Sort>> {
+    wires.into_iter().map(Into::into).collect()
+}
+
+fn sorts(wires: &[Wire<Sort>]) -> Vec<Sort> {
+    wires.iter().map(|w| *w.dtype()).collect()
+}
+
+/// `Term::function` of `itype` typed by the sorts of its wires.
+pub fn function<T, D, U>(
+    itype: T,
+    write: impl IntoIterator<Item = D>,
+    read: impl IntoIterator<Item = U>,
+) -> Result<Term<T, Sort>, String>
+where
+    T: Typed + Boundary<Sort>,
+    D: Into<Wire<Sort>>,
+    U: Into<Wire<Sort>>,
+{
+    let (write, read) = (wires(write), wires(read));
+    Term::function(itype.typed(sorts(&read), sorts(&write)), write, read)
+}
+
+/// `Term::constant` of `itype` typed by the sorts of its wires.
+pub fn constant<T, D>(itype: T, write: impl IntoIterator<Item = D>) -> Result<Term<T, Sort>, String>
+where
+    T: Typed + Boundary<Sort>,
+    D: Into<Wire<Sort>>,
+{
+    let write = wires(write);
+    Term::constant(itype.typed(vec![], sorts(&write)), write)
 }
 
 pub type Module = reactive::Module<Ops, Ops, Ops, Sort>;
 pub type Atom = reactive::Atom<Ops, Ops, Ops, Sort>;
 
+/// An instruction of the given name, of the sorts of the wires of the term
+/// that [`term!`] builds of it.
 pub fn mk_op(name: &'static str) -> Ops {
-    Ops(name)
+    Ops::new(name, vec![], vec![])
 }
 
+/// The term of an instruction writing `$write`, and reading `$read` when
+/// given, typed by the sorts of these wires.
 #[macro_export]
 macro_rules! term {
-    ($itype:expr, $write:expr) => {
-        Term::constant($itype, $write)
+    ($itype:expr, $write:expr $(,)?) => {
+        $crate::common::constant($itype, $write)
     };
 
-    ($itype:expr, $write:expr, $read:expr) => {
-        Term::function($itype, $write, $read)
+    ($itype:expr, $write:expr, $read:expr $(,)?) => {
+        $crate::common::function($itype, $write, $read)
     };
 }
 
@@ -190,17 +262,17 @@ pub fn example_tiny1(
     let private = Var::new(Sort("Tny"));
     let temp = Wire::new(Sort("Tny"));
 
-    let cons = Term::constant(mk_op("CONST"), [temp]).unwrap();
+    let cons = term!(mk_op("CONST"), [temp]).unwrap();
 
     let update = if wait {
-        Term::function(
+        term!(
             mk_op("AWAIT"),
             [X(interface), X(private)],
             [X(external), *private, temp],
         )
         .unwrap()
     } else {
-        Term::function(
+        term!(
             mk_op("SEQ"),
             [X(interface), X(private)],
             [*external, *private, temp],
@@ -208,7 +280,7 @@ pub fn example_tiny1(
         .unwrap()
     };
 
-    let init = Term::constant(mk_op("INIT"), [X(interface), X(private)]).unwrap();
+    let init = term!(mk_op("INIT"), [X(interface), X(private)]).unwrap();
 
     let vars = [external, interface, private];
     let _obs = [external, interface];

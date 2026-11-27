@@ -538,7 +538,7 @@ impl Skip {
 }
 
 /// The nondeterministic choice of a value of any sort.
-impl<T> Combinatorial<Any> for Op<T> {
+impl<T: Matrix> Combinatorial<Any> for Op<T> {
     fn havoc(range: &Any) -> Self {
         Op::Havoc(Havoc {
             sort: range.clone(),
@@ -547,7 +547,7 @@ impl<T> Combinatorial<Any> for Op<T> {
 }
 
 /// The identity of any sort.
-impl<T> Sequential<Any> for Op<T> {
+impl<T: Matrix> Sequential<Any> for Op<T> {
     fn skip(range: &Any) -> Self {
         Op::Skip(Skip {
             sort: range.clone(),
@@ -560,7 +560,7 @@ impl<T> Sequential<Any> for Op<T> {
 /// the tangent of the discrete sorts.
 ///
 /// Panics for any other sort, which is no rate of change.
-impl<T> Differential<Any> for Op<T> {
+impl<T: Matrix> Differential<Any> for Op<T> {
     fn zero(range: &Any) -> Self {
         match range {
             Any::Real(r) => Op::Real(
@@ -889,17 +889,23 @@ impl From<Error> for pyo3::PyErr {
     }
 }
 
-pub trait Combinatorial<S> {
-    // Returns the unary itype that chooses an element within the range
+/// The instructions of a theory that choose a value; as the other traits of
+/// the structural instructions, it carries their boundary, which the terms
+/// built of them check against their wires.
+pub trait Combinatorial<S>: Boundary<S> {
+    /// The itype that chooses an element within the range: reading nothing,
+    /// and writing one value of `range`.
     fn havoc(range: &S) -> Self;
 }
 
-pub trait Sequential<S> {
-    // Returns the unary itype that copies a value within the range
+pub trait Sequential<S>: Boundary<S> {
+    /// The itype that copies a value within the range: reading one value of
+    /// `range`, and writing one.
     fn skip(range: &S) -> Self;
 }
 
-pub trait Differential<S> {
-    // Returns the unary itype that indicates zero derivative
+pub trait Differential<S>: Boundary<S> {
+    /// The itype that indicates zero derivative: reading nothing, and writing
+    /// one value of `range`.
     fn zero(range: &S) -> Self;
 }

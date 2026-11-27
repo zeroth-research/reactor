@@ -136,7 +136,7 @@ where
 impl<F, S> Block<F, S>
 where
     F: Differential<S>,
-    S: Clone + Debug,
+    S: Clone + Debug + Eq,
 {
     /// Builds a block of one `ZERO` term per write wire, so that theories can
     /// keep `ZERO` at a fixed arity and each term stays a single-wire node in
@@ -150,7 +150,7 @@ where
 impl<J, S> Block<J, S>
 where
     J: Sequential<S>,
-    S: Clone + Debug,
+    S: Clone + Debug + Eq,
 {
     /// Builds a block of one `SKIP` term per `(write, read)` wire pair, so
     /// that theories can keep `SKIP` at a fixed arity and each pair is an
@@ -175,7 +175,7 @@ where
 impl<I, S> Block<I, S>
 where
     I: Combinatorial<S>,
-    S: Clone + Debug,
+    S: Clone + Debug + Eq,
 {
     /// Builds a block of one `HAVOC` term per write wire
     pub fn havoc<W: IntoIterator<Item = Wire<S>>>(write: W) -> Result<Self, String> {
