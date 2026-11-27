@@ -9,6 +9,22 @@ and every word result is reduced modulo `2^w`. Division by zero follows SMT-LIB2
 A value of an enumeration is the position of its symbolic constant among the values
 of the enumeration, sorted, as an `int64` of the shape `[1, 1]`, and an event a
 `torch.bool` of the shape `[1, 1]` that flips when it happens.
+
+Disclaimer: the evaluator is not faithful to the semantics of the theories, which is
+that of SMT-LIB2, and so it is potentially unsound: a run it computes may be no run of
+the system, and a property that holds of every run it computes may fail of the system.
+The gap comes from the machine numbers that stand for the values of the theories:
+
+- reals are simulated as floating point numbers, whose operations round, overflow to
+  infinities and produce NaNs, where the reals of SMT-LIB2 are exact and unbounded;
+- integers are `int64`, which wrap around past 64 bits, where the integers of SMT-LIB2
+  are unbounded;
+- words are `int64` too, which fail to capture words longer than 64 bits: a word of
+  width `w >= 64` is not reduced modulo `2^w`, and one of width 64 is stored in two's
+  complement, so that its unsigned operations read it as signed.
+
+Its results are exact only as long as no value leaves the range that these numbers
+represent exactly. Use an SMT solver, such as through `reactor.smt`, for exact answers.
 """
 
 import torch
