@@ -35,8 +35,9 @@ to no theory and so to no logic.
 The operations that carry data, the constants and the coefficients of the
 affine maps, hold it in matrices of a type `T` implementing [`Matrix`], over
 which every operation, theory enum and logic is generic. With the `torch`
-feature, `tch::Tensor` implements it, converting to and from Python
-`torch.Tensor` objects (see the `torch` module).
+feature, `torch::Tensor`, a `tch::Tensor` whose clone shares its storage,
+implements it, converting to and from Python `torch.Tensor` objects (see
+the `torch` module).
 
 ## Sorts
 
@@ -283,11 +284,15 @@ impl<'py> IntoPyObject<'py> for Any {
 /// linear operations, which `subenum` cannot express, so they are defined
 /// on their own, with the same casts.
 ///
-/// `Op` is cloneable when the constants and affine maps of its matrix type
-/// are: `Clone` is implemented by hand rather than derived, as a derive would
-/// require `T: Clone`, which matrix types such as `tch::Tensor` are not.
-#[subenum(NRA, NIA, Prop, BV)]
-#[derive(Debug, From)]
+/// `Op` is cloneable when its matrix type `T` is, as are the operations and
+/// logics of each theory.
+#[subenum(
+    NRA(derive(Copy)),
+    NIA(derive(Copy)),
+    Prop(derive(Copy)),
+    BV(derive(Copy))
+)]
+#[derive(Clone, Debug, From)]
 pub enum Op<T> {
     #[subenum(NRA)]
     Real(real::NRA<T>),
@@ -306,7 +311,7 @@ pub enum Op<T> {
 
 /// Linear real arithmetic: the linear operations of [`real`], with the
 /// boolean operations.
-#[derive(Debug, From)]
+#[derive(Clone, Copy, Debug, From)]
 pub enum LRA<T> {
     Real(real::LRA<T>),
     Bool(bool::Prop<T>),
@@ -314,7 +319,7 @@ pub enum LRA<T> {
 
 /// Linear integer arithmetic: the linear operations of [`int`], with the
 /// boolean operations.
-#[derive(Debug, From)]
+#[derive(Clone, Copy, Debug, From)]
 pub enum LIA<T> {
     Int(int::LIA<T>),
     Bool(bool::Prop<T>),
@@ -570,104 +575,6 @@ impl<T: Matrix> Differential<Any> for Op<T> {
             ),
             Any::Zero(_) => Op::Zero(zero::Zero),
             _ => panic!("only the tangent sorts, reals and Real0, have a zero: {range}"),
-        }
-    }
-}
-
-impl<T> Clone for Op<T>
-where
-    real::NRA<T>: Clone,
-    int::NIA<T>: Clone,
-    bool::Prop<T>: Clone,
-    word::BV<T>: Clone,
-{
-    fn clone(&self) -> Self {
-        match self {
-            Op::Real(op) => Op::Real(op.clone()),
-            Op::Int(op) => Op::Int(op.clone()),
-            Op::Bool(op) => Op::Bool(op.clone()),
-            Op::Word(op) => Op::Word(op.clone()),
-            Op::Enum(op) => Op::Enum(op.clone()),
-            Op::Event(op) => Op::Event(*op),
-            Op::Havoc(op) => Op::Havoc(op.clone()),
-            Op::Skip(op) => Op::Skip(op.clone()),
-            Op::Zero(op) => Op::Zero(*op),
-        }
-    }
-}
-
-impl<T> Clone for NRA<T>
-where
-    real::NRA<T>: Clone,
-    bool::Prop<T>: Clone,
-{
-    fn clone(&self) -> Self {
-        match self {
-            NRA::Real(op) => NRA::Real(op.clone()),
-            NRA::Bool(op) => NRA::Bool(op.clone()),
-        }
-    }
-}
-
-impl<T> Clone for NIA<T>
-where
-    int::NIA<T>: Clone,
-    bool::Prop<T>: Clone,
-{
-    fn clone(&self) -> Self {
-        match self {
-            NIA::Int(op) => NIA::Int(op.clone()),
-            NIA::Bool(op) => NIA::Bool(op.clone()),
-        }
-    }
-}
-
-impl<T> Clone for Prop<T>
-where
-    bool::Prop<T>: Clone,
-{
-    fn clone(&self) -> Self {
-        match self {
-            Prop::Bool(op) => Prop::Bool(op.clone()),
-        }
-    }
-}
-
-impl<T> Clone for BV<T>
-where
-    bool::Prop<T>: Clone,
-    word::BV<T>: Clone,
-{
-    fn clone(&self) -> Self {
-        match self {
-            BV::Bool(op) => BV::Bool(op.clone()),
-            BV::Word(op) => BV::Word(op.clone()),
-        }
-    }
-}
-
-impl<T> Clone for LRA<T>
-where
-    real::LRA<T>: Clone,
-    bool::Prop<T>: Clone,
-{
-    fn clone(&self) -> Self {
-        match self {
-            LRA::Real(op) => LRA::Real(op.clone()),
-            LRA::Bool(op) => LRA::Bool(op.clone()),
-        }
-    }
-}
-
-impl<T> Clone for LIA<T>
-where
-    int::LIA<T>: Clone,
-    bool::Prop<T>: Clone,
-{
-    fn clone(&self) -> Self {
-        match self {
-            LIA::Int(op) => LIA::Int(op.clone()),
-            LIA::Bool(op) => LIA::Bool(op.clone()),
         }
     }
 }

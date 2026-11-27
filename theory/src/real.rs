@@ -144,7 +144,7 @@ use crate::Reals;
 /// A constant real matrix literal, held in a tensor of type `T`, of a
 /// degree: a constant rate of change, such as the `1` of `ẋ = 1`, is of
 /// degree 1.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Num<T> {
     tensor: T,
     degree: u8,
@@ -180,7 +180,7 @@ impl<T> Num<T> {
 /// [`Mul`], which multiplies two variables.
 ///
 /// `C` is a plain real, so the product keeps the degree of `x`.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Scale<T> {
     tensor: T,
     degree: u8,
@@ -298,7 +298,7 @@ pub struct Div {
 /// The linear map `x ↦ A·x`, where `A` is a plain real constant, so the map
 /// keeps the degree of `x`. `A` determines the rows of `x` but not its
 /// columns, which the map holds.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Linear<T> {
     a: T,
     cols: usize,
@@ -356,7 +356,7 @@ impl<T> Linear<T> {
 
 /// The affine map `x ↦ A·x + B`, where `A` and `B` are constants: `A` a
 /// plain real, and `B` of the degree of `x`, which the map keeps.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Affine<T> {
     a: T,
     b: T,
@@ -663,7 +663,7 @@ pub struct Ne {
 /// `MatMul`, which multiply or divide two variables. It also generates the
 /// casts between them: `From` up to `NRA`, and `TryFrom` down from it.
 #[subenum(LRA)]
-#[derive(Debug, From)]
+#[derive(Clone, Copy, Debug, From)]
 pub enum NRA<T> {
     #[subenum(LRA)]
     Num(Num<T>),
@@ -714,44 +714,6 @@ pub enum NRA<T> {
     Ne(Ne),
 }
 
-impl<T> Clone for NRA<T>
-where
-    Num<T>: Clone,
-    Scale<T>: Clone,
-    Linear<T>: Clone,
-    Affine<T>: Clone,
-{
-    fn clone(&self) -> Self {
-        match self {
-            NRA::Num(op) => NRA::Num(op.clone()),
-            NRA::Scale(op) => NRA::Scale(op.clone()),
-            NRA::Add(op) => NRA::Add(*op),
-            NRA::Sub(op) => NRA::Sub(*op),
-            NRA::Mul(op) => NRA::Mul(*op),
-            NRA::Div(op) => NRA::Div(*op),
-            NRA::Linear(op) => NRA::Linear(op.clone()),
-            NRA::Affine(op) => NRA::Affine(op.clone()),
-            NRA::ReLU(op) => NRA::ReLU(*op),
-            NRA::Abs(op) => NRA::Abs(*op),
-            NRA::Neg(op) => NRA::Neg(*op),
-            NRA::Zero(op) => NRA::Zero(*op),
-            NRA::Argmax(op) => NRA::Argmax(*op),
-            NRA::Min(op) => NRA::Min(*op),
-            NRA::Max(op) => NRA::Max(*op),
-            NRA::Transpose(op) => NRA::Transpose(*op),
-            NRA::MatMul(op) => NRA::MatMul(*op),
-            NRA::Lt(op) => NRA::Lt(*op),
-            NRA::Ite(op) => NRA::Ite(*op),
-            NRA::BroadcastIte(op) => NRA::BroadcastIte(*op),
-            NRA::Le(op) => NRA::Le(*op),
-            NRA::Gt(op) => NRA::Gt(*op),
-            NRA::Ge(op) => NRA::Ge(*op),
-            NRA::Eq(op) => NRA::Eq(*op),
-            NRA::Ne(op) => NRA::Ne(*op),
-        }
-    }
-}
-
 impl<T: fmt::Display> fmt::Display for NRA<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -780,41 +742,6 @@ impl<T: fmt::Display> fmt::Display for NRA<T> {
             NRA::Ge(op) => op.fmt(f),
             NRA::Eq(op) => op.fmt(f),
             NRA::Ne(op) => op.fmt(f),
-        }
-    }
-}
-
-impl<T> Clone for LRA<T>
-where
-    Num<T>: Clone,
-    Scale<T>: Clone,
-    Linear<T>: Clone,
-    Affine<T>: Clone,
-{
-    fn clone(&self) -> Self {
-        match self {
-            LRA::Num(op) => LRA::Num(op.clone()),
-            LRA::Scale(op) => LRA::Scale(op.clone()),
-            LRA::Add(op) => LRA::Add(*op),
-            LRA::Sub(op) => LRA::Sub(*op),
-            LRA::Linear(op) => LRA::Linear(op.clone()),
-            LRA::Affine(op) => LRA::Affine(op.clone()),
-            LRA::ReLU(op) => LRA::ReLU(*op),
-            LRA::Abs(op) => LRA::Abs(*op),
-            LRA::Neg(op) => LRA::Neg(*op),
-            LRA::Zero(op) => LRA::Zero(*op),
-            LRA::Argmax(op) => LRA::Argmax(*op),
-            LRA::Min(op) => LRA::Min(*op),
-            LRA::Max(op) => LRA::Max(*op),
-            LRA::Transpose(op) => LRA::Transpose(*op),
-            LRA::Lt(op) => LRA::Lt(*op),
-            LRA::Ite(op) => LRA::Ite(*op),
-            LRA::BroadcastIte(op) => LRA::BroadcastIte(*op),
-            LRA::Le(op) => LRA::Le(*op),
-            LRA::Gt(op) => LRA::Gt(*op),
-            LRA::Ge(op) => LRA::Ge(*op),
-            LRA::Eq(op) => LRA::Eq(*op),
-            LRA::Ne(op) => LRA::Ne(*op),
         }
     }
 }

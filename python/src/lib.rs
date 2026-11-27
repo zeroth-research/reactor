@@ -20,8 +20,8 @@ use crate::var::Var;
 use crate::wire::Wire;
 use theory::Any;
 
-/// The operations of all theories, with their tensors held as `tch::Tensor`s.
-pub(crate) type Op = theory::Op<tch::Tensor>;
+/// The operations of all theories, with their tensors held as torch tensors.
+pub(crate) type Op = theory::Op<theory::torch::Tensor>;
 
 #[pymodule]
 fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {

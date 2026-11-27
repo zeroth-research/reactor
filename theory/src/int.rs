@@ -119,7 +119,7 @@ impl Differentiable for Int {
 use crate::Ints;
 
 /// A constant integer matrix literal, held in a tensor of type `T`.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Num<T> {
     tensor: T,
 }
@@ -149,7 +149,7 @@ impl<T> Num<T> {
 /// The pointwise product `x ↦ C ⊙ x` of `[m, n]` matrices with a constant
 /// `C` of shape `[m, n]`, held in a tensor of type `T`: linear in `x`, unlike
 /// [`Mul`], which multiplies two variables.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Scale<T> {
     tensor: T,
 }
@@ -251,7 +251,7 @@ pub struct Mod {
 
 /// The linear map `x ↦ A·x`, where `A` is a constant. `A` determines the
 /// rows of `x` but not its columns, which the map holds.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Linear<T> {
     a: T,
     cols: usize,
@@ -297,7 +297,7 @@ impl<T> Linear<T> {
 }
 
 /// The affine map `x ↦ A·x + B`, where `A` and `B` are constants.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Affine<T> {
     a: T,
     b: T,
@@ -540,7 +540,7 @@ pub struct Ne {
 /// and `MatMul`, which multiply or divide two variables. It also generates
 /// the casts between them: `From` up to `NIA`, and `TryFrom` down from it.
 #[subenum(LIA)]
-#[derive(Debug, From)]
+#[derive(Clone, Copy, Debug, From)]
 pub enum NIA<T> {
     #[subenum(LIA)]
     Num(Num<T>),
@@ -590,44 +590,6 @@ pub enum NIA<T> {
     Ne(Ne),
 }
 
-impl<T> Clone for NIA<T>
-where
-    Num<T>: Clone,
-    Scale<T>: Clone,
-    Linear<T>: Clone,
-    Affine<T>: Clone,
-{
-    fn clone(&self) -> Self {
-        match self {
-            NIA::Num(op) => NIA::Num(op.clone()),
-            NIA::Scale(op) => NIA::Scale(op.clone()),
-            NIA::Add(op) => NIA::Add(*op),
-            NIA::Sub(op) => NIA::Sub(*op),
-            NIA::Mul(op) => NIA::Mul(*op),
-            NIA::Div(op) => NIA::Div(*op),
-            NIA::Mod(op) => NIA::Mod(*op),
-            NIA::Linear(op) => NIA::Linear(op.clone()),
-            NIA::Affine(op) => NIA::Affine(op.clone()),
-            NIA::ReLU(op) => NIA::ReLU(*op),
-            NIA::Abs(op) => NIA::Abs(*op),
-            NIA::Neg(op) => NIA::Neg(*op),
-            NIA::Argmax(op) => NIA::Argmax(*op),
-            NIA::Min(op) => NIA::Min(*op),
-            NIA::Max(op) => NIA::Max(*op),
-            NIA::Transpose(op) => NIA::Transpose(*op),
-            NIA::MatMul(op) => NIA::MatMul(*op),
-            NIA::Lt(op) => NIA::Lt(*op),
-            NIA::Ite(op) => NIA::Ite(*op),
-            NIA::BroadcastIte(op) => NIA::BroadcastIte(*op),
-            NIA::Le(op) => NIA::Le(*op),
-            NIA::Gt(op) => NIA::Gt(*op),
-            NIA::Ge(op) => NIA::Ge(*op),
-            NIA::Eq(op) => NIA::Eq(*op),
-            NIA::Ne(op) => NIA::Ne(*op),
-        }
-    }
-}
-
 impl<T: fmt::Display> fmt::Display for NIA<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -656,40 +618,6 @@ impl<T: fmt::Display> fmt::Display for NIA<T> {
             NIA::Ge(op) => op.fmt(f),
             NIA::Eq(op) => op.fmt(f),
             NIA::Ne(op) => op.fmt(f),
-        }
-    }
-}
-
-impl<T> Clone for LIA<T>
-where
-    Num<T>: Clone,
-    Scale<T>: Clone,
-    Linear<T>: Clone,
-    Affine<T>: Clone,
-{
-    fn clone(&self) -> Self {
-        match self {
-            LIA::Num(op) => LIA::Num(op.clone()),
-            LIA::Scale(op) => LIA::Scale(op.clone()),
-            LIA::Add(op) => LIA::Add(*op),
-            LIA::Sub(op) => LIA::Sub(*op),
-            LIA::Linear(op) => LIA::Linear(op.clone()),
-            LIA::Affine(op) => LIA::Affine(op.clone()),
-            LIA::ReLU(op) => LIA::ReLU(*op),
-            LIA::Abs(op) => LIA::Abs(*op),
-            LIA::Neg(op) => LIA::Neg(*op),
-            LIA::Argmax(op) => LIA::Argmax(*op),
-            LIA::Min(op) => LIA::Min(*op),
-            LIA::Max(op) => LIA::Max(*op),
-            LIA::Transpose(op) => LIA::Transpose(*op),
-            LIA::Lt(op) => LIA::Lt(*op),
-            LIA::Ite(op) => LIA::Ite(*op),
-            LIA::BroadcastIte(op) => LIA::BroadcastIte(*op),
-            LIA::Le(op) => LIA::Le(*op),
-            LIA::Gt(op) => LIA::Gt(*op),
-            LIA::Ge(op) => LIA::Ge(*op),
-            LIA::Eq(op) => LIA::Eq(*op),
-            LIA::Ne(op) => LIA::Ne(*op),
         }
     }
 }

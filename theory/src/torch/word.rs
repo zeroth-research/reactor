@@ -7,7 +7,7 @@ use pyo3_tch::PyTensor;
 /// A constant matrix of bit-vectors of a width: a `torch.Tensor` of
 /// integer elements, each holding a bit-vector in its low bits.
 #[pyclass(frozen, name = "Num", module = "reactor.word")]
-pub struct Num(tch::Tensor, usize);
+pub struct Num(super::Tensor, usize);
 
 // SAFETY: the tensor is private to this module, which only reads its
 // shape and element kind and takes shallow clones of it; libtorch makes
@@ -22,6 +22,7 @@ impl Num {
     #[new]
     #[pyo3(signature = (tensor, /, cod))]
     fn new(tensor: PyTensor, cod: Word) -> Result<Self, crate::Error> {
+        let tensor = super::Tensor(tensor.0);
         super::check_matrix(&tensor)?;
         if !super::is_integer(tensor.kind()) {
             return Err(crate::Error(format!(
@@ -29,8 +30,8 @@ impl Num {
                 tensor.kind()
             )));
         }
-        let op = crate::word::Num::with_cod(tensor.0, [cod])?;
-        Ok(Num(op.tensor().shallow_clone(), cod.width()))
+        let op = crate::word::Num::with_cod(tensor, [cod])?;
+        Ok(Num(op.tensor().clone(), cod.width()))
     }
 
     #[getter]
@@ -48,41 +49,26 @@ impl Num {
     /// The sort it writes.
     #[getter]
     fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
-        let op: crate::word::Num<tch::Tensor> = slf.extract()?;
+        let op: crate::word::Num<super::Tensor> = slf.extract()?;
         crate::py_boundary(slf.py(), base::boundary::Boundary::cod(&op))
     }
 }
 
-impl<'a, 'py> FromPyObject<'a, 'py> for crate::word::Num<tch::Tensor> {
+impl<'a, 'py> FromPyObject<'a, 'py> for crate::word::Num<super::Tensor> {
     type Error = PyErr;
 
     /// Fails when `ob` is not a [`Num`].
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let constant = ob.cast::<Num>()?.get();
         let cod = crate::word::Word::new(constant.1, crate::Matrix::shape(&constant.0))?;
-        Ok(crate::word::Num::with_cod(
-            constant.0.shallow_clone(),
-            [cod],
-        )?)
-    }
-}
-
-/// A clone shares the tensor of the original: `tch::Tensor` is not `Clone`,
-/// so this takes a shallow clone of it, as libtorch counts its references.
-impl Clone for crate::word::Num<tch::Tensor> {
-    fn clone(&self) -> Self {
-        let crate::Words::Word(cod) = super::sole(base::boundary::Boundary::cod(self)) else {
-            unreachable!("a numeral writes a word")
-        };
-        crate::word::Num::with_cod(self.tensor().shallow_clone(), [cod])
-            .expect("a clone has the sort of the original")
+        Ok(crate::word::Num::with_cod(constant.0.clone(), [cod])?)
     }
 }
 
 /// Converts an operation of the theory into its Python class: the
 /// operations carrying tensors into the classes of this module, holding the
 /// same tensors, and the others into their own classes.
-impl<'py> IntoPyObject<'py> for crate::word::BV<tch::Tensor> {
+impl<'py> IntoPyObject<'py> for crate::word::BV<super::Tensor> {
     type Target = PyAny;
     type Output = Bound<'py, PyAny>;
     type Error = PyErr;
@@ -96,7 +82,7 @@ impl<'py> IntoPyObject<'py> for crate::word::BV<tch::Tensor> {
                 else {
                     unreachable!("a numeral writes a word")
                 };
-                Num(op.tensor().shallow_clone(), cod.width())
+                Num(op.tensor().clone(), cod.width())
                     .into_pyobject(py)
                     .map(Bound::into_any)
             }

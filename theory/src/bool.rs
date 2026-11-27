@@ -93,7 +93,7 @@ impl Differentiable for Bool {
 }
 
 /// A constant boolean matrix literal, held in a tensor of type `T`.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Truth<T> {
     tensor: T,
 }
@@ -208,7 +208,7 @@ pub struct Ite {
 
 /// The operations of propositional logic, the boolean operations of
 /// SMT-LIB2's `Core` theory, with their boundary in [`Bool`].
-#[derive(Debug, From)]
+#[derive(Clone, Copy, Debug, From)]
 pub enum Prop<T> {
     Truth(Truth<T>),
     And(And),
@@ -221,27 +221,6 @@ pub enum Prop<T> {
     BroadcastIte(broadcast::Ite),
     ReduceAnd(reduce::And),
     ReduceOr(reduce::Or),
-}
-
-impl<T> Clone for Prop<T>
-where
-    Truth<T>: Clone,
-{
-    fn clone(&self) -> Self {
-        match self {
-            Prop::Truth(op) => Prop::Truth(op.clone()),
-            Prop::And(op) => Prop::And(*op),
-            Prop::Or(op) => Prop::Or(*op),
-            Prop::Xor(op) => Prop::Xor(*op),
-            Prop::Not(op) => Prop::Not(*op),
-            Prop::Eq(op) => Prop::Eq(*op),
-            Prop::Ne(op) => Prop::Ne(*op),
-            Prop::Ite(op) => Prop::Ite(*op),
-            Prop::BroadcastIte(op) => Prop::BroadcastIte(*op),
-            Prop::ReduceAnd(op) => Prop::ReduceAnd(*op),
-            Prop::ReduceOr(op) => Prop::ReduceOr(*op),
-        }
-    }
 }
 
 impl<T: fmt::Display> fmt::Display for Prop<T> {

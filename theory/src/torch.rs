@@ -1,16 +1,17 @@
 /*!
 # Torch
 
-The torch backing of the operations of [`crate::matrix`]: [`tch::Tensor`]
-implements [`crate::Matrix`], so that the operations carrying tensors hold
-torch tensors directly, as `real::Num<tch::Tensor>`. The Python
+The torch backing of the operations of [`crate::matrix`]: [`Tensor`], a
+[`tch::Tensor`] whose clone shares its storage, implements
+[`crate::Matrix`], so that the operations carrying tensors hold torch
+tensors, as `real::Num<Tensor>`, and are `Clone` as the others. The Python
 `torch.Tensor` objects convert to and from them through
 [`pyo3_tch::PyTensor`], sharing their storage.
 
 The constants are Python classes of their own, one per theory, as a tensor
 alone does not tell the theory of its constant: [`real::Num`],
 [`int::Num`], [`bool::Truth`] and [`word::Num`]. Each holds, in a
-private field, a [`tch::Tensor`] of the element kind of its theory, checked
+private field, a [`Tensor`] of the element kind of its theory, checked
 on construction, and [`word::Num`] its width too. A [`tch::Tensor`] is not
 `Sync`, which a Python class must be, so each class implements `Sync`
 itself, as only its own module touches the tensor. The constants of
@@ -19,10 +20,10 @@ So do the pointwise products with a constant, [`real::Scale`] and
 [`int::Scale`], whose class holds the constant in the same way.
 
 The linear maps are Python classes too, [`real::Linear`] and
-[`int::Linear`], each holding, in a private field, the [`tch::Tensor`] `A`
+[`int::Linear`], each holding, in a private field, the [`Tensor`] `A`
 of its theory, together with the sort it reads, whose columns `A` does not
 determine. So are the affine maps, [`real::Affine`] and
-[`int::Affine`], each holding, in private fields, the [`tch::Tensor`]s `A`
+[`int::Affine`], each holding, in private fields, the [`Tensor`]s `A`
 and `B` of its theory, of shapes `[m, n]` and `[m, k]`, checked on
 construction, and implementing `Sync` in the same way. The linear and
 affine maps of [`crate::real`] and [`crate::int`] extract
@@ -36,10 +37,39 @@ pub mod word;
 
 use pyo3::prelude::*;
 
-impl crate::Matrix for tch::Tensor {
+/// A torch tensor, as the operations carrying data hold it: a clone shares
+/// its storage, as [`tch::Tensor::shallow_clone`] does, since libtorch counts
+/// the references to a tensor. `tch::Tensor` is not `Clone` itself, as it
+/// leaves the choice between sharing and copying to its caller; here it is
+/// sharing, so that the operations holding tensors derive `Clone`.
+#[derive(Debug)]
+pub struct Tensor(pub tch::Tensor);
+
+impl Clone for Tensor {
+    fn clone(&self) -> Self {
+        Tensor(self.0.shallow_clone())
+    }
+}
+
+/// Reads as the tensor it wraps.
+impl std::ops::Deref for Tensor {
+    type Target = tch::Tensor;
+
+    fn deref(&self) -> &tch::Tensor {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Tensor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl crate::Matrix for Tensor {
     /// The `[rows, cols]` shape of the tensor, which must be a matrix.
     fn shape(&self) -> [usize; 2] {
-        let size = self.size();
+        let size = self.0.size();
         let [rows, cols] = size[..] else {
             panic!("expected a matrix, got a tensor of shape {size:?}")
         };
@@ -96,7 +126,7 @@ fn check_affine(a: &tch::Tensor, b: &tch::Tensor) -> Result<(), crate::Error> {
 /// Converts an operation of any theory into its Python class, through the
 /// conversion of its theory; the structural operations are classes of their
 /// own.
-impl<'py> IntoPyObject<'py> for crate::Op<tch::Tensor> {
+impl<'py> IntoPyObject<'py> for crate::Op<Tensor> {
     type Target = PyAny;
     type Output = Bound<'py, PyAny>;
     type Error = PyErr;

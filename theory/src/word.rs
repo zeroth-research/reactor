@@ -153,7 +153,7 @@ use crate::Words;
 /// in a tensor of type `T`.
 ///
 /// SMT-LIB2: a literal `#b…` or `(_ bvN width)`.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Num<T> {
     tensor: T,
     width: usize,
@@ -468,7 +468,7 @@ pub struct Ne {
 /// `FixedSizeBitVectors`, with their boundary in [`Words`]. Those of
 /// [`signed`] and [`unsigned`] are named after their SMT-LIB2 operation,
 /// as `SDiv` for [`signed::Div`] and `UDiv` for [`unsigned::Div`].
-#[derive(Debug, From)]
+#[derive(Clone, Copy, Debug, From)]
 pub enum BV<T> {
     Num(Num<T>),
     Concat(Concat),
@@ -510,56 +510,6 @@ pub enum BV<T> {
     ULe(unsigned::Le),
     UGt(unsigned::Gt),
     UGe(unsigned::Ge),
-}
-
-impl<T> Clone for BV<T>
-where
-    Num<T>: Clone,
-{
-    fn clone(&self) -> Self {
-        match self {
-            BV::Num(op) => BV::Num(op.clone()),
-            BV::Concat(op) => BV::Concat(*op),
-            BV::Extract(op) => BV::Extract(*op),
-            BV::Repeat(op) => BV::Repeat(*op),
-            BV::Not(op) => BV::Not(*op),
-            BV::And(op) => BV::And(*op),
-            BV::Or(op) => BV::Or(*op),
-            BV::Xor(op) => BV::Xor(*op),
-            BV::Nand(op) => BV::Nand(*op),
-            BV::Nor(op) => BV::Nor(*op),
-            BV::Xnor(op) => BV::Xnor(*op),
-            BV::Neg(op) => BV::Neg(*op),
-            BV::Ite(op) => BV::Ite(*op),
-            BV::BroadcastIte(op) => BV::BroadcastIte(*op),
-            BV::Add(op) => BV::Add(*op),
-            BV::Sub(op) => BV::Sub(*op),
-            BV::Mul(op) => BV::Mul(*op),
-            BV::Shl(op) => BV::Shl(*op),
-            BV::RotateLeft(op) => BV::RotateLeft(*op),
-            BV::RotateRight(op) => BV::RotateRight(*op),
-            BV::Eq(op) => BV::Eq(*op),
-            BV::Ne(op) => BV::Ne(*op),
-            BV::SDiv(op) => BV::SDiv(*op),
-            BV::Abs(op) => BV::Abs(*op),
-            BV::SRem(op) => BV::SRem(*op),
-            BV::SMod(op) => BV::SMod(*op),
-            BV::AShr(op) => BV::AShr(*op),
-            BV::SignExtend(op) => BV::SignExtend(*op),
-            BV::SLt(op) => BV::SLt(*op),
-            BV::SLe(op) => BV::SLe(*op),
-            BV::SGt(op) => BV::SGt(*op),
-            BV::SGe(op) => BV::SGe(*op),
-            BV::UDiv(op) => BV::UDiv(*op),
-            BV::URem(op) => BV::URem(*op),
-            BV::LShr(op) => BV::LShr(*op),
-            BV::ZeroExtend(op) => BV::ZeroExtend(*op),
-            BV::ULt(op) => BV::ULt(*op),
-            BV::ULe(op) => BV::ULe(*op),
-            BV::UGt(op) => BV::UGt(*op),
-            BV::UGe(op) => BV::UGe(*op),
-        }
-    }
 }
 
 impl<T: fmt::Display> fmt::Display for BV<T> {
