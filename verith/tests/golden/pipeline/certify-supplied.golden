@@ -46,6 +46,7 @@ Wrote <OUT>/G/lakefile.toml
 Wrote <OUT>/G/lean-toolchain
 Wrote root module <OUT>/G/System.lean
 ++ Generated <OUT>/G/System/System.lean ++
+++ Generated <OUT>/G/System/Module.lean ++
 ++ Generated <OUT>/G/System/Rel.lean ++
 ++ Generated <OUT>/G/System/Scalar.lean ++
 ++ Generated <OUT>/G/System/ScalarRel.lean ++

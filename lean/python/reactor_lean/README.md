@@ -55,12 +55,13 @@ written, `lean_gaps` refuses an operator with no Lean form.
 
 ```
 NAME/
-  System.lean, System/          the module in four encodings: functional,
-                                relational, scalar and scalar-relational,
-                                each tied to the functional one by
-                                equivalence theorems (`--encodings`
-                                selects which; a module of several atoms
-                                has the functional one alone)
+  System.lean, System/          the module in five encodings: functional,
+                                module (a `Relational.Module`), relational,
+                                scalar and scalar-relational, each tied to
+                                the functional one by equivalence theorems
+                                (`--encodings` selects which; a module of
+                                several atoms has the functional and module
+                                ones alone)
   Certificate/Data.lean         the certificate: init_pre, update_pre, P,
                                 inv, ranking
   Certificate/Module.lean       RM and lts, the module as a ReactiveTS and
@@ -82,7 +83,7 @@ directory of that repository.
 | Package | Library | Modules | Contents |
 |---------|---------|---------|----------|
 | `ReactLib` | `Spec` | `Spec.LTL` | LTL formulas and their semantics |
-| | `Relational` | `Relational.Mat`, `.Basic`, `.ReactiveTS`, `.ProofRules` | matrices, transition systems, `ReactiveTS`, the proof rules (`rule_globally`, `rule_buchi`) |
+| | `Relational` | `Relational.Mat`, `.Basic`, `.ReactiveTS`, `.Module`, `.Semantics`, `.ProofRules` | matrices, transition systems, `ReactiveTS`, reactive modules of atoms (`Relational.Module`) and their rounds and runs, the proof rules (`rule_globally`, `rule_buchi`) |
 | `LeanAI` | `LeanAI` | `LeanAI.*` | the `ai_solve` tactic |
 
 By default they are git requires at `project/lakefile.py`'s
@@ -176,8 +177,8 @@ A **`Module`** is the top-level object.  It has:
   variables and the next values of the variables it *awaits*. The module
   keeps its atoms in an order consistent with the await relation: an atom
   comes after every atom whose variables it awaits. Only the functional
-  encoding composes several atoms; every other encoding takes a module of
-  one (`LeanContext.atom` refuses any other).
+  and module encodings compose several atoms; every other encoding takes a
+  module of one (`LeanContext.atom` refuses any other).
 
 A **`Wire`** carries a `Sort` (`Bool`, `Int`, `Real`, `BitVec`) and a shape,
 always 2-D here: `[1, 1]` = scalar, `[1, n]` = row vector, `[m, n]` = matrix.
@@ -200,7 +201,7 @@ layer.
 | `core/` | The vocabulary every layer is written in, importing nothing of `reactor_lean`: `certificate` (`Claim`, `Certificate` as SMT-LIB, `LeanAnswer` for an answer that is Lean only), `errors` (`Refused`, the error a run is refused with), `options` (`Opt`, an option an input format declares), `encodings` (the encodings' names, as `--encodings` takes them) |
 | `lowering/` | What every backend reads of a module besides its terms: `sorts` (sorts and shapes of wires, and the Lean types they print as), `elements` (tuple accessors and `flat_layout`, the row-major element order every scalar encoding shares), `values` (a constant as the exact number every backend states), `ops` (the op table: one row per theory variant, one column per backend) |
 | `artifacts/` | The project's `artifacts/`, what a run leaves for the next: `store` (`ArtifactStore`, `Artifact`) |
-| `codegen/` | The module as Lean text, never importing cvc5: `context` (`LeanContext`, what every encoding of one module shares), `literals` (constants as Lean text, `ConstantRegistry`), `terms` (term lists → functional `let`-binding bodies, and `lean_gaps`), `encodings/` (`ModuleToLean4` and one module per encoding: `functional`, `scalar`, `relational`; `skeleton`, the shape every relational encoding has, and `common`, what the scalar ones share) |
+| `codegen/` | The module as Lean text, never importing cvc5: `context` (`LeanContext`, what every encoding of one module shares), `literals` (constants as Lean text, `ConstantRegistry`), `terms` (term lists → functional `let`-binding bodies, and `lean_gaps`), `encodings/` (`ModuleToLean4` and one module per encoding: `functional`, `module`, `scalar`, `relational`; `skeleton`, the shape every relational encoding has, and `common`, what the scalar ones share) |
 | `parse/` | Reading a predicate's text, never importing cvc5: `dsl` (the Python predicate syntax, walked over whichever terms a parser hands it), `sexpr` and `smtlib` (SMT-LIB into reactor's terms), `formula` (`Formula`, a predicate in reactor's terms), `native` (the native parser: `NativeParser`, `read_predicates`); `PARSERS` names the two a run picks from |
 | `smt/` | The module in cvc5, which the certificate's predicates are read against: `encode` (the encoder), `encoding` (`ModuleEncoding`, the run's one encoding, over `module.ModuleSMT`), `predicates` (`PredicateParser`), `queries` (`ModuleQueries`, the claim and certificate parsed, and `predicate_terms`), `terms` (walks over terms) |
 | `project/` | The generated project on disk: `names` (the files and modules it is made of), `templates` (the Jinja environment), `lakefile` (its dependencies), `lake_cache` (the built packages it can share), `main_lean` (the `--executable` program), and `scaffold`, which writes it (`create_project`, the `ENCODINGS` table), the certificate's files as the text it is handed |
@@ -307,6 +308,32 @@ atoms. An awaited input is read from `extl_n`, as in a module of one atom.
 
 ---
 
+## The module encoding (`codegen/encodings/module.py`)
+
+`System/Module.lean` is the module as ReactLib's reactive module,
+`Relational.Module`, whose semantics is the functional encoding's: the
+module and its atoms as Lean data, to take apart, compose and reason about,
+with the theorems that tie it to `init`, `update` and so to `RM`. All of it
+in the namespace `Reactive`:
+
+| Name | What it is |
+|---|---|
+| `Name`, `Dom` | one constructor per variable, `s<i>` the state variable `i` and `e<i>` the input `i` (`ctrl` and `extl` order, the SMT names), and the type of each |
+| `ctrlOf s`, `extlOf s` | the state `s : State Dom` as the tuples `init` and `update` take |
+| `atom<i>` | atom `i` of the module's order, an `Atom.ofFun` over the sets `atom<i>_await`, `_read`, `_write` (the atom's own), whose functions are the functional encoding's (`Atom<i>.init`/`update`, or `init`/`update` for a module of one atom) applied to what it reads and awaits, `default` for the rest |
+| `atom<i>_init`, `atom<i>_update` | its rounds, said in those functions: ReactLib's `Atom.ofFun_init`/`_update`, then by definition, which is what says the atom reads and awaits nothing outside its sets |
+| `module`, `wf` | the `Relational.Module` (`intf`, `extl`, `priv`, the atoms in order), and its well-formedness: the set conditions by `decide`, acyclicity by ReactLib's `Atom.acyclic_of_rank` from `rank`, which every await decreases |
+| `initRound_iff`, `updateRound_iff` | `module.InitRound s ↔ ctrlOf s = init (extlOf s)` and `module.UpdateRound s s' ↔ ctrlOf s' = update (ctrlOf s) (extlOf s) (extlOf s')`: the latched inputs are those of the state before |
+| `rts`, `run_traces` | `rts init_pre update_pre`, the `ReactiveTS` the certificate's `RM` is, and: a run of `module` whose inputs meet the preconditions is, on its state variables, a trace of it (ReactLib's `Module.Run.reactiveTS_traces`) |
+
+Each atom's sets are named definitions rather than `Finset` literals
+written where they are used: Lean holds two copies of one literal equal by
+evaluating them, which for a few elements is past its limits. The proofs are
+printed for the module at hand; `tests/lean/test_lean_module.py` elaborates
+them for every module of the corpus.
+
+---
+
 ## Encoding 2 — Scalar (`codegen/terms.py`, `codegen/encodings/scalar.py`)
 
 `translate_terms_scalar` is like `translate_terms_lean` but uses bare scalar types
@@ -370,6 +397,7 @@ The main entry point.  Accepts a `Module` or a pre-built `LeanContext`.
 | Method | Returns |
 |--------|---------|
 | `to_lean_functional()` | Constants block + `init`/`update` defs (`System/System.lean`) |
+| `to_lean_module()` | `namespace Reactive`, the module as a `Relational.Module` and its rounds proved to be `init`'s and `update`'s (`System/Module.lean`) |
 | `to_lean_mat_rel()` | `namespace Rel`, the matrix-domain relational encoding (`System/Rel.lean`) |
 | `to_lean_scalar()` | `namespace Scalar` block + equivalence theorems (`System/Scalar.lean`) |
 | `to_lean_rel()` | `namespace ScalarRel`, the scalar-relational encoding (`System/ScalarRel.lean`) |
@@ -386,7 +414,8 @@ The project writes one file per row of `project.scaffold.ENCODINGS` that
 every row a selected one imports), each printed by the row's `producer`, a
 `ModuleToLean4.to_lean_*` method. A row's `name` is what `--encodings` calls
 it (`core.encodings`). A module of several atoms is refused, before anything
-is written, unless the functional row is the only one selected.
+is written, unless the rows selected all compose atoms (`composes_atoms`:
+the functional and module ones).
 
 ---
 
@@ -644,7 +673,7 @@ The distinction is not academic. Countdown starts at 100 and counts down, so
 | `--invariant` | — | SMT-LIB 2 Bool invariant |
 | `--ranking` | — | SMT-LIB 2 Int ranking (`--buchi` only) |
 | `--cert-file` | — | Write standalone `.lean` file instead of full project |
-| `--encodings` | all | The encodings written, comma-separated, of `functional`, `relational`, `scalar`, `scalar-relational`; the functional one is always written. A module of several atoms needs `--encodings functional` |
+| `--encodings` | all | The encodings written, comma-separated, of `functional`, `module`, `relational`, `scalar`, `scalar-relational`; the functional one is always written. A module of several atoms needs `--encodings functional,module` (or `functional`) |
 | `--artifacts` | `use` | What to do with the project's `artifacts/`: `use` lets the run read what an earlier run left, `ignore` reads nothing back but still records, `reset` empties it first |
 
 ### Writing a claim on the command line

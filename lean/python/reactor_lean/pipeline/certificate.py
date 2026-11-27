@@ -120,7 +120,7 @@ def lean_context(module, encodings: "Iterable[str] | None" = None) -> LeanContex
     An operator with no Lean form is a fact about the module, said here
     once, before any of the project exists, rather than as a missing table
     cell in the middle of a file. So is a module of several atoms, which
-    only the functional encoding composes.
+    only the functional and the module encodings compose.
 
     Built once and threaded: its discovery pass interns every init/update
     term, and everything that prints the module needs the same one.

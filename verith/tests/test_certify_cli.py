@@ -231,23 +231,23 @@ def test_a_project_carries_every_encoding():
         r = run_certify(str(COUNTER_MODULE), "-o", tmpdir, "-p", "Encodings")
         assert r.returncode == 0, r.stderr
         root = (project / "System.lean").read_text()
-        for name in ("System", "Rel", "Scalar", "ScalarRel"):
+        for name in ("System", "Module", "Rel", "Scalar", "ScalarRel"):
             assert (project / "System" / f"{name}.lean").exists(), name
             assert f"import System.{name}\n" in root, name
 
 
 def test_a_module_of_several_atoms_is_refused_before_writing(tmp_path):
-    """Only the functional encoding composes atoms, and a `certify` project
-    carries others. The refusal points at `reactor`, not at an
+    """Only the functional and module encodings compose atoms, and a
+    `certify` project carries others. The refusal points at `reactor`, not at an
     `--encodings` flag `certify` does not have."""
     composed = VERITH_ROOT.parent / "lean" / "tests" / "fixtures" / "composed.py"
     r = run_certify(str(composed), "-o", str(tmp_path), "-p", "C")
     assert r.returncode == 1
     assert r.stderr.strip().splitlines()[-1] == (
-        "error: the module has 3 atoms, and only the functional encoding "
-        "composes atoms: the other encodings a certify project carries take "
-        "a module of one. `reactor --encodings functional` writes the "
-        "functional encoding alone")
+        "error: the module has 3 atoms, and only the functional and module "
+        "encodings compose atoms: the other encodings a certify project "
+        "carries take a module of one. `reactor --encodings "
+        "functional,module` writes those two alone")
     assert not (tmp_path / "C").exists()
 
 

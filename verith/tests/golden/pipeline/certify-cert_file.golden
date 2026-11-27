@@ -26,6 +26,7 @@ Tensor[[1, 1], Int64]
 .. --invariant, in internal names: (and (>= s0 0) (<= s0 9))
 .. --ranking, in internal names: (ite (= s0 0) 0 (- 10 s0))
 Wrote standalone certificate: <OUT>/Cert.lean
+Wrote module encoding: <OUT>/CertModule.lean
 Wrote matrix-domain relational encoding: <OUT>/CertRel.lean
 Wrote scalar encoding: <OUT>/CertScalar.lean
 Wrote scalar-relational encoding: <OUT>/CertScalarRel.lean

@@ -16,7 +16,7 @@ from reactor import Module
 
 from ..codegen.context import LeanContext
 from ..codegen.encodings import ModuleToLean4
-from ..core.encodings import ENCODING_NAMES, FUNCTIONAL
+from ..core.encodings import ENCODING_NAMES, FUNCTIONAL, MODULE
 from ..core.errors import Refused
 from .names import LINTERS_OFF, SYSTEM_LAYOUT, Layout
 from .templates import render
@@ -57,7 +57,7 @@ class Encoding:
     name: str                   # what `--encodings` calls it (`core.encodings`)
     suffix: str                 # appended to the layout's base; "" is the base
     title: str                  # header comment, "<title> of reactive module `X`"
-    core: str                   # the `Relational` module it is written against
+    core: tuple[str, ...]       # the `Relational` modules it is written against
     needs: tuple[str, ...]      # suffixes of the sibling encodings it imports
     producer: Callable[[ModuleToLean4], str]    # prints it
     cert_file: bool = True      # also written by the `--cert-file` route
@@ -71,15 +71,20 @@ ENCODINGS: tuple[Encoding, ...] = (
     # `--cert-file` route gets its own copy inlined into the standalone
     # certificate by `generate_standalone_cert_lean`, so it is not written
     # again there.
-    Encoding(FUNCTIONAL, "", "Functional encoding", "Relational.Mat", (),
+    Encoding(FUNCTIONAL, "", "Functional encoding", ("Relational.Mat",), (),
              ModuleToLean4.to_lean_functional, cert_file=False,
              composes_atoms=True),
+    # The module as a `Relational.Module` whose rounds are the functional
+    # encoding's.
+    Encoding(MODULE, "Module", "Module encoding",
+             ("Relational.Semantics", "Relational.ReactiveTS"), ("",),
+             ModuleToLean4.to_lean_module, composes_atoms=True),
     Encoding("relational", "Rel", "Matrix-domain relational encoding",
-             "Relational.Basic", ("",), ModuleToLean4.to_lean_mat_rel),
-    Encoding("scalar", "Scalar", "Scalar encoding", "Relational.Basic", ("",),
+             ("Relational.Basic",), ("",), ModuleToLean4.to_lean_mat_rel),
+    Encoding("scalar", "Scalar", "Scalar encoding", ("Relational.Basic",), ("",),
              ModuleToLean4.to_lean_scalar),
     Encoding("scalar-relational", "ScalarRel", "Scalar-relational encoding",
-             "Relational.Basic", ("Scalar",), ModuleToLean4.to_lean_rel),
+             ("Relational.Basic",), ("Scalar",), ModuleToLean4.to_lean_rel),
 )
 
 
@@ -91,8 +96,9 @@ def selected_encodings(
     a selected one imports.
 
     Refused when the module has no form in one of them, before anything is
-    written: a module of several atoms is written in the functional
-    encoding alone, which is the only one that composes atoms yet.
+    written: a module of several atoms is written only in the encodings
+    that compose atoms (`Encoding.composes_atoms`): the functional one and
+    the module one.
     """
     names = tuple(names)
     by_name = {e.name: e for e in ENCODINGS}
@@ -113,11 +119,12 @@ def selected_encodings(
     if len(ctx.atoms) != 1:
         cannot = [e.name for e in rows if not e.composes_atoms]
         if cannot:
+            can = [e.name for e in ENCODINGS if e.composes_atoms]
             raise Refused(
                 f"the module has {len(ctx.atoms)} atoms, and only its "
-                f"functional encoding composes atoms: it has no "
-                f"{', '.join(cannot)} encoding. Select the functional one "
-                f"alone (`--encodings {FUNCTIONAL}`)", flag="--encodings")
+                f"{' and '.join(can)} encodings compose atoms: it has no "
+                f"{', '.join(cannot)} encoding. Select those alone "
+                f"(`--encodings {','.join(can)}`)", flag="--encodings")
     return rows
 
 
@@ -125,7 +132,7 @@ def write_encoding(
     enc: Encoding, m2l: "ModuleToLean4", layout: Layout, module_name: str
 ) -> Path:
     """Print one encoding and write it where `layout` says it goes."""
-    imports = [enc.core] + [layout.lean_module(s) for s in enc.needs]
+    imports = [*enc.core] + [layout.lean_module(s) for s in enc.needs]
     path = layout.path(enc.suffix)
     path.write_text(
         f"/- {enc.title} of reactive module `{module_name}` -/\n"

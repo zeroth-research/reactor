@@ -10,7 +10,11 @@ from __future__ import annotations
 # written, whatever is selected.
 FUNCTIONAL = "functional"
 
+# The module as a `Relational.Module`, its rounds proved to be the
+# functional encoding's.
+MODULE = "module"
+
 # In the table's order.
 ENCODING_NAMES: tuple[str, ...] = (
-    FUNCTIONAL, "relational", "scalar", "scalar-relational",
+    FUNCTIONAL, MODULE, "relational", "scalar", "scalar-relational",
 )

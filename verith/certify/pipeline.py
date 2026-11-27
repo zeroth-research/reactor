@@ -89,10 +89,10 @@ def main(argv: "list[str] | None" = None) -> None:
         if e.flag == "--encodings":     # a flag `certify` does not have
             raise SystemExit(
                 f"error: the module has {len(list(module.atoms))} atoms, and "
-                "only the functional encoding composes atoms: the other "
-                "encodings a certify project carries take a module of one. "
-                "`reactor --encodings functional` writes the functional "
-                "encoding alone"
+                "only the functional and module encodings compose atoms: the "
+                "other encodings a certify project carries take a module of "
+                "one. `reactor --encodings functional,module` writes those "
+                "two alone"
             ) from e
         raise SystemExit(f"error: {e}") from e
 

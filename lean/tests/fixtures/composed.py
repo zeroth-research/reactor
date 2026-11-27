@@ -11,7 +11,8 @@ accumulator and the input.
 
 `z` is declared first, so the module's state, `(z, x, wrap, y)`, is not in
 the order its atoms run in: `x` and `wrap`, then `y`, then `z`. Only the
-functional encoding composes atoms: `reactor --encodings functional`.
+functional and module encodings compose atoms:
+`reactor --encodings functional,module`.
 """
 import torch
 from reactor import Bool, Int, Module, Term, Var, Wire, X, tensor

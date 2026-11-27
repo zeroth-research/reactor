@@ -17,8 +17,9 @@ class LeanContext:
 
     `atoms` are the module's atoms in the order it keeps them, which is
     consistent with its await relation: an atom comes after every atom whose
-    variables it awaits. The functional encoding composes them; every other
-    encoding is written over the module's one atom (`atom`).
+    variables it awaits. The functional and the module encodings compose
+    them; every other encoding is written over the module's one atom
+    (`atom`).
     """
 
     def __init__(self, module: Module):
@@ -57,13 +58,13 @@ class LeanContext:
     @property
     def atom(self) -> Atom:
         """The module's one atom, which every encoding but the functional
-        one is written over. Refused for a module of any other number: the
-        functional encoding is the only one that composes atoms yet."""
+        and the module ones is written over. Refused for a module of any
+        other number: those two are the only ones that compose atoms yet."""
         if len(self.atoms) != 1:
             raise Refused(
                 f"the module has {len(self.atoms)} atoms, and only its "
-                "functional encoding composes atoms: the other encodings "
-                "take a module of one"
+                "functional and module encodings compose atoms: the other "
+                "encodings take a module of one"
             )
         return self.atoms[0]
 

@@ -1,8 +1,10 @@
 """The module's Lean encodings: ``ModuleToLean4``, one submodule per encoding.
 
 `functional`, `scalar` and `relational` (the matrix and the scalar
-relational ones) are the encodings; `skeleton` is the shape every
-relational encoding has, and `common` what the scalar ones share.
+relational ones) are the encodings, and `module` the module as a
+`Relational.Module` whose semantics is the functional one; `skeleton` is
+the shape every relational encoding has, and `common` what the scalar ones
+share.
 """
 
 from functools import cached_property
@@ -11,6 +13,7 @@ from reactor_lean.codegen.context import LeanContext
 from reactor import Module
 
 from reactor_lean.codegen.encodings.functional import atom_to_lean_functional, constants_block
+from reactor_lean.codegen.encodings.module import to_lean_module as _to_lean_module
 from reactor_lean.codegen.encodings.scalar import (
     atom_to_lean_scalar as _atom_to_lean_scalar,
     to_lean_scalar_equiv as _to_lean_scalar_equiv,
@@ -53,6 +56,15 @@ class ModuleToLean4:
         return "{}\n\n{}".format(
             constants_block(self.ctx), atom_to_lean_functional(self.ctx)
         )
+
+    # ------------------------------------------------------------------
+    # Relational.Module
+    # ------------------------------------------------------------------
+
+    def to_lean_module(self) -> str:
+        """The module as a `Relational.Module` (``namespace Reactive``), and
+        the theorems that its rounds are those of `init` and `update`."""
+        return _to_lean_module(self.ctx)
 
     # ------------------------------------------------------------------
     # Scalar encoding

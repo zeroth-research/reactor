@@ -11,6 +11,9 @@ Targets verified by the slow tests:
   Certs              — the encodings and the scalar Argmax (generated)
   ManualTests        — the semantics of Relational.Mat's reductions (manually written)
 
+The module encoding of every module of the corpus is elaborated by
+`test_lean_module.py`.
+
 And a generated project with an executable, built and run.
 """
 import subprocess
@@ -144,10 +147,11 @@ def test_generated_executable_builds_and_runs(
 
 @pytest.mark.slow
 def test_a_module_of_several_atoms_builds_and_runs(generate_lean_files):
-    """`reactor --encodings functional -x` on a module of three atoms: the
-    functional encoding, each atom's functions and the module's composed of
-    them, builds, and so does the certificate stated over it; and the
-    program runs the rounds the interpreter does.
+    """`reactor --encodings functional,module -x` on a module of three
+    atoms: the functional encoding, each atom's functions and the module's
+    composed of them, builds, and so does the certificate stated over it,
+    and the module encoding, its proofs without a `sorry`; and the program
+    runs the rounds the interpreter does.
 
     The state `(z, x, wrap, y)` is printed in that order, one round a line,
     each round reading the input `e`: `x` counts modulo 4 and `wrap` says it
@@ -155,7 +159,7 @@ def test_a_module_of_several_atoms_builds_and_runs(generate_lean_files):
     """
     from reactor_lean.codegen.context import LeanContext
     from reactor_lean.core.certificate import Certificate, Claim
-    from reactor_lean.core.encodings import FUNCTIONAL
+    from reactor_lean.core.encodings import FUNCTIONAL, MODULE
     from reactor_lean.pipeline.certificate import render
     from reactor_lean.project.lake_cache import LAKE_CACHE_ENV, lake_cache
     from reactor_lean.project.lakefile import REACTLIB_ENV, reactlib_checkout
@@ -174,7 +178,8 @@ def test_a_module_of_several_atoms_builds_and_runs(generate_lean_files):
         project = create_project(
             Path(tmp), module, "Rea", executable=True,
             certificate=certificate_files(LeanContext(module), lean_cert),
-            encodings=(FUNCTIONAL,))
+            encodings=(FUNCTIONAL, MODULE))
+        assert (project / "System" / "Module.lean").exists()
         for target in ([], ["main"]):
             build = subprocess.run(["lake", "build", *target], cwd=project,
                                    capture_output=True, text=True, timeout=900)
@@ -182,6 +187,8 @@ def test_a_module_of_several_atoms_builds_and_runs(generate_lean_files):
                 f"lake build {' '.join(target)} failed.\n"
                 f"stdout:\n{build.stdout[-2000:]}\nstderr:\n{build.stderr[-800:]}"
             )
+            assert not [ln for ln in build.stdout.splitlines()
+                        if "sorry" in ln and "System/" in ln], build.stdout
         run = subprocess.run(
             [str(project / ".lake" / "build" / "bin" / "main")],
             input="1\n2\n3\n4\n5\n", capture_output=True, text=True, timeout=60,

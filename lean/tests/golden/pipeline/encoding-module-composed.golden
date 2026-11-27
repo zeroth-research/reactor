@@ -1,0 +1,236 @@
+noncomputable section
+
+namespace Reactive
+
+open Relational
+
+/-- The module's variables: `s<i>` its state variable `i`, `e<i>` its input `i`. -/
+inductive Name where
+  | s0 | s1 | s2 | s3 | e0
+  deriving DecidableEq, Repr
+
+/-- The type of each variable's values. -/
+abbrev Dom : Name → Type
+  | .s0 => (Matrix (Fin 1) (Fin 1) Int)
+  | .s1 => (Matrix (Fin 1) (Fin 1) Int)
+  | .s2 => (Matrix (Fin 1) (Fin 1) Bool)
+  | .s3 => (Matrix (Fin 1) (Fin 1) Int)
+  | .e0 => (Matrix (Fin 1) (Fin 1) Int)
+
+/-- The state variables of `s`, as `init` and `update` take and give them. -/
+def ctrlOf (s : State Dom) : (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Bool) × (Matrix (Fin 1) (Fin 1) Int) :=
+  (s .s0, s .s1, s .s2, s .s3)
+
+theorem ctrlOf_eq (s : State Dom) : ctrlOf s = (s .s0, s .s1, s .s2, s .s3) := rfl
+
+/-- The inputs of `s`, as `init` and `update` take them. -/
+def extlOf (s : State Dom) : (Matrix (Fin 1) (Fin 1) Int) :=
+  (s .e0)
+
+/-! ### Atom 0 -/
+
+def atom0_await : Finset Name := ∅
+def atom0_read : Finset Name := {.s1}
+def atom0_write : Finset Name := {.s1, .s2}
+
+/-- The valuation of what atom 0 writes that its functions give. -/
+def atom0_out (o : (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Bool)) : Val Dom atom0_write
+  | ⟨.s1, _⟩ => o.1
+  | ⟨.s2, _⟩ => o.2
+  | ⟨.s0, h⟩ => absurd h (by decide)
+  | ⟨.s3, h⟩ => absurd h (by decide)
+  | ⟨.e0, h⟩ => absurd h (by decide)
+
+theorem atom0_out_iff (s : State Dom) (o : (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Bool)) :
+    s.restrict atom0_write = atom0_out o ↔ (s .s1, s .s2) = o := by
+  constructor
+  · intro h
+    exact Prod.ext (congrFun h ⟨.s1, by decide⟩) ((congrFun h ⟨.s2, by decide⟩))
+  · rintro rfl
+    funext ⟨x, hx⟩
+    cases x <;> first | rfl | exact absurd hx (by decide)
+
+/-- Atom 0. -/
+def atom0 : Atom Dom := Atom.ofFun
+  atom0_await atom0_read atom0_write
+  (fun a => atom0_out (_root_.Atom0.init default))
+  (fun r a => atom0_out (_root_.Atom0.update (default, (r ⟨Name.s1, by decide⟩), default, default) default default))
+  (by decide)
+
+theorem atom0_init (s : State Dom) :
+    atom0.Init s ↔ (s .s1, s .s2) = _root_.Atom0.init (extlOf s) :=
+  (Atom.ofFun_init s).trans (atom0_out_iff s _)
+
+theorem atom0_update (s s' : State Dom) :
+    atom0.Update s s' ↔ (s' .s1, s' .s2) = _root_.Atom0.update (ctrlOf s) (extlOf s) (extlOf s') :=
+  (Atom.ofFun_update s s').trans (atom0_out_iff s' _)
+
+/-! ### Atom 1 -/
+
+def atom1_await : Finset Name := {.s1}
+def atom1_read : Finset Name := {.s3}
+def atom1_write : Finset Name := {.s3}
+
+/-- The valuation of what atom 1 writes that its functions give. -/
+def atom1_out (o : (Matrix (Fin 1) (Fin 1) Int)) : Val Dom atom1_write
+  | ⟨.s3, _⟩ => o
+  | ⟨.s0, h⟩ => absurd h (by decide)
+  | ⟨.s1, h⟩ => absurd h (by decide)
+  | ⟨.s2, h⟩ => absurd h (by decide)
+  | ⟨.e0, h⟩ => absurd h (by decide)
+
+theorem atom1_out_iff (s : State Dom) (o : (Matrix (Fin 1) (Fin 1) Int)) :
+    s.restrict atom1_write = atom1_out o ↔ (s .s3) = o := by
+  constructor
+  · intro h
+    exact (congrFun h ⟨.s3, by decide⟩)
+  · rintro rfl
+    funext ⟨x, hx⟩
+    cases x <;> first | rfl | exact absurd hx (by decide)
+
+/-- Atom 1. -/
+def atom1 : Atom Dom := Atom.ofFun
+  atom1_await atom1_read atom1_write
+  (fun a => atom1_out (_root_.Atom1.init default (a ⟨Name.s1, by decide⟩)))
+  (fun r a => atom1_out (_root_.Atom1.update (default, default, default, (r ⟨Name.s3, by decide⟩)) default default (a ⟨Name.s1, by decide⟩)))
+  (by decide)
+
+theorem atom1_init (s : State Dom) :
+    atom1.Init s ↔ (s .s3) = _root_.Atom1.init (extlOf s) (s .s1) :=
+  (Atom.ofFun_init s).trans (atom1_out_iff s _)
+
+theorem atom1_update (s s' : State Dom) :
+    atom1.Update s s' ↔ (s' .s3) = _root_.Atom1.update (ctrlOf s) (extlOf s) (extlOf s') (s' .s1) :=
+  (Atom.ofFun_update s s').trans (atom1_out_iff s' _)
+
+/-! ### Atom 2 -/
+
+def atom2_await : Finset Name := {.s3, .e0}
+def atom2_read : Finset Name := ∅
+def atom2_write : Finset Name := {.s0}
+
+/-- The valuation of what atom 2 writes that its functions give. -/
+def atom2_out (o : (Matrix (Fin 1) (Fin 1) Int)) : Val Dom atom2_write
+  | ⟨.s0, _⟩ => o
+  | ⟨.s1, h⟩ => absurd h (by decide)
+  | ⟨.s2, h⟩ => absurd h (by decide)
+  | ⟨.s3, h⟩ => absurd h (by decide)
+  | ⟨.e0, h⟩ => absurd h (by decide)
+
+theorem atom2_out_iff (s : State Dom) (o : (Matrix (Fin 1) (Fin 1) Int)) :
+    s.restrict atom2_write = atom2_out o ↔ (s .s0) = o := by
+  constructor
+  · intro h
+    exact (congrFun h ⟨.s0, by decide⟩)
+  · rintro rfl
+    funext ⟨x, hx⟩
+    cases x <;> first | rfl | exact absurd hx (by decide)
+
+/-- Atom 2. -/
+def atom2 : Atom Dom := Atom.ofFun
+  atom2_await atom2_read atom2_write
+  (fun a => atom2_out (_root_.Atom2.init (a ⟨Name.e0, by decide⟩) (a ⟨Name.s3, by decide⟩)))
+  (fun r a => atom2_out (_root_.Atom2.update (default, default, default, default) default (a ⟨Name.e0, by decide⟩) (a ⟨Name.s3, by decide⟩)))
+  (by decide)
+
+theorem atom2_init (s : State Dom) :
+    atom2.Init s ↔ (s .s0) = _root_.Atom2.init (extlOf s) (s .s3) :=
+  (Atom.ofFun_init s).trans (atom2_out_iff s _)
+
+theorem atom2_update (s s' : State Dom) :
+    atom2.Update s s' ↔ (s' .s0) = _root_.Atom2.update (ctrlOf s) (extlOf s) (extlOf s') (s' .s3) :=
+  (Atom.ofFun_update s s').trans (atom2_out_iff s' _)
+
+/-! ### The module -/
+
+def module : Relational.Module Dom where
+  intf := {.s0, .s1, .s2, .s3}
+  extl := {.e0}
+  priv := ∅
+  atoms := [atom0, atom1, atom2]
+
+/-- A variable's place in the order the atoms run in: an input's is 0,
+    and atom `i` writes variables of place `i + 1`. -/
+def rank : Name → Nat
+  | .s0 => 3
+  | .s1 => 1
+  | .s2 => 1
+  | .s3 => 2
+  | .e0 => 0
+
+theorem wf : module.WF where
+  intf_extl_disj := by decide
+  intf_priv_disj := by decide
+  extl_priv_disj := by decide
+  atoms_pairwise_disj := by decide
+  atoms_cov_ctrl := by decide
+  atoms_write_ctrl := by decide
+  atoms_read_vars := by decide
+  atoms_await_vars := by decide
+  -- each atom awaits only variables of a lower place than those it writes
+  atoms_acyclic := Atom.acyclic_of_rank rank (by decide)
+
+/-- The initial rounds of `module` are those of `init`. -/
+theorem initRound_iff (s : State Dom) :
+    module.InitRound s ↔ ctrlOf s = _root_.init (extlOf s) := by
+  rw [ctrlOf_eq s]
+  simp only [Relational.Module.InitRound, module, List.forall_mem_cons, List.not_mem_nil,
+    IsEmpty.forall_iff, implies_true, and_true, atom0_init, atom1_init, atom2_init]
+  rw [_root_.init]
+  constructor
+  · rintro ⟨h0, h1, h2⟩
+    simp only [← h0, ← h1, ← h2]
+  · intro h
+    simp only [Prod.mk.injEq] at h
+    obtain ⟨c0, c1, c2, c3⟩ := h
+    simp only [c0, c1, c2, c3, Prod.mk.eta, and_self]
+
+/-- The update rounds of `module` are those of `update`, the
+    inputs read in the round before being those of `s`. -/
+theorem updateRound_iff (s s' : State Dom) :
+    module.UpdateRound s s' ↔ ctrlOf s' = _root_.update (ctrlOf s) (extlOf s) (extlOf s') := by
+  rw [ctrlOf_eq s']
+  simp only [Relational.Module.UpdateRound, module, List.forall_mem_cons, List.not_mem_nil,
+    IsEmpty.forall_iff, implies_true, and_true, atom0_update, atom1_update, atom2_update]
+  rw [_root_.update]
+  constructor
+  · rintro ⟨h0, h1, h2⟩
+    simp only [← h0, ← h1, ← h2]
+  · intro h
+    simp only [Prod.mk.injEq] at h
+    obtain ⟨c0, c1, c2, c3⟩ := h
+    simp only [c0, c1, c2, c3, Prod.mk.eta, and_self]
+
+/-- The module as a `ReactiveTS` over `init` and `update`, its inputs
+    constrained by `init_pre` and `update_pre`: the certificate's `RM` is
+    `rts init_pre update_pre`. -/
+def rts (init_pre update_pre : ((Matrix (Fin 1) (Fin 1) Int)) × ((Matrix (Fin 1) (Fin 1) Int)) → Prop) :
+    ReactiveTS (((Matrix (Fin 1) (Fin 1) Int)) × ((Matrix (Fin 1) (Fin 1) Int))) ((Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Int) × (Matrix (Fin 1) (Fin 1) Bool) × (Matrix (Fin 1) (Fin 1) Int)) where
+  init e := _root_.init e.2
+  update x e := _root_.update x e.1 e.2
+  init_pre := init_pre
+  update_pre := update_pre
+
+theorem rts_init (init_pre update_pre e) :
+    (rts init_pre update_pre).init e = _root_.init e.2 := by
+  simp only [rts]
+
+theorem rts_update (init_pre update_pre x e) :
+    (rts init_pre update_pre).update x e = _root_.update x e.1 e.2 := by
+  simp only [rts]
+
+/-- A run of `module` whose inputs meet `init_pre` and `update_pre` is, on
+    its state variables, a trace of `rts init_pre update_pre`. -/
+theorem run_traces {init_pre update_pre} {ss : Cslib.ωSequence (State Dom)}
+    (h : module.Run ss) (h0 : ∃ el, init_pre (el, extlOf (ss 0)))
+    (hi : ∀ i, update_pre (extlOf (ss i), extlOf (ss (i + 1)))) :
+    (rts init_pre update_pre).traces (ss.map ctrlOf) := by
+  obtain ⟨el, h0⟩ := h0
+  refine h.reactiveTS_traces _ ctrlOf (fun s => (el, extlOf s))
+    (fun s s' => (extlOf s, extlOf s')) ?_ ?_ h0 hi
+  · intro s hs; rw [rts_init]; exact (initRound_iff s).mp hs
+  · intro s s' hs; rw [rts_update]; exact (updateRound_iff s s').mp hs
+
+end Reactive
+
+end
