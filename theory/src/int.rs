@@ -31,7 +31,7 @@ information to compute its [`Boundary`]:
 
 The comparisons are those of SMT-LIB2's `Ints` theory, `<`, `<=`, `>` and
 `>=`, together with `=` and `distinct` of the Core theory, lifted pointwise
-to matrices. As they write booleans, their boundary is in [`Sort`], the
+to matrices. As they write booleans, their boundary is in [`Ints`], the
 sorts of the theory, rather than in [`Int`].
 */
 
@@ -116,7 +116,7 @@ impl Differentiable for Int {
 /// int matrices, and the booleans of the Core theory, which comparisons
 /// write, together with [`Real0`]. It is the subset
 /// [`Ints`](crate::Ints) of the sorts of all theories.
-pub use crate::Ints as Sort;
+use crate::Ints;
 
 /// A constant integer matrix literal, held in a tensor of type `T`.
 #[derive(Debug)]
@@ -534,7 +534,7 @@ pub struct Ne {
 }
 
 /// The operations of the theory of integer arithmetic, SMT-LIB2's `Ints`,
-/// with their boundary in [`Sort`].
+/// with their boundary in [`Ints`].
 ///
 /// `subenum` defines [`LIA`], the linear ones: all but `Mul`, `Div`, `Mod`
 /// and `MatMul`, which multiply or divide two variables. It also generates
@@ -722,26 +722,26 @@ impl<T: fmt::Display> fmt::Display for LIA<T> {
     }
 }
 
-impl<T: Matrix> Boundary<Sort> for NIA<T> {
-    fn dom(&self) -> Poly<Sort> {
+impl<T: Matrix> Boundary<Ints> for NIA<T> {
+    fn dom(&self) -> Poly<Ints> {
         match self {
-            NIA::Num(op) => op.dom().map(Sort::from),
-            NIA::Scale(op) => op.dom().map(Sort::from),
-            NIA::Add(op) => op.dom().map(Sort::from),
-            NIA::Sub(op) => op.dom().map(Sort::from),
-            NIA::Mul(op) => op.dom().map(Sort::from),
-            NIA::Div(op) => op.dom().map(Sort::from),
-            NIA::Mod(op) => op.dom().map(Sort::from),
-            NIA::Linear(op) => op.dom().map(Sort::from),
-            NIA::Affine(op) => op.dom().map(Sort::from),
-            NIA::ReLU(op) => op.dom().map(Sort::from),
-            NIA::Abs(op) => op.dom().map(Sort::from),
-            NIA::Neg(op) => op.dom().map(Sort::from),
-            NIA::Argmax(op) => op.dom().map(Sort::from),
-            NIA::Min(op) => op.dom().map(Sort::from),
-            NIA::Max(op) => op.dom().map(Sort::from),
-            NIA::Transpose(op) => op.dom().map(Sort::from),
-            NIA::MatMul(op) => op.dom().map(Sort::from),
+            NIA::Num(op) => op.dom().map(Ints::from),
+            NIA::Scale(op) => op.dom().map(Ints::from),
+            NIA::Add(op) => op.dom().map(Ints::from),
+            NIA::Sub(op) => op.dom().map(Ints::from),
+            NIA::Mul(op) => op.dom().map(Ints::from),
+            NIA::Div(op) => op.dom().map(Ints::from),
+            NIA::Mod(op) => op.dom().map(Ints::from),
+            NIA::Linear(op) => op.dom().map(Ints::from),
+            NIA::Affine(op) => op.dom().map(Ints::from),
+            NIA::ReLU(op) => op.dom().map(Ints::from),
+            NIA::Abs(op) => op.dom().map(Ints::from),
+            NIA::Neg(op) => op.dom().map(Ints::from),
+            NIA::Argmax(op) => op.dom().map(Ints::from),
+            NIA::Min(op) => op.dom().map(Ints::from),
+            NIA::Max(op) => op.dom().map(Ints::from),
+            NIA::Transpose(op) => op.dom().map(Ints::from),
+            NIA::MatMul(op) => op.dom().map(Ints::from),
             NIA::Lt(op) => op.dom(),
             NIA::Ite(op) => op.dom(),
             NIA::BroadcastIte(op) => op.dom(),
@@ -753,25 +753,25 @@ impl<T: Matrix> Boundary<Sort> for NIA<T> {
         }
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Ints> {
         match self {
-            NIA::Num(op) => op.cod().map(Sort::from),
-            NIA::Scale(op) => op.cod().map(Sort::from),
-            NIA::Add(op) => op.cod().map(Sort::from),
-            NIA::Sub(op) => op.cod().map(Sort::from),
-            NIA::Mul(op) => op.cod().map(Sort::from),
-            NIA::Div(op) => op.cod().map(Sort::from),
-            NIA::Mod(op) => op.cod().map(Sort::from),
-            NIA::Linear(op) => op.cod().map(Sort::from),
-            NIA::Affine(op) => op.cod().map(Sort::from),
-            NIA::ReLU(op) => op.cod().map(Sort::from),
-            NIA::Abs(op) => op.cod().map(Sort::from),
-            NIA::Neg(op) => op.cod().map(Sort::from),
-            NIA::Argmax(op) => op.cod().map(Sort::from),
-            NIA::Min(op) => op.cod().map(Sort::from),
-            NIA::Max(op) => op.cod().map(Sort::from),
-            NIA::Transpose(op) => op.cod().map(Sort::from),
-            NIA::MatMul(op) => op.cod().map(Sort::from),
+            NIA::Num(op) => op.cod().map(Ints::from),
+            NIA::Scale(op) => op.cod().map(Ints::from),
+            NIA::Add(op) => op.cod().map(Ints::from),
+            NIA::Sub(op) => op.cod().map(Ints::from),
+            NIA::Mul(op) => op.cod().map(Ints::from),
+            NIA::Div(op) => op.cod().map(Ints::from),
+            NIA::Mod(op) => op.cod().map(Ints::from),
+            NIA::Linear(op) => op.cod().map(Ints::from),
+            NIA::Affine(op) => op.cod().map(Ints::from),
+            NIA::ReLU(op) => op.cod().map(Ints::from),
+            NIA::Abs(op) => op.cod().map(Ints::from),
+            NIA::Neg(op) => op.cod().map(Ints::from),
+            NIA::Argmax(op) => op.cod().map(Ints::from),
+            NIA::Min(op) => op.cod().map(Ints::from),
+            NIA::Max(op) => op.cod().map(Ints::from),
+            NIA::Transpose(op) => op.cod().map(Ints::from),
+            NIA::MatMul(op) => op.cod().map(Ints::from),
             NIA::Lt(op) => op.cod(),
             NIA::Ite(op) => op.cod(),
             NIA::BroadcastIte(op) => op.cod(),
@@ -783,22 +783,22 @@ impl<T: Matrix> Boundary<Sort> for NIA<T> {
         }
     }
 }
-impl<T: Matrix> Boundary<Sort> for LIA<T> {
-    fn dom(&self) -> Poly<Sort> {
+impl<T: Matrix> Boundary<Ints> for LIA<T> {
+    fn dom(&self) -> Poly<Ints> {
         match self {
-            LIA::Num(op) => op.dom().map(Sort::from),
-            LIA::Scale(op) => op.dom().map(Sort::from),
-            LIA::Add(op) => op.dom().map(Sort::from),
-            LIA::Sub(op) => op.dom().map(Sort::from),
-            LIA::Linear(op) => op.dom().map(Sort::from),
-            LIA::Affine(op) => op.dom().map(Sort::from),
-            LIA::ReLU(op) => op.dom().map(Sort::from),
-            LIA::Abs(op) => op.dom().map(Sort::from),
-            LIA::Neg(op) => op.dom().map(Sort::from),
-            LIA::Argmax(op) => op.dom().map(Sort::from),
-            LIA::Min(op) => op.dom().map(Sort::from),
-            LIA::Max(op) => op.dom().map(Sort::from),
-            LIA::Transpose(op) => op.dom().map(Sort::from),
+            LIA::Num(op) => op.dom().map(Ints::from),
+            LIA::Scale(op) => op.dom().map(Ints::from),
+            LIA::Add(op) => op.dom().map(Ints::from),
+            LIA::Sub(op) => op.dom().map(Ints::from),
+            LIA::Linear(op) => op.dom().map(Ints::from),
+            LIA::Affine(op) => op.dom().map(Ints::from),
+            LIA::ReLU(op) => op.dom().map(Ints::from),
+            LIA::Abs(op) => op.dom().map(Ints::from),
+            LIA::Neg(op) => op.dom().map(Ints::from),
+            LIA::Argmax(op) => op.dom().map(Ints::from),
+            LIA::Min(op) => op.dom().map(Ints::from),
+            LIA::Max(op) => op.dom().map(Ints::from),
+            LIA::Transpose(op) => op.dom().map(Ints::from),
             LIA::Lt(op) => op.dom(),
             LIA::Ite(op) => op.dom(),
             LIA::BroadcastIte(op) => op.dom(),
@@ -810,21 +810,21 @@ impl<T: Matrix> Boundary<Sort> for LIA<T> {
         }
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Ints> {
         match self {
-            LIA::Num(op) => op.cod().map(Sort::from),
-            LIA::Scale(op) => op.cod().map(Sort::from),
-            LIA::Add(op) => op.cod().map(Sort::from),
-            LIA::Sub(op) => op.cod().map(Sort::from),
-            LIA::Linear(op) => op.cod().map(Sort::from),
-            LIA::Affine(op) => op.cod().map(Sort::from),
-            LIA::ReLU(op) => op.cod().map(Sort::from),
-            LIA::Abs(op) => op.cod().map(Sort::from),
-            LIA::Neg(op) => op.cod().map(Sort::from),
-            LIA::Argmax(op) => op.cod().map(Sort::from),
-            LIA::Min(op) => op.cod().map(Sort::from),
-            LIA::Max(op) => op.cod().map(Sort::from),
-            LIA::Transpose(op) => op.cod().map(Sort::from),
+            LIA::Num(op) => op.cod().map(Ints::from),
+            LIA::Scale(op) => op.cod().map(Ints::from),
+            LIA::Add(op) => op.cod().map(Ints::from),
+            LIA::Sub(op) => op.cod().map(Ints::from),
+            LIA::Linear(op) => op.cod().map(Ints::from),
+            LIA::Affine(op) => op.cod().map(Ints::from),
+            LIA::ReLU(op) => op.cod().map(Ints::from),
+            LIA::Abs(op) => op.cod().map(Ints::from),
+            LIA::Neg(op) => op.cod().map(Ints::from),
+            LIA::Argmax(op) => op.cod().map(Ints::from),
+            LIA::Min(op) => op.cod().map(Ints::from),
+            LIA::Max(op) => op.cod().map(Ints::from),
+            LIA::Transpose(op) => op.cod().map(Ints::from),
             LIA::Lt(op) => op.cod(),
             LIA::Ite(op) => op.cod(),
             LIA::BroadcastIte(op) => op.cod(),
@@ -1011,62 +1011,62 @@ impl Boundary<Int> for MatMul {
     }
 }
 
-impl Boundary<Sort> for Lt {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Ints> for Lt {
+    fn dom(&self) -> Poly<Ints> {
         mono![Int::new_unchecked(self.shape).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Ints> {
         mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Le {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Ints> for Le {
+    fn dom(&self) -> Poly<Ints> {
         mono![Int::new_unchecked(self.shape).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Ints> {
         mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Gt {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Ints> for Gt {
+    fn dom(&self) -> Poly<Ints> {
         mono![Int::new_unchecked(self.shape).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Ints> {
         mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Ge {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Ints> for Ge {
+    fn dom(&self) -> Poly<Ints> {
         mono![Int::new_unchecked(self.shape).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Ints> {
         mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Eq {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Ints> for Eq {
+    fn dom(&self) -> Poly<Ints> {
         mono![Int::new_unchecked(self.shape).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Ints> {
         mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Ne {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Ints> for Ne {
+    fn dom(&self) -> Poly<Ints> {
         mono![Int::new_unchecked(self.shape).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Ints> {
         mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
@@ -1189,8 +1189,8 @@ impl fmt::Display for Lt {
     }
 }
 
-impl Boundary<Sort> for Ite {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Ints> for Ite {
+    fn dom(&self) -> Poly<Ints> {
         mono![
             Bool::new_unchecked(self.shape).into(),
             Int::new_unchecked(self.shape).into(),
@@ -1199,7 +1199,7 @@ impl Boundary<Sort> for Ite {
         .into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Ints> {
         mono![Int::new_unchecked(self.shape).into()].into()
     }
 }
@@ -2099,9 +2099,9 @@ impl Ite {
     /// The choice reading the boolean condition and the branches of `dom`;
     /// fails unless the branches are of the same sort, and the condition of
     /// their shape.
-    pub fn with_dom(dom: [Sort; 3]) -> Result<Self, crate::Error> {
+    pub fn with_dom(dom: [Ints; 3]) -> Result<Self, crate::Error> {
         match dom {
-            [Sort::Bool(c), Sort::Int(x), Sort::Int(y)] if x == y && c.shape() == x.shape() => {
+            [Ints::Bool(c), Ints::Int(x), Ints::Int(y)] if x == y && c.shape() == x.shape() => {
                 Ok(Ite { shape: x.shape() })
             }
             _ => Err(crate::unexpected_dom(
@@ -2126,7 +2126,7 @@ impl Ite {
     #[cfg(feature = "pyo3")]
     #[new]
     #[pyo3(signature = (dom, cod = None))]
-    fn py_new(dom: [Sort; 3], cod: Option<Int>) -> Result<Self, crate::Error> {
+    fn py_new(dom: [Ints; 3], cod: Option<Int>) -> Result<Self, crate::Error> {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 
@@ -2448,8 +2448,8 @@ pub mod broadcast {
         shape: [usize; 2],
     }
 
-    impl Boundary<Sort> for Ite {
-        fn dom(&self) -> Poly<Sort> {
+    impl Boundary<Ints> for Ite {
+        fn dom(&self) -> Poly<Ints> {
             mono![
                 Bool::new_unchecked([1, 1]).into(),
                 Int::new_unchecked(self.shape).into(),
@@ -2458,7 +2458,7 @@ pub mod broadcast {
             .into()
         }
 
-        fn cod(&self) -> Poly<Sort> {
+        fn cod(&self) -> Poly<Ints> {
             mono![Int::new_unchecked(self.shape).into()].into()
         }
     }
@@ -2473,9 +2473,9 @@ pub mod broadcast {
         /// The choice reading the scalar boolean condition and the branches of
         /// `dom`; fails unless the condition is of the shape `[1, 1]` and the
         /// branches of the same sort.
-        pub fn with_dom(dom: [Sort; 3]) -> Result<Self, crate::Error> {
+        pub fn with_dom(dom: [Ints; 3]) -> Result<Self, crate::Error> {
             match dom {
-                [Sort::Bool(c), Sort::Int(x), Sort::Int(y)] if x == y && c.shape() == [1, 1] => {
+                [Ints::Bool(c), Ints::Int(x), Ints::Int(y)] if x == y && c.shape() == [1, 1] => {
                     Ok(Ite { shape: x.shape() })
                 }
                 _ => Err(crate::unexpected_dom(
@@ -2500,7 +2500,7 @@ pub mod broadcast {
         #[cfg(feature = "pyo3")]
         #[new]
         #[pyo3(signature = (dom, cod = None))]
-        fn py_new(dom: [Sort; 3], cod: Option<Int>) -> Result<Self, crate::Error> {
+        fn py_new(dom: [Ints; 3], cod: Option<Int>) -> Result<Self, crate::Error> {
             crate::check_cod(Self::with_dom(dom), cod)
         }
 

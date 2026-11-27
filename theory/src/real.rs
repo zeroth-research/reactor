@@ -30,7 +30,7 @@ information to compute its [`Boundary`]:
 
 The comparisons are those of SMT-LIB2's `Reals` theory, `<`, `<=`, `>` and
 `>=`, together with `=` and `distinct` of the Core theory, lifted pointwise
-to matrices. As they write booleans, their boundary is in [`Sort`], the
+to matrices. As they write booleans, their boundary is in [`Reals`], the
 sorts of the theory, rather than in [`Real`].
 */
 
@@ -139,7 +139,7 @@ impl Differentiable for Real {
 /// real matrices, and the booleans of the Core theory, which comparisons
 /// write, together with [`Zero`](crate::zero::Real0). It is the subset
 /// [`Reals`](crate::Reals) of the sorts of all theories.
-pub use crate::Reals as Sort;
+use crate::Reals;
 
 /// A constant real matrix literal, held in a tensor of type `T`, of a
 /// degree: a constant rate of change, such as the `1` of `ẋ = 1`, is of
@@ -677,7 +677,7 @@ pub struct Ne {
 }
 
 /// The operations of the theory of real arithmetic, SMT-LIB2's `Reals`,
-/// with their boundary in [`Sort`].
+/// with their boundary in [`Reals`].
 ///
 /// `subenum` defines [`LRA`], the linear ones: all but `Mul`, `Div` and
 /// `MatMul`, which multiply or divide two variables. It also generates the
@@ -868,26 +868,26 @@ impl<T: fmt::Display> fmt::Display for LRA<T> {
     }
 }
 
-impl<T: Matrix> Boundary<Sort> for NRA<T> {
-    fn dom(&self) -> Poly<Sort> {
+impl<T: Matrix> Boundary<Reals> for NRA<T> {
+    fn dom(&self) -> Poly<Reals> {
         match self {
-            NRA::Num(op) => op.dom().map(Sort::from),
-            NRA::Scale(op) => op.dom().map(Sort::from),
-            NRA::Add(op) => op.dom().map(Sort::from),
-            NRA::Sub(op) => op.dom().map(Sort::from),
-            NRA::Mul(op) => op.dom().map(Sort::from),
-            NRA::Div(op) => op.dom().map(Sort::from),
-            NRA::Linear(op) => op.dom().map(Sort::from),
-            NRA::Affine(op) => op.dom().map(Sort::from),
-            NRA::ReLU(op) => op.dom().map(Sort::from),
-            NRA::Abs(op) => op.dom().map(Sort::from),
-            NRA::Neg(op) => op.dom().map(Sort::from),
-            NRA::Zero(op) => op.dom().map(Sort::from),
-            NRA::Argmax(op) => op.dom().map(Sort::from),
-            NRA::Min(op) => op.dom().map(Sort::from),
-            NRA::Max(op) => op.dom().map(Sort::from),
-            NRA::Transpose(op) => op.dom().map(Sort::from),
-            NRA::MatMul(op) => op.dom().map(Sort::from),
+            NRA::Num(op) => op.dom().map(Reals::from),
+            NRA::Scale(op) => op.dom().map(Reals::from),
+            NRA::Add(op) => op.dom().map(Reals::from),
+            NRA::Sub(op) => op.dom().map(Reals::from),
+            NRA::Mul(op) => op.dom().map(Reals::from),
+            NRA::Div(op) => op.dom().map(Reals::from),
+            NRA::Linear(op) => op.dom().map(Reals::from),
+            NRA::Affine(op) => op.dom().map(Reals::from),
+            NRA::ReLU(op) => op.dom().map(Reals::from),
+            NRA::Abs(op) => op.dom().map(Reals::from),
+            NRA::Neg(op) => op.dom().map(Reals::from),
+            NRA::Zero(op) => op.dom().map(Reals::from),
+            NRA::Argmax(op) => op.dom().map(Reals::from),
+            NRA::Min(op) => op.dom().map(Reals::from),
+            NRA::Max(op) => op.dom().map(Reals::from),
+            NRA::Transpose(op) => op.dom().map(Reals::from),
+            NRA::MatMul(op) => op.dom().map(Reals::from),
             NRA::Lt(op) => op.dom(),
             NRA::Ite(op) => op.dom(),
             NRA::BroadcastIte(op) => op.dom(),
@@ -899,25 +899,25 @@ impl<T: Matrix> Boundary<Sort> for NRA<T> {
         }
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Reals> {
         match self {
-            NRA::Num(op) => op.cod().map(Sort::from),
-            NRA::Scale(op) => op.cod().map(Sort::from),
-            NRA::Add(op) => op.cod().map(Sort::from),
-            NRA::Sub(op) => op.cod().map(Sort::from),
-            NRA::Mul(op) => op.cod().map(Sort::from),
-            NRA::Div(op) => op.cod().map(Sort::from),
-            NRA::Linear(op) => op.cod().map(Sort::from),
-            NRA::Affine(op) => op.cod().map(Sort::from),
-            NRA::ReLU(op) => op.cod().map(Sort::from),
-            NRA::Abs(op) => op.cod().map(Sort::from),
-            NRA::Neg(op) => op.cod().map(Sort::from),
-            NRA::Zero(op) => op.cod().map(Sort::from),
-            NRA::Argmax(op) => op.cod().map(Sort::from),
-            NRA::Min(op) => op.cod().map(Sort::from),
-            NRA::Max(op) => op.cod().map(Sort::from),
-            NRA::Transpose(op) => op.cod().map(Sort::from),
-            NRA::MatMul(op) => op.cod().map(Sort::from),
+            NRA::Num(op) => op.cod().map(Reals::from),
+            NRA::Scale(op) => op.cod().map(Reals::from),
+            NRA::Add(op) => op.cod().map(Reals::from),
+            NRA::Sub(op) => op.cod().map(Reals::from),
+            NRA::Mul(op) => op.cod().map(Reals::from),
+            NRA::Div(op) => op.cod().map(Reals::from),
+            NRA::Linear(op) => op.cod().map(Reals::from),
+            NRA::Affine(op) => op.cod().map(Reals::from),
+            NRA::ReLU(op) => op.cod().map(Reals::from),
+            NRA::Abs(op) => op.cod().map(Reals::from),
+            NRA::Neg(op) => op.cod().map(Reals::from),
+            NRA::Zero(op) => op.cod().map(Reals::from),
+            NRA::Argmax(op) => op.cod().map(Reals::from),
+            NRA::Min(op) => op.cod().map(Reals::from),
+            NRA::Max(op) => op.cod().map(Reals::from),
+            NRA::Transpose(op) => op.cod().map(Reals::from),
+            NRA::MatMul(op) => op.cod().map(Reals::from),
             NRA::Lt(op) => op.cod(),
             NRA::Ite(op) => op.cod(),
             NRA::BroadcastIte(op) => op.cod(),
@@ -929,23 +929,23 @@ impl<T: Matrix> Boundary<Sort> for NRA<T> {
         }
     }
 }
-impl<T: Matrix> Boundary<Sort> for LRA<T> {
-    fn dom(&self) -> Poly<Sort> {
+impl<T: Matrix> Boundary<Reals> for LRA<T> {
+    fn dom(&self) -> Poly<Reals> {
         match self {
-            LRA::Num(op) => op.dom().map(Sort::from),
-            LRA::Scale(op) => op.dom().map(Sort::from),
-            LRA::Add(op) => op.dom().map(Sort::from),
-            LRA::Sub(op) => op.dom().map(Sort::from),
-            LRA::Linear(op) => op.dom().map(Sort::from),
-            LRA::Affine(op) => op.dom().map(Sort::from),
-            LRA::ReLU(op) => op.dom().map(Sort::from),
-            LRA::Abs(op) => op.dom().map(Sort::from),
-            LRA::Neg(op) => op.dom().map(Sort::from),
-            LRA::Zero(op) => op.dom().map(Sort::from),
-            LRA::Argmax(op) => op.dom().map(Sort::from),
-            LRA::Min(op) => op.dom().map(Sort::from),
-            LRA::Max(op) => op.dom().map(Sort::from),
-            LRA::Transpose(op) => op.dom().map(Sort::from),
+            LRA::Num(op) => op.dom().map(Reals::from),
+            LRA::Scale(op) => op.dom().map(Reals::from),
+            LRA::Add(op) => op.dom().map(Reals::from),
+            LRA::Sub(op) => op.dom().map(Reals::from),
+            LRA::Linear(op) => op.dom().map(Reals::from),
+            LRA::Affine(op) => op.dom().map(Reals::from),
+            LRA::ReLU(op) => op.dom().map(Reals::from),
+            LRA::Abs(op) => op.dom().map(Reals::from),
+            LRA::Neg(op) => op.dom().map(Reals::from),
+            LRA::Zero(op) => op.dom().map(Reals::from),
+            LRA::Argmax(op) => op.dom().map(Reals::from),
+            LRA::Min(op) => op.dom().map(Reals::from),
+            LRA::Max(op) => op.dom().map(Reals::from),
+            LRA::Transpose(op) => op.dom().map(Reals::from),
             LRA::Lt(op) => op.dom(),
             LRA::Ite(op) => op.dom(),
             LRA::BroadcastIte(op) => op.dom(),
@@ -957,22 +957,22 @@ impl<T: Matrix> Boundary<Sort> for LRA<T> {
         }
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Reals> {
         match self {
-            LRA::Num(op) => op.cod().map(Sort::from),
-            LRA::Scale(op) => op.cod().map(Sort::from),
-            LRA::Add(op) => op.cod().map(Sort::from),
-            LRA::Sub(op) => op.cod().map(Sort::from),
-            LRA::Linear(op) => op.cod().map(Sort::from),
-            LRA::Affine(op) => op.cod().map(Sort::from),
-            LRA::ReLU(op) => op.cod().map(Sort::from),
-            LRA::Abs(op) => op.cod().map(Sort::from),
-            LRA::Neg(op) => op.cod().map(Sort::from),
-            LRA::Zero(op) => op.cod().map(Sort::from),
-            LRA::Argmax(op) => op.cod().map(Sort::from),
-            LRA::Min(op) => op.cod().map(Sort::from),
-            LRA::Max(op) => op.cod().map(Sort::from),
-            LRA::Transpose(op) => op.cod().map(Sort::from),
+            LRA::Num(op) => op.cod().map(Reals::from),
+            LRA::Scale(op) => op.cod().map(Reals::from),
+            LRA::Add(op) => op.cod().map(Reals::from),
+            LRA::Sub(op) => op.cod().map(Reals::from),
+            LRA::Linear(op) => op.cod().map(Reals::from),
+            LRA::Affine(op) => op.cod().map(Reals::from),
+            LRA::ReLU(op) => op.cod().map(Reals::from),
+            LRA::Abs(op) => op.cod().map(Reals::from),
+            LRA::Neg(op) => op.cod().map(Reals::from),
+            LRA::Zero(op) => op.cod().map(Reals::from),
+            LRA::Argmax(op) => op.cod().map(Reals::from),
+            LRA::Min(op) => op.cod().map(Reals::from),
+            LRA::Max(op) => op.cod().map(Reals::from),
+            LRA::Transpose(op) => op.cod().map(Reals::from),
             LRA::Lt(op) => op.cod(),
             LRA::Ite(op) => op.cod(),
             LRA::BroadcastIte(op) => op.cod(),
@@ -1183,62 +1183,62 @@ impl Boundary<Real> for MatMul {
     }
 }
 
-impl Boundary<Sort> for Lt {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Reals> for Lt {
+    fn dom(&self) -> Poly<Reals> {
         mono![Real::with_degree(self.shape, self.degree).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Reals> {
         mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Le {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Reals> for Le {
+    fn dom(&self) -> Poly<Reals> {
         mono![Real::with_degree(self.shape, self.degree).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Reals> {
         mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Gt {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Reals> for Gt {
+    fn dom(&self) -> Poly<Reals> {
         mono![Real::with_degree(self.shape, self.degree).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Reals> {
         mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Ge {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Reals> for Ge {
+    fn dom(&self) -> Poly<Reals> {
         mono![Real::with_degree(self.shape, self.degree).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Reals> {
         mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Eq {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Reals> for Eq {
+    fn dom(&self) -> Poly<Reals> {
         mono![Real::with_degree(self.shape, self.degree).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Reals> {
         mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Ne {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Reals> for Ne {
+    fn dom(&self) -> Poly<Reals> {
         mono![Real::with_degree(self.shape, self.degree).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Reals> {
         mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
@@ -1361,8 +1361,8 @@ impl fmt::Display for Lt {
     }
 }
 
-impl Boundary<Sort> for Ite {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Reals> for Ite {
+    fn dom(&self) -> Poly<Reals> {
         mono![
             Bool::new_unchecked(self.shape).into(),
             Real::with_degree(self.shape, self.degree).into(),
@@ -1371,7 +1371,7 @@ impl Boundary<Sort> for Ite {
         .into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Reals> {
         mono![Real::with_degree(self.shape, self.degree).into()].into()
     }
 }
@@ -2422,9 +2422,11 @@ impl Ite {
     /// The choice reading the boolean condition and the branches of `dom`;
     /// fails unless the branches are of the same sort, and the condition of
     /// their shape.
-    pub fn with_dom(dom: [Sort; 3]) -> Result<Self, crate::Error> {
+    pub fn with_dom(dom: [Reals; 3]) -> Result<Self, crate::Error> {
         match dom {
-            [Sort::Bool(c), Sort::Real(x), Sort::Real(y)] if x == y && c.shape() == x.shape() => {
+            [Reals::Bool(c), Reals::Real(x), Reals::Real(y)]
+                if x == y && c.shape() == x.shape() =>
+            {
                 Ok(Ite {
                     shape: x.shape(),
                     degree: x.degree(),
@@ -2455,7 +2457,7 @@ impl Ite {
     #[cfg(feature = "pyo3")]
     #[new]
     #[pyo3(signature = (dom, cod = None))]
-    fn py_new(dom: [Sort; 3], cod: Option<Real>) -> Result<Self, crate::Error> {
+    fn py_new(dom: [Reals; 3], cod: Option<Real>) -> Result<Self, crate::Error> {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 
@@ -2795,8 +2797,8 @@ pub mod broadcast {
         degree: u8,
     }
 
-    impl Boundary<Sort> for Ite {
-        fn dom(&self) -> Poly<Sort> {
+    impl Boundary<Reals> for Ite {
+        fn dom(&self) -> Poly<Reals> {
             mono![
                 Bool::new_unchecked([1, 1]).into(),
                 Real::with_degree(self.shape, self.degree).into(),
@@ -2805,7 +2807,7 @@ pub mod broadcast {
             .into()
         }
 
-        fn cod(&self) -> Poly<Sort> {
+        fn cod(&self) -> Poly<Reals> {
             mono![Real::with_degree(self.shape, self.degree).into()].into()
         }
     }
@@ -2820,9 +2822,11 @@ pub mod broadcast {
         /// The choice reading the scalar boolean condition and the branches of
         /// `dom`; fails unless the condition is of the shape `[1, 1]` and the
         /// branches of the same sort.
-        pub fn with_dom(dom: [Sort; 3]) -> Result<Self, crate::Error> {
+        pub fn with_dom(dom: [Reals; 3]) -> Result<Self, crate::Error> {
             match dom {
-                [Sort::Bool(c), Sort::Real(x), Sort::Real(y)] if x == y && c.shape() == [1, 1] => {
+                [Reals::Bool(c), Reals::Real(x), Reals::Real(y)]
+                    if x == y && c.shape() == [1, 1] =>
+                {
                     Ok(Ite {
                         shape: x.shape(),
                         degree: x.degree(),
@@ -2853,7 +2857,7 @@ pub mod broadcast {
         #[cfg(feature = "pyo3")]
         #[new]
         #[pyo3(signature = (dom, cod = None))]
-        fn py_new(dom: [Sort; 3], cod: Option<Real>) -> Result<Self, crate::Error> {
+        fn py_new(dom: [Reals; 3], cod: Option<Real>) -> Result<Self, crate::Error> {
             crate::check_cod(Self::with_dom(dom), cod)
         }
 

@@ -2,7 +2,7 @@
 # Fixed-size bit-vectors
 
 Defines the sort [`Word`] of matrices of `width`-bit machine words, the local
-sort [`Sort`] of the theory, holding words and the booleans that
+sort [`Words`] of the theory, holding words and the booleans that
 comparisons write, and one type per operation on them. Each operation is
 an operation of the SMT-LIB2 logic QF_BV, lifted pointwise to matrices:
 it applies the SMT-LIB2 operation independently to each entry, with the
@@ -147,7 +147,7 @@ impl Differentiable for Word {
 /// comparisons write, together with [`Real0`], the tangent of both. It is
 /// the subset [`Words`](crate::Words) of the sorts of all
 /// theories.
-pub use crate::Words as Sort;
+use crate::Words;
 
 /// A constant matrix literal of `width`-bit words, as `Num(tensor, width)`, held
 /// in a tensor of type `T`.
@@ -470,7 +470,7 @@ pub struct Ne {
 }
 
 /// The operations of the theory of fixed-size bit-vectors, SMT-LIB2's
-/// `FixedSizeBitVectors`, with their boundary in [`Sort`]. Those of
+/// `FixedSizeBitVectors`, with their boundary in [`Words`]. Those of
 /// [`signed`] and [`unsigned`] are named after their SMT-LIB2 operation,
 /// as `SDiv` for [`signed::Div`] and `UDiv` for [`unsigned::Div`].
 #[derive(Debug, From)]
@@ -614,8 +614,8 @@ impl<T: fmt::Display> fmt::Display for BV<T> {
     }
 }
 
-impl<T: Matrix> Boundary<Sort> for BV<T> {
-    fn dom(&self) -> Poly<Sort> {
+impl<T: Matrix> Boundary<Words> for BV<T> {
+    fn dom(&self) -> Poly<Words> {
         match self {
             BV::Num(op) => op.dom(),
             BV::Concat(op) => op.dom(),
@@ -660,7 +660,7 @@ impl<T: Matrix> Boundary<Sort> for BV<T> {
         }
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Words> {
         match self {
             BV::Num(op) => op.cod(),
             BV::Concat(op) => op.cod(),
@@ -706,18 +706,18 @@ impl<T: Matrix> Boundary<Sort> for BV<T> {
     }
 }
 
-impl<T: Matrix> Boundary<Sort> for Num<T> {
-    fn dom(&self) -> Poly<Sort> {
+impl<T: Matrix> Boundary<Words> for Num<T> {
+    fn dom(&self) -> Poly<Words> {
         Poly::unit()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.tensor.shape()).into()].into()
     }
 }
 
-impl Boundary<Sort> for Concat {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Words> for Concat {
+    fn dom(&self) -> Poly<Words> {
         let ([u, v], shape) = (self.widths, self.shape);
         mono![
             Word::new_unchecked(u, shape).into(),
@@ -726,188 +726,188 @@ impl Boundary<Sort> for Concat {
         .into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Words> {
         let [u, v] = self.widths;
         mono![Word::new_unchecked(u + v, self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Extract {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Words> for Extract {
+    fn dom(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into()].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.i - self.j + 1, self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Repeat {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Words> for Repeat {
+    fn dom(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into()].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.i * self.width, self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Not {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Words> for Not {
+    fn dom(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into()].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for And {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Words> for And {
+    fn dom(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Or {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Words> for Or {
+    fn dom(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Xor {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Words> for Xor {
+    fn dom(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Nand {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Words> for Nand {
+    fn dom(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Nor {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Words> for Nor {
+    fn dom(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Xnor {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Words> for Xnor {
+    fn dom(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Neg {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Words> for Neg {
+    fn dom(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into()].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Add {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Words> for Add {
+    fn dom(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Sub {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Words> for Sub {
+    fn dom(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Mul {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Words> for Mul {
+    fn dom(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Shl {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Words> for Shl {
+    fn dom(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for RotateLeft {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Words> for RotateLeft {
+    fn dom(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into()].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
-    }
-}
-
-impl Boundary<Sort> for RotateRight {
-    fn dom(&self) -> Poly<Sort> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
-    }
-
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Eq {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Words> for RotateRight {
+    fn dom(&self) -> Poly<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+    }
+
+    fn cod(&self) -> Poly<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+    }
+}
+
+impl Boundary<Words> for Eq {
+    fn dom(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Words> {
         mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
 
-impl Boundary<Sort> for Ne {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Words> for Ne {
+    fn dom(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Words> {
         mono![Bool::new_unchecked(self.shape).into()].into()
     }
 }
@@ -984,8 +984,8 @@ impl fmt::Display for Neg {
     }
 }
 
-impl Boundary<Sort> for Ite {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Words> for Ite {
+    fn dom(&self) -> Poly<Words> {
         mono![
             Bool::new_unchecked(self.shape).into(),
             Word::new_unchecked(self.width, self.shape).into(),
@@ -994,7 +994,7 @@ impl Boundary<Sort> for Ite {
         .into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Words> {
         mono![Word::new_unchecked(self.width, self.shape).into()].into()
     }
 }
@@ -1056,7 +1056,7 @@ impl fmt::Display for Ne {
 /// Operations on words read in two's complement, whose meaning depends on
 /// signedness; the others are in the parent module.
 pub mod signed {
-    use super::{Sort, Word};
+    use super::{Word, Words};
     use crate::bool::Bool;
     use base::boundary::{Boundary, Poly};
     use base::mono;
@@ -1201,92 +1201,92 @@ pub mod signed {
         shape: [usize; 2],
     }
 
-    impl Boundary<Sort> for Div {
-        fn dom(&self) -> Poly<Sort> {
+    impl Boundary<Words> for Div {
+        fn dom(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
         }
 
-        fn cod(&self) -> Poly<Sort> {
+        fn cod(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into()].into()
         }
     }
 
-    impl Boundary<Sort> for Rem {
-        fn dom(&self) -> Poly<Sort> {
+    impl Boundary<Words> for Rem {
+        fn dom(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
         }
 
-        fn cod(&self) -> Poly<Sort> {
+        fn cod(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into()].into()
         }
     }
 
-    impl Boundary<Sort> for Mod {
-        fn dom(&self) -> Poly<Sort> {
+    impl Boundary<Words> for Mod {
+        fn dom(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
         }
 
-        fn cod(&self) -> Poly<Sort> {
+        fn cod(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into()].into()
         }
     }
 
-    impl Boundary<Sort> for Shr {
-        fn dom(&self) -> Poly<Sort> {
+    impl Boundary<Words> for Shr {
+        fn dom(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
         }
 
-        fn cod(&self) -> Poly<Sort> {
+        fn cod(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into()].into()
         }
     }
 
-    impl Boundary<Sort> for Extend {
-        fn dom(&self) -> Poly<Sort> {
+    impl Boundary<Words> for Extend {
+        fn dom(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into()].into()
         }
 
-        fn cod(&self) -> Poly<Sort> {
+        fn cod(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width + self.i, self.shape).into()].into()
         }
     }
 
-    impl Boundary<Sort> for Lt {
-        fn dom(&self) -> Poly<Sort> {
+    impl Boundary<Words> for Lt {
+        fn dom(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
         }
 
-        fn cod(&self) -> Poly<Sort> {
+        fn cod(&self) -> Poly<Words> {
             mono![Bool::new_unchecked(self.shape).into()].into()
         }
     }
 
-    impl Boundary<Sort> for Le {
-        fn dom(&self) -> Poly<Sort> {
+    impl Boundary<Words> for Le {
+        fn dom(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
         }
 
-        fn cod(&self) -> Poly<Sort> {
+        fn cod(&self) -> Poly<Words> {
             mono![Bool::new_unchecked(self.shape).into()].into()
         }
     }
 
-    impl Boundary<Sort> for Gt {
-        fn dom(&self) -> Poly<Sort> {
+    impl Boundary<Words> for Gt {
+        fn dom(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
         }
 
-        fn cod(&self) -> Poly<Sort> {
+        fn cod(&self) -> Poly<Words> {
             mono![Bool::new_unchecked(self.shape).into()].into()
         }
     }
 
-    impl Boundary<Sort> for Ge {
-        fn dom(&self) -> Poly<Sort> {
+    impl Boundary<Words> for Ge {
+        fn dom(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
         }
 
-        fn cod(&self) -> Poly<Sort> {
+        fn cod(&self) -> Poly<Words> {
             mono![Bool::new_unchecked(self.shape).into()].into()
         }
     }
@@ -1297,12 +1297,12 @@ pub mod signed {
         }
     }
 
-    impl Boundary<Sort> for Abs {
-        fn dom(&self) -> Poly<Sort> {
+    impl Boundary<Words> for Abs {
+        fn dom(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into()].into()
         }
 
-        fn cod(&self) -> Poly<Sort> {
+        fn cod(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into()].into()
         }
     }
@@ -2061,7 +2061,7 @@ pub mod signed {
 /// Operations on words read in binary, whose meaning depends on
 /// signedness; the others are in the parent module.
 pub mod unsigned {
-    use super::{Sort, Word};
+    use super::{Word, Words};
     use crate::bool::Bool;
     use base::boundary::{Boundary, Poly};
     use base::mono;
@@ -2177,82 +2177,82 @@ pub mod unsigned {
         shape: [usize; 2],
     }
 
-    impl Boundary<Sort> for Div {
-        fn dom(&self) -> Poly<Sort> {
+    impl Boundary<Words> for Div {
+        fn dom(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
         }
 
-        fn cod(&self) -> Poly<Sort> {
+        fn cod(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into()].into()
         }
     }
 
-    impl Boundary<Sort> for Rem {
-        fn dom(&self) -> Poly<Sort> {
+    impl Boundary<Words> for Rem {
+        fn dom(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
         }
 
-        fn cod(&self) -> Poly<Sort> {
+        fn cod(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into()].into()
         }
     }
 
-    impl Boundary<Sort> for Shr {
-        fn dom(&self) -> Poly<Sort> {
+    impl Boundary<Words> for Shr {
+        fn dom(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
         }
 
-        fn cod(&self) -> Poly<Sort> {
+        fn cod(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into()].into()
         }
     }
 
-    impl Boundary<Sort> for Extend {
-        fn dom(&self) -> Poly<Sort> {
+    impl Boundary<Words> for Extend {
+        fn dom(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into()].into()
         }
 
-        fn cod(&self) -> Poly<Sort> {
+        fn cod(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width + self.i, self.shape).into()].into()
         }
     }
 
-    impl Boundary<Sort> for Lt {
-        fn dom(&self) -> Poly<Sort> {
+    impl Boundary<Words> for Lt {
+        fn dom(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
         }
 
-        fn cod(&self) -> Poly<Sort> {
+        fn cod(&self) -> Poly<Words> {
             mono![Bool::new_unchecked(self.shape).into()].into()
         }
     }
 
-    impl Boundary<Sort> for Le {
-        fn dom(&self) -> Poly<Sort> {
+    impl Boundary<Words> for Le {
+        fn dom(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
         }
 
-        fn cod(&self) -> Poly<Sort> {
+        fn cod(&self) -> Poly<Words> {
             mono![Bool::new_unchecked(self.shape).into()].into()
         }
     }
 
-    impl Boundary<Sort> for Gt {
-        fn dom(&self) -> Poly<Sort> {
+    impl Boundary<Words> for Gt {
+        fn dom(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
         }
 
-        fn cod(&self) -> Poly<Sort> {
+        fn cod(&self) -> Poly<Words> {
             mono![Bool::new_unchecked(self.shape).into()].into()
         }
     }
 
-    impl Boundary<Sort> for Ge {
-        fn dom(&self) -> Poly<Sort> {
+    impl Boundary<Words> for Ge {
+        fn dom(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
         }
 
-        fn cod(&self) -> Poly<Sort> {
+        fn cod(&self) -> Poly<Words> {
             mono![Bool::new_unchecked(self.shape).into()].into()
         }
     }
@@ -3757,9 +3757,11 @@ impl Ite {
     /// The choice reading the boolean condition and the branches of `dom`;
     /// fails unless the branches are of the same sort, and the condition of
     /// their shape.
-    pub fn with_dom(dom: [Sort; 3]) -> Result<Self, crate::Error> {
+    pub fn with_dom(dom: [Words; 3]) -> Result<Self, crate::Error> {
         match dom {
-            [Sort::Bool(c), Sort::Word(x), Sort::Word(y)] if x == y && c.shape() == x.shape() => {
+            [Words::Bool(c), Words::Word(x), Words::Word(y)]
+                if x == y && c.shape() == x.shape() =>
+            {
                 Ok(Ite {
                     width: x.width(),
                     shape: x.shape(),
@@ -3790,7 +3792,7 @@ impl Ite {
     #[cfg(feature = "pyo3")]
     #[new]
     #[pyo3(signature = (dom, cod = None))]
-    fn py_new(dom: [Sort; 3], cod: Option<Word>) -> Result<Self, crate::Error> {
+    fn py_new(dom: [Words; 3], cod: Option<Word>) -> Result<Self, crate::Error> {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 
@@ -4364,8 +4366,8 @@ pub mod broadcast {
         shape: [usize; 2],
     }
 
-    impl Boundary<Sort> for Ite {
-        fn dom(&self) -> Poly<Sort> {
+    impl Boundary<Words> for Ite {
+        fn dom(&self) -> Poly<Words> {
             mono![
                 Bool::new_unchecked([1, 1]).into(),
                 Word::new_unchecked(self.width, self.shape).into(),
@@ -4374,7 +4376,7 @@ pub mod broadcast {
             .into()
         }
 
-        fn cod(&self) -> Poly<Sort> {
+        fn cod(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into()].into()
         }
     }
@@ -4389,9 +4391,11 @@ pub mod broadcast {
         /// The choice reading the scalar boolean condition and the branches of
         /// `dom`; fails unless the condition is of the shape `[1, 1]` and the
         /// branches of the same sort.
-        pub fn with_dom(dom: [Sort; 3]) -> Result<Self, crate::Error> {
+        pub fn with_dom(dom: [Words; 3]) -> Result<Self, crate::Error> {
             match dom {
-                [Sort::Bool(c), Sort::Word(x), Sort::Word(y)] if x == y && c.shape() == [1, 1] => {
+                [Words::Bool(c), Words::Word(x), Words::Word(y)]
+                    if x == y && c.shape() == [1, 1] =>
+                {
                     Ok(Ite {
                         width: x.width(),
                         shape: x.shape(),
@@ -4422,7 +4426,7 @@ pub mod broadcast {
         #[cfg(feature = "pyo3")]
         #[new]
         #[pyo3(signature = (dom, cod = None))]
-        fn py_new(dom: [Sort; 3], cod: Option<Word>) -> Result<Self, crate::Error> {
+        fn py_new(dom: [Words; 3], cod: Option<Word>) -> Result<Self, crate::Error> {
             crate::check_cod(Self::with_dom(dom), cod)
         }
 

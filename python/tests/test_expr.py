@@ -624,18 +624,19 @@ def test_an_event_is_shifted_by_a_boolean_in_either_order():
 
 def test_an_event_meets_no_other_event_and_no_number():
     e, f = expr(Var(Event())), expr(Var(Event()))
-    # the exclusive or rejects any other domain: another event, a wider boolean, a word
+    # the exclusive or rejects any other domain of events and booleans: another event, a
+    # wider boolean
     for build in [
         lambda: e ^ f,
         lambda: e ^ expr(Var(Bool([2, 2]))),
         lambda: expr(Var(Bool([2, 2]))) ^ e,
-        lambda: e ^ expr(Var(Word(8, [1, 1]))),
     ]:
         with pytest.raises(ValueError):
             build()
-    # a number has no sort to take, and an event is neither a condition, nor chosen
-    # between: it is shifted, `e ^ c`
+    # a word is no sort of events, a number has no sort to take, and an event is neither a
+    # condition, nor chosen between: it is shifted, `e ^ c`
     for build in [
+        lambda: e ^ expr(Var(Word(8, [1, 1]))),
         lambda: e ^ 1,
         lambda: e & e,
         lambda: ite(e, "on", "off"),

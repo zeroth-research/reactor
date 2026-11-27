@@ -35,7 +35,6 @@ carry the parity of its past, is never observed but through its own change,
 In SMT-LIB2, an event is a `Bool`, and [`Xor`] is `xor`.
 */
 
-pub use crate::Any as Sort;
 use crate::Events;
 use crate::bool::Bool;
 use crate::zero::Real0;
@@ -131,12 +130,12 @@ impl Xor {
     /// The exclusive or reading the sorts of `dom`: two values of the same
     /// event, for their difference, or a value of an event and a boolean of the
     /// shape `[1, 1]`, in either order, for its shift. Fails otherwise.
-    pub fn with_dom(dom: [Sort; 2]) -> Result<Self, crate::Error> {
+    pub fn with_dom(dom: [Events; 2]) -> Result<Self, crate::Error> {
         let cod = match &dom {
             // the difference of two values of an event
-            [Sort::Event(x), Sort::Event(y)] if x == y => Bool::new_unchecked([1, 1]).into(),
+            [Events::Event(x), Events::Event(y)] if x == y => Bool::new_unchecked([1, 1]).into(),
             // the shift of an event by a boolean
-            [Sort::Event(e), Sort::Bool(c)] | [Sort::Bool(c), Sort::Event(e)]
+            [Events::Event(e), Events::Bool(c)] | [Events::Bool(c), Events::Event(e)]
                 if c.shape() == [1, 1] =>
             {
                 (*e).into()
@@ -148,18 +147,17 @@ impl Xor {
                 ));
             }
         };
-        let dom = dom.map(|s| Events::try_from(s).expect("a sort of an event or a boolean"));
         Ok(Xor { dom, cod })
     }
 }
 
-impl Boundary<Sort> for Xor {
-    fn dom(&self) -> Poly<Sort> {
-        mono![self.dom[0].into(), self.dom[1].into()].into()
+impl Boundary<Events> for Xor {
+    fn dom(&self) -> Poly<Events> {
+        mono![self.dom[0], self.dom[1]].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
-        mono![self.cod.into()].into()
+    fn cod(&self) -> Poly<Events> {
+        mono![self.cod].into()
     }
 }
 
@@ -177,7 +175,7 @@ impl Xor {
     /// order; its codomain `cod`, when given, must be the one it writes.
     #[new]
     #[pyo3(signature = (dom, cod = None))]
-    fn py_new(dom: [Sort; 2], cod: Option<Sort>) -> Result<Self, crate::Error> {
+    fn py_new(dom: [Events; 2], cod: Option<Events>) -> Result<Self, crate::Error> {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 

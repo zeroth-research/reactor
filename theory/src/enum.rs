@@ -28,7 +28,7 @@ codomain, or the identity when all the symbolic constants of a model are of
 one datatype, each enumeration a constraint of membership.
 */
 
-pub use crate::Any as Sort;
+use crate::Any;
 use crate::bool::Bool;
 use crate::zero::Real0;
 use base::boundary::{Boundary, Poly};
@@ -362,9 +362,9 @@ impl Ite {
     /// The choice reading the boolean condition and the branches of `dom`;
     /// fails unless the condition is a boolean of the shape `[1, 1]` and the
     /// branches of the same enumeration.
-    pub fn with_dom(dom: [Sort; 3]) -> Result<Self, crate::Error> {
+    pub fn with_dom(dom: [Any; 3]) -> Result<Self, crate::Error> {
         match dom {
-            [Sort::Bool(c), Sort::Enum(x), Sort::Enum(y)] if c.shape() == [1, 1] && x == y => {
+            [Any::Bool(c), Any::Enum(x), Any::Enum(y)] if c.shape() == [1, 1] && x == y => {
                 Ok(Ite { sort: x })
             }
             _ => Err(crate::unexpected_dom(
@@ -381,7 +381,7 @@ impl Ite {
     }
 }
 
-/// The operations on enumerations, with their boundary in [`Sort`].
+/// The operations on enumerations, with their boundary in [`Any`].
 #[derive(Clone, PartialEq, Debug, Eq, Hash, From)]
 pub enum Op {
     Sym(Sym),
@@ -391,48 +391,48 @@ pub enum Op {
     Ite(Ite),
 }
 
-impl Boundary<Sort> for Sym {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Any> for Sym {
+    fn dom(&self) -> Poly<Any> {
         Poly::unit()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Any> {
         mono![self.sort.clone().into()].into()
     }
 }
 
-impl Boundary<Sort> for Into {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Any> for Into {
+    fn dom(&self) -> Poly<Any> {
         mono![self.dom.clone().into()].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Any> {
         mono![self.cod.clone().into()].into()
     }
 }
 
-impl Boundary<Sort> for Eq {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Any> for Eq {
+    fn dom(&self) -> Poly<Any> {
         mono![self.sort.clone().into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Any> {
         mono![Bool::new_unchecked([1, 1]).into()].into()
     }
 }
 
-impl Boundary<Sort> for Ne {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Any> for Ne {
+    fn dom(&self) -> Poly<Any> {
         mono![self.sort.clone().into(); 2].into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Any> {
         mono![Bool::new_unchecked([1, 1]).into()].into()
     }
 }
 
-impl Boundary<Sort> for Ite {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Any> for Ite {
+    fn dom(&self) -> Poly<Any> {
         mono![
             Bool::new_unchecked([1, 1]).into(),
             self.sort.clone().into(),
@@ -441,13 +441,13 @@ impl Boundary<Sort> for Ite {
         .into()
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Any> {
         mono![self.sort.clone().into()].into()
     }
 }
 
-impl Boundary<Sort> for Op {
-    fn dom(&self) -> Poly<Sort> {
+impl Boundary<Any> for Op {
+    fn dom(&self) -> Poly<Any> {
         match self {
             Op::Sym(op) => op.dom(),
             Op::Into(op) => op.dom(),
@@ -457,7 +457,7 @@ impl Boundary<Sort> for Op {
         }
     }
 
-    fn cod(&self) -> Poly<Sort> {
+    fn cod(&self) -> Poly<Any> {
         match self {
             Op::Sym(op) => op.cod(),
             Op::Into(op) => op.cod(),
@@ -583,7 +583,7 @@ impl Eq {
     /// writes.
     #[new]
     #[pyo3(signature = (dom, cod = None))]
-    fn py_new(dom: [Enum; 2], cod: Option<Sort>) -> Result<Self, crate::Error> {
+    fn py_new(dom: [Enum; 2], cod: Option<Any>) -> Result<Self, crate::Error> {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 
@@ -613,7 +613,7 @@ impl Ne {
     /// writes.
     #[new]
     #[pyo3(signature = (dom, cod = None))]
-    fn py_new(dom: [Enum; 2], cod: Option<Sort>) -> Result<Self, crate::Error> {
+    fn py_new(dom: [Enum; 2], cod: Option<Any>) -> Result<Self, crate::Error> {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 
@@ -643,7 +643,7 @@ impl Ite {
     /// codomain `cod`, when given, must be the one it writes.
     #[new]
     #[pyo3(signature = (dom, cod = None))]
-    fn py_new(dom: [Sort; 3], cod: Option<Sort>) -> Result<Self, crate::Error> {
+    fn py_new(dom: [Any; 3], cod: Option<Any>) -> Result<Self, crate::Error> {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 

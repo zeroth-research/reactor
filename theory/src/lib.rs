@@ -226,7 +226,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Any {
 
 /// Extracts a sort of the theories of each subset from an instance of its
 /// class, as a sort of [`Any`] that the subset holds: the Python constructor
-/// of `Ite` reads them.
+/// of `Ite`, of the matrix theories, and of `event::Xor` read them.
 #[cfg(feature = "pyo3")]
 macro_rules! extract_subset {
     ($($subset:ident),*) => {$(
@@ -247,7 +247,7 @@ macro_rules! extract_subset {
 }
 
 #[cfg(feature = "pyo3")]
-extract_subset!(Reals, Ints, Words);
+extract_subset!(Reals, Ints, Words, Events);
 
 /// Converts a sort into an instance of its class.
 #[cfg(feature = "pyo3")]
@@ -707,7 +707,7 @@ impl<T: Matrix> Boundary<Any> for Op<T> {
             Op::Bool(op) => op.dom().map(Any::from),
             Op::Word(op) => op.dom().map(Any::from),
             Op::Enum(op) => op.dom(),
-            Op::Event(op) => op.dom(),
+            Op::Event(op) => op.dom().map(Any::from),
             Op::Havoc(op) => op.dom(),
             Op::Skip(op) => op.dom(),
             Op::Zero(op) => op.dom().map(Any::from),
@@ -721,7 +721,7 @@ impl<T: Matrix> Boundary<Any> for Op<T> {
             Op::Bool(op) => op.cod().map(Any::from),
             Op::Word(op) => op.cod().map(Any::from),
             Op::Enum(op) => op.cod(),
-            Op::Event(op) => op.cod(),
+            Op::Event(op) => op.cod().map(Any::from),
             Op::Havoc(op) => op.cod(),
             Op::Skip(op) => op.cod(),
             Op::Zero(op) => op.cod().map(Any::from),

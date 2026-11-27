@@ -318,11 +318,11 @@ mod op {
         let op = real::broadcast::Ite::with_cod([r]).unwrap();
         assert!(real::LRA::<Mat>::try_from(real::NRA::<Mat>::from(op)).is_ok());
         // a condition of the shape of the branches: the pointwise choice
-        let pointwise: real::Sort = bool::Bool::new_unchecked([4, 4]).into();
+        let pointwise: Reals = bool::Bool::new_unchecked([4, 4]).into();
         assert!(real::broadcast::Ite::with_dom([pointwise, r.into(), r.into()]).is_err());
         assert!(bool::broadcast::Ite::with_dom([b, b, b]).is_err());
         // a condition of another shape
-        let column: int::Sort = bool::Bool::new_unchecked([4, 1]).into();
+        let column: Ints = bool::Bool::new_unchecked([4, 1]).into();
         assert!(int::broadcast::Ite::with_dom([column, i.into(), i.into()]).is_err());
         // branches of different sorts
         let other = word::Word::new_unchecked(4, [4, 4]);
@@ -948,7 +948,7 @@ mod int {
     use base::boundary::{Boundary, Poly};
     use base::mono;
     use theory::int::*;
-    use theory::{bool::Bool, int::Int};
+    use theory::{Ints, bool::Bool, int::Int};
 
     fn one(s: Int) -> Poly<Int> {
         mono![s].into()
@@ -1121,10 +1121,10 @@ mod int {
     }
     #[test]
     fn comparisons_write_booleans() {
-        let x: Sort = Int::new_unchecked([2, 3]).into();
-        let b: Sort = Bool::new_unchecked([2, 3]).into();
-        let dom: Poly<Sort> = mono![x, x].into();
-        let cod: Poly<Sort> = mono![b].into();
+        let x: Ints = Int::new_unchecked([2, 3]).into();
+        let b: Ints = Bool::new_unchecked([2, 3]).into();
+        let dom: Poly<Ints> = mono![x, x].into();
+        let cod: Poly<Ints> = mono![b].into();
         for (d, c) in [
             (
                 Lt::with_dom([Int::new_unchecked([2, 3]); 2]).unwrap().dom(),
@@ -1176,7 +1176,7 @@ mod real {
     use base::differentiable::T;
     use base::mono;
     use theory::real::*;
-    use theory::{bool::Bool, real::Real};
+    use theory::{Reals, bool::Bool, real::Real};
 
     fn one(s: Real) -> Poly<Real> {
         mono![s].into()
@@ -1412,10 +1412,10 @@ mod real {
     }
     #[test]
     fn comparisons_write_booleans() {
-        let x: Sort = Real::new_unchecked([2, 3]).into();
-        let b: Sort = Bool::new_unchecked([2, 3]).into();
-        let dom: Poly<Sort> = mono![x, x].into();
-        let cod: Poly<Sort> = mono![b].into();
+        let x: Reals = Real::new_unchecked([2, 3]).into();
+        let b: Reals = Bool::new_unchecked([2, 3]).into();
+        let dom: Poly<Reals> = mono![x, x].into();
+        let cod: Poly<Reals> = mono![b].into();
         for (d, c) in [
             (
                 Lt::with_dom([Real::new_unchecked([2, 3]); 2])
@@ -1677,21 +1677,21 @@ mod word {
     use base::boundary::{Boundary, Poly};
     use base::mono;
     use theory::word::*;
-    use theory::{bool::Bool, word::Word};
+    use theory::{Words, bool::Bool, word::Word};
 
-    fn w(width: usize, shape: [usize; 2]) -> Sort {
+    fn w(width: usize, shape: [usize; 2]) -> Words {
         Word::new(width, shape).unwrap().into()
     }
 
-    fn b(shape: [usize; 2]) -> Sort {
+    fn b(shape: [usize; 2]) -> Words {
         Bool::new_unchecked(shape).into()
     }
 
-    fn one(s: Sort) -> Poly<Sort> {
+    fn one(s: Words) -> Poly<Words> {
         mono![s].into()
     }
 
-    fn two(s: Sort) -> Poly<Sort> {
+    fn two(s: Words) -> Poly<Words> {
         mono![s, s].into()
     }
 
@@ -1828,7 +1828,7 @@ mod word {
             one(w(1, [1, 1]))
         );
 
-        let dom: Poly<Sort> = mono![w(8, [2, 3]), w(4, [2, 3])].into();
+        let dom: Poly<Words> = mono![w(8, [2, 3]), w(4, [2, 3])].into();
         assert_eq!(
             Concat::with_dom([Word::new(8, [2, 3]).unwrap(), Word::new(4, [2, 3]).unwrap()])
                 .unwrap()
