@@ -74,6 +74,12 @@ impl<G> Mono<G> {
         self.0.iter()
     }
 
+    /// The base types of the tuple, in order, as a slice: so that a tuple of
+    /// a given length can be matched by a slice pattern, as `[x, y]`.
+    pub fn as_slice(&self) -> &[G] {
+        &self.0
+    }
+
     /// The tuple type with `f` applied to each base type, in order. With
     /// `f = H::from`, this converts the base types, which a `From` impl
     /// between monomials cannot do, as it would overlap with `From<T> for T`.
@@ -193,6 +199,13 @@ impl<G> Poly<G> {
     /// The variants of the sum, each a product type, in order.
     pub fn iter(&self) -> std::slice::Iter<'_, Mono<G>> {
         self.0.iter()
+    }
+
+    /// The variants of the sum, each a product type, in order, as a slice: so
+    /// that a sum of a given number of variants can be matched by a slice
+    /// pattern, as `[m]`.
+    pub fn as_slice(&self) -> &[Mono<G>] {
+        &self.0
     }
 
     /// The sum type with `f` applied to each base type of each variant, in

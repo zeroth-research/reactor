@@ -380,3 +380,21 @@ fn the_units_and_zero_are_told_apart() {
     assert!(!poly(&["x"]).is_unit() && !poly(&["x"]).is_zero());
     assert!(!poly(&["", ""]).is_unit());
 }
+
+#[test]
+fn as_slice_borrows_in_order() {
+    assert_eq!(mono("xyz").as_slice(), ['x', 'y', 'z']);
+    assert_eq!(Mono::<char>::unit().as_slice(), [] as [char; 0]);
+    let p = poly(&["xy", "z"]);
+    assert_eq!(p.as_slice(), [mono("xy"), mono("z")]);
+    assert!(Poly::<char>::zero().as_slice().is_empty());
+    // a sum of one product of one base type, matched level by level
+    let p = poly(&["x"]);
+    let [m] = p.as_slice() else {
+        panic!("one variant")
+    };
+    let [g] = m.as_slice() else {
+        panic!("one base type")
+    };
+    assert_eq!(*g, 'x');
+}
