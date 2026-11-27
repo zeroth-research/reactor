@@ -5,7 +5,7 @@ use base::boundary::{Boundary, Poly};
 use base::differentiable::T;
 use base::mono;
 use theory::zero::Real0;
-use theory::{Any, Combinatorial, Differential, Events, Matrix, Reals, Sequential};
+use theory::{Any, Bools, Combinatorial, Differential, Matrix, Reals, Sequential};
 use theory::{bool::Bool, r#enum::Enum, event, event::Event, int::Int, real, real::Real};
 
 /// A matrix carrying its shape only, enough to compute boundaries.
@@ -49,20 +49,17 @@ fn the_subsets_hold_the_matrix_sorts_only() {
 }
 
 #[test]
-fn the_events_subset_holds_events_and_booleans() {
+fn the_bools_subset_holds_booleans_and_events() {
     let (ev, b) = (Event::new(), Bool::new_unchecked([1, 1]));
+    assert_eq!(Bools::try_from(Any::from(ev)).ok(), Some(Bools::Event(ev)));
+    assert_eq!(Bools::try_from(Any::from(b)).ok(), Some(Bools::Bool(b)));
     assert_eq!(
-        Events::try_from(Any::from(ev)).ok(),
-        Some(Events::Event(ev))
+        Bools::try_from(Any::Zero(Real0)).ok(),
+        Some(Bools::Zero(Real0))
     );
-    assert_eq!(Events::try_from(Any::from(b)).ok(), Some(Events::Bool(b)));
-    assert_eq!(
-        Events::try_from(Any::Zero(Real0)).ok(),
-        Some(Events::Zero(Real0))
-    );
-    assert!(Events::try_from(Any::from(Real::new_unchecked([1, 1]))).is_err());
+    assert!(Bools::try_from(Any::from(Real::new_unchecked([1, 1]))).is_err());
     // `Copy`, as its sorts are
-    let s = Events::from(ev);
+    let s = Bools::from(ev);
     let t = s;
     assert_eq!(s, t);
     assert_eq!(s.to_string(), ev.to_string());

@@ -215,7 +215,7 @@ mod r#enum {
 mod event {
     use base::boundary::Boundary;
     use base::mono;
-    use theory::Events;
+    use theory::Bools;
     use theory::bool::Bool;
     use theory::event::Event;
     use theory::event::*;
@@ -223,7 +223,7 @@ mod event {
     #[test]
     fn the_difference_of_two_values_of_an_event_is_a_bool() {
         let e = Event::new();
-        let c: Events = Bool::new_unchecked([1, 1]).into();
+        let c: Bools = Bool::new_unchecked([1, 1]).into();
         let op = Xor::with_dom([e.into(), e.into()]).unwrap();
         assert_eq!(op.dom(), mono![e.into(), e.into()].into());
         assert_eq!(op.cod(), mono![c].into());
@@ -232,7 +232,7 @@ mod event {
     #[test]
     fn the_shift_of_an_event_by_a_bool_is_a_value_of_it() {
         let e = Event::new();
-        let c: Events = Bool::new_unchecked([1, 1]).into();
+        let c: Bools = Bool::new_unchecked([1, 1]).into();
         let shift = Xor::with_dom([e.into(), c]).unwrap();
         assert_eq!(shift.dom(), mono![e.into(), c].into());
         assert_eq!(shift.cod(), mono![e.into()].into());
@@ -249,7 +249,7 @@ mod event {
     #[test]
     fn the_values_of_two_events_never_meet() {
         let (e, f) = (Event::new(), Event::new());
-        let c: Events = Bool::new_unchecked([1, 1]).into();
+        let c: Bools = Bool::new_unchecked([1, 1]).into();
         assert!(Xor::with_dom([e.into(), f.into()]).is_err());
         assert_ne!(
             Xor::with_dom([e.into(), e.into()]).unwrap(),
@@ -261,7 +261,7 @@ mod event {
         );
         // no event is made of booleans, nor shifted by a wider boolean
         assert!(Xor::with_dom([c, c]).is_err());
-        let wide: Events = Bool::new_unchecked([2, 2]).into();
+        let wide: Bools = Bool::new_unchecked([2, 2]).into();
         assert!(Xor::with_dom([e.into(), wide]).is_err());
         assert!(Xor::with_dom([wide, e.into()]).is_err());
     }
@@ -269,7 +269,7 @@ mod event {
     #[test]
     fn display() {
         let e = Event::new();
-        let c: Events = Bool::new_unchecked([1, 1]).into();
+        let c: Bools = Bool::new_unchecked([1, 1]).into();
         for dom in [[e.into(), e.into()], [e.into(), c], [c, e.into()]] {
             assert_eq!(Xor::with_dom(dom).unwrap().to_string(), "Xor");
         }

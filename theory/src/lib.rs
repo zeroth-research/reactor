@@ -60,12 +60,11 @@ plural the sorts of a theory:
 
 | Subset | Sorts | SMT-LIB2 theory |
 |---|---|---|
-| [`Bools`] | [`Bool`], [`Real0`] | `Core` |
+| [`Bools`] | [`Bool`], [`Event`], [`Real0`] | `Core`, an event a `Bool` |
 | [`Reals`] | [`Real`], [`Bool`], [`Real0`] | `Reals` |
 | [`Ints`] | [`Int`], [`Bool`], [`Real0`] | `Ints` |
 | [`Nums`] | [`Real`], [`Int`], [`Bool`], [`Real0`] | `Reals_Ints` |
 | [`Words`] | [`Word`], [`Bool`], [`Real0`] | `FixedSizeBitVectors` |
-| [`Events`] | [`Event`], [`Bool`], [`Real0`] | none: `Core`, an event a `Bool` |
 
 [`Nums`], the sorts of both kinds of numbers, shortens `Reals_Ints`, and
 [`Words`] follows our sort [`Word`] rather than SMT-LIB2's longer name.
@@ -74,8 +73,9 @@ SMT-LIB2's `Core`, a name too generic for its sorts, and the name of
 propositional logic, [`Prop`], is taken by its operations.
 
 Every subset includes [`Bool`], because every SMT-LIB2 theory includes the
-Core theory, whose booleans are the sort that comparisons write; [`Bools`]
-holds exactly the sorts that the others share.
+Core theory, whose booleans are the sort that comparisons write. [`Bools`]
+holds the events too, as SMT-LIB2 encodes an event as a `Bool`, so that
+their operation, [`event::Xor`], reads and writes the sorts of [`Bools`].
 
 Every subset also includes [`Real0`], which is not an SMT-LIB2 sort, but
 the trivial tangent of the discrete sorts [`Bool`], [`Int`] and [`Word`],
@@ -116,8 +116,7 @@ use zero::Real0;
     Reals(derive(Copy)),
     Ints(derive(Copy)),
     Nums(derive(Copy)),
-    Words(derive(Copy)),
-    Events(derive(Copy))
+    Words(derive(Copy))
 )]
 #[derive(Clone, PartialEq, Debug, Eq, From)]
 pub enum Any {
@@ -125,14 +124,14 @@ pub enum Any {
     Real(Real),
     #[subenum(Ints, Nums)]
     Int(Int),
-    #[subenum(Bools, Reals, Ints, Nums, Words, Events)]
+    #[subenum(Bools, Reals, Ints, Nums, Words)]
     Bool(Bool),
     #[subenum(Words)]
     Word(Word),
     Enum(Enum),
-    #[subenum(Events)]
+    #[subenum(Bools)]
     Event(Event),
-    #[subenum(Bools, Reals, Ints, Nums, Words, Events)]
+    #[subenum(Bools, Reals, Ints, Nums, Words)]
     Zero(Real0),
 }
 
@@ -179,7 +178,7 @@ macro_rules! display_subset {
     )*};
 }
 
-display_subset!(Bools, Reals, Ints, Nums, Words, Events);
+display_subset!(Bools, Reals, Ints, Nums, Words);
 
 /// All the sorts of words are discrete, so their tangent is trivial: the singleton
 /// sort [`Real0`].
@@ -248,7 +247,7 @@ macro_rules! extract_subset {
 }
 
 #[cfg(feature = "pyo3")]
-extract_subset!(Reals, Ints, Words, Events);
+extract_subset!(Bools, Reals, Ints, Words);
 
 /// Converts a sort into an instance of its class.
 #[cfg(feature = "pyo3")]

@@ -35,7 +35,7 @@ carry the parity of its past, is never observed but through its own change,
 In SMT-LIB2, an event is a `Bool`, and [`Xor`] is `xor`.
 */
 
-use crate::Events;
+use crate::Bools;
 use crate::bool::Bool;
 use crate::zero::Real0;
 use base::boundary::{Boundary, Mono, Poly};
@@ -116,20 +116,20 @@ impl Differentiable for Event {
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.event")
 )]
 pub struct Xor {
-    dom: [Events; 2],
-    cod: Events,
+    dom: [Bools; 2],
+    cod: Bools,
 }
 
 impl Xor {
     /// The exclusive or reading the sorts of `dom`: two values of the same
     /// event, for their difference, or a value of an event and a boolean of the
     /// shape `[1, 1]`, in either order, for its shift. Fails otherwise.
-    pub fn with_dom(dom: [Events; 2]) -> Result<Self, crate::Error> {
+    pub fn with_dom(dom: [Bools; 2]) -> Result<Self, crate::Error> {
         let cod = match &dom {
             // the difference of two values of an event
-            [Events::Event(x), Events::Event(y)] if x == y => Bool::new_unchecked([1, 1]).into(),
+            [Bools::Event(x), Bools::Event(y)] if x == y => Bool::new_unchecked([1, 1]).into(),
             // the shift of an event by a boolean
-            [Events::Event(e), Events::Bool(c)] | [Events::Bool(c), Events::Event(e)]
+            [Bools::Event(e), Bools::Bool(c)] | [Bools::Bool(c), Bools::Event(e)]
                 if c.shape() == [1, 1] =>
             {
                 (*e).into()
@@ -145,12 +145,12 @@ impl Xor {
     }
 }
 
-impl Boundary<Events> for Xor {
-    fn dom(&self) -> Poly<Events> {
+impl Boundary<Bools> for Xor {
+    fn dom(&self) -> Poly<Bools> {
         Mono::from_iter(self.dom.iter().cloned()).into()
     }
 
-    fn cod(&self) -> Poly<Events> {
+    fn cod(&self) -> Poly<Bools> {
         mono![self.cod].into()
     }
 }
@@ -169,7 +169,7 @@ impl Xor {
     /// order; its codomain `cod`, when given, must be the one it writes.
     #[new]
     #[pyo3(signature = (dom, cod = None))]
-    fn py_new(dom: [Events; 2], cod: Option<Events>) -> Result<Self, crate::Error> {
+    fn py_new(dom: [Bools; 2], cod: Option<Bools>) -> Result<Self, crate::Error> {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 
