@@ -13,13 +13,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use num_bigint::BigUint;
-use verilog::ast::{Edge, Error, Item, Ty};
+use verilog::ast::{Edge, Error, ErrorKind, Item, Ty};
 use verilog::ast_interp::{Interp, Values};
 use verilog::elab::{self, Inst};
 use verilog::lower::{Translation, init_name, lower_inst};
 use verilog::miter::{self, Verdict};
 use verilog::rm_sim::{Sim, Valuation};
-use verilog::{BitVec, typing, yosys, z3};
+use verilog::{BitVec, qfbv, typing, yosys, z3};
 
 // ---------------------------------------------------------------------
 // external tools
@@ -461,6 +461,30 @@ pub fn miter_equal(
     }
 }
 
+/// Rewrites the module of `t` into the SMT-LIB bit-vector op set
+/// ([`qfbv::bridge`]) and checks with z3 that its init and update rounds
+/// compute what those of `t` compute. Returns the bridged module, or
+/// `None` if `t` has words too wide for the op set; skips the z3 check
+/// (with a message, see [`missing`]) if z3 is missing. `label` names the
+/// design in a failure.
+pub fn bridge_equal(label: &str, t: &Translation) -> Option<qfbv::Bridged> {
+    let b = match qfbv::bridge(t) {
+        Ok(b) => b,
+        Err(e) if e.kind == ErrorKind::Unsupported => return None,
+        Err(e) => panic!("{label}bridging: {e}"),
+    };
+    let Some(z3) = z3::find() else {
+        missing("z3", "the check of the bridged module");
+        return Some(b);
+    };
+    let differ = qfbv::bridge::check(&z3, t, &b).unwrap_or_else(|e| panic!("{label}z3: {e}"));
+    assert!(
+        differ.is_empty(),
+        "{label}the bridged module differs: {differ:?}"
+    );
+    Some(b)
+}
+
 /// How an accepted design is checked by [`accepted_with`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Check {
@@ -489,6 +513,7 @@ pub fn accepted_with(src: &str, check: Check) -> Translation {
     let label = format!("accepted design\n{src}\n");
     let mut rand = Rand(seed(0x9e37_79b9_7f4a_7c15, src));
     rm_matches_ast(&label, (&inst, &t), &mut rand, 3, 30);
+    bridge_equal(&label, &t);
     if check == Check::All
         && let Some((yosys, z3)) = tools_for("the comparison of accepted designs with Yosys")
         && let Err(e) = miter_equal((&yosys, &z3), &path, &t)

@@ -19,7 +19,7 @@
 
 mod common;
 
-use common::{Gen, Rand, TempDir, design_inputs, examples, load, seed, stem};
+use common::{Gen, Rand, TempDir, bridge_equal, design_inputs, examples, load, seed, stem};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use verilog::ast::{Dir, Edge, Item};
@@ -623,4 +623,45 @@ fn negedge(inst: &Inst) -> bool {
         )
     });
     own || inst.children.iter().any(|(_, c)| negedge(c))
+}
+
+/// Every example rewritten into the SMT-LIB bit-vector op set computes the
+/// same rounds (checked by z3); prints the growth in terms and the widest
+/// wire.
+#[test]
+fn bridged_examples() {
+    let (mut before, mut after, mut widest) = (0, 0, 0);
+    for path in examples() {
+        let (_, t) = load(&path);
+        let label = format!("{}: ", path.display());
+        let b = bridge_equal(&label, &t).unwrap_or_else(|| panic!("{label}too wide"));
+        before += t
+            .module
+            .atoms()
+            .iter()
+            .map(|a| a.update().len())
+            .sum::<usize>();
+        after += b
+            .module
+            .atoms()
+            .iter()
+            .map(|a| a.update().len())
+            .sum::<usize>();
+        let wires = b
+            .module
+            .atoms()
+            .iter()
+            .flat_map(|a| a.update().iter())
+            .flat_map(|t| t.write().iter());
+        widest = widest.max(
+            wires
+                .filter_map(|w| match w.dtype() {
+                    verilog::qfbv::Sort::Word(n) => Some(*n),
+                    verilog::qfbv::Sort::Bool => None,
+                })
+                .max()
+                .unwrap_or(0),
+        );
+    }
+    println!("update terms: {before} before, {after} after bridging; widest word: {widest} bits");
 }

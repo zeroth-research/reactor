@@ -109,11 +109,14 @@ comment line, like those of Yosys's `write_smt2`:
 
 use crate::ast::Name;
 use crate::lower::Translation;
+use crate::qfbv;
 use crate::theory::{Sort, SvOp};
 use crate::value::BitVec;
-use crate::{Atom, Term, Var, Wire};
+use ::theory::{Combinatorial, Differential, Sequential};
 use reactive::var::X;
 use std::collections::{BTreeSet, HashMap, HashSet};
+use std::fmt::{Debug, Display};
+use std::hash::Hash;
 
 /// `(_ BitVec N)`.
 pub fn sort(s: Sort) -> String {
@@ -263,6 +266,19 @@ pub struct Round {
     pub inputs: Vec<Name>,
     /// The controlled variables, whose next value `|X(v)|` is defined.
     pub next: Vec<Name>,
+    /// The declarations of the latched and input values: the start of
+    /// `text`.
+    pub declarations: String,
+    /// The prefix of every defined symbol (see [`round_of`]).
+    pub prefix: String,
+}
+
+impl Round {
+    /// The symbol of the next value of the controlled variable `v`, as
+    /// this round defines it.
+    pub fn next_sym(&self, v: &str) -> String {
+        symbol(&format!("{}X({v})", self.prefix))
+    }
 }
 
 /// `|*v|`: the latched value of the variable `v`.
@@ -279,90 +295,151 @@ pub fn next_symbol(v: &str) -> String {
 /// wire before writing it (atoms out of await order), if two local wires
 /// have the same name, or if the init round reads a latched value.
 pub fn round(t: &Translation, phase: Phase) -> Round {
-    let m = &t.module;
-    let block = |a| block(a, phase);
-    let reads: HashSet<Wire> = m
+    round_of(
+        &t.module,
+        |v| t.name(v).to_string(),
+        &t.wire_names,
+        phase,
+        "",
+    )
+}
+
+/// An op set whose modules [`round_of`] prints: the SMT-LIB text of its
+/// sorts and op applications.
+pub trait Ops:
+    Combinatorial<Self::Sort> + Sequential<Self::Sort> + Differential<Self::Sort> + Display
+{
+    type Sort: Copy + Eq + Hash + Ord + Debug;
+    /// The SMT-LIB sort.
+    fn sort(s: &Self::Sort) -> String;
+    /// The width of a word (the sort of a variable).
+    fn width(s: &Self::Sort) -> usize;
+    /// Whether the op is `Havoc`, which declares its wire.
+    fn is_havoc(&self) -> bool;
+    /// The application of the op to the operands, each given as an
+    /// expression and its sort.
+    fn expr(&self, args: &[(String, Self::Sort)]) -> String;
+}
+
+impl Ops for SvOp {
+    type Sort = Sort;
+    fn sort(s: &Sort) -> String {
+        sort(*s)
+    }
+    fn width(s: &Sort) -> usize {
+        s.width()
+    }
+    fn is_havoc(&self) -> bool {
+        matches!(self, SvOp::Havoc(_))
+    }
+    fn expr(&self, args: &[(String, Sort)]) -> String {
+        apply(self, args)
+    }
+}
+
+/// The round `phase` of the module `m` over the op set `O`, as [`round`]
+/// prints it, with the names `name` of the variables and `wire_names` of
+/// local wires. Every symbol the round defines is prefixed with `prefix`
+/// (`|pX(v)|`, `|p%3|`), but not those it declares for the latched and
+/// input values (`|*v|`, `|X(v)|`): two rounds of modules with the same
+/// variables can be put into one script, the second without its
+/// [`Round::declarations`], and then read the same values.
+pub fn round_of<O: Ops>(
+    m: &reactive::Module<O, O, O, O::Sort>,
+    name: impl Fn(&reactive::Var<O::Sort>) -> String,
+    wire_names: &HashMap<dataflow::diagram::Wire<O::Sort>, Name>,
+    phase: Phase,
+    prefix: &str,
+) -> Round {
+    type W<O> = dataflow::diagram::Wire<<O as Ops>::Sort>;
+    type V<O> = reactive::Var<<O as Ops>::Sort>;
+    let block = |a| block_of(a, phase);
+    let reads: HashSet<W<O>> = m
         .atoms()
         .iter()
         .flat_map(block)
         .flat_map(|term| term.read().iter().copied())
         .collect();
-    let vars: Vec<&Var> = m
+    let vars: Vec<&V<O>> = m
         .extl()
         .iter()
         .chain(m.intf().iter())
         .chain(m.prvt().iter())
         .collect();
-    let width = |v: &Var| v.dtype().width();
+    let width = |v: &V<O>| O::width(v.dtype());
+    let sym = |s: String| symbol(&format!("{prefix}{s}"));
 
     let mut text = String::new();
     // the symbol of every wire declared or defined so far
-    let mut symbols: HashMap<Wire, String> = HashMap::new();
+    let mut symbols: HashMap<W<O>, String> = HashMap::new();
     let mut latched = vec![];
     for v in vars.iter().filter(|v| reads.contains(&***v)) {
-        let name = t.name(v);
+        let name = name(v);
         assert!(phase == Phase::Update, "the init round reads `*{name}`");
-        let sym = latched_symbol(name);
+        let s = latched_symbol(&name);
         text += &format!("; v2rm-latched {name} {}\n", width(v));
-        text += &format!("(declare-const {sym} {})\n", sort(*v.dtype()));
-        symbols.insert(***v, sym);
-        latched.push(name.to_string());
+        text += &format!("(declare-const {s} {})\n", O::sort(v.dtype()));
+        symbols.insert(***v, s);
+        latched.push(name);
     }
     let mut inputs = vec![];
     for v in m.extl().iter().filter(|v| reads.contains(&X(*v))) {
-        let name = t.name(v);
-        let sym = next_symbol(name);
+        let name = name(v);
+        let s = next_symbol(&name);
         text += &format!("; v2rm-input {name} {}\n", width(v));
-        text += &format!("(declare-const {sym} {})\n", sort(*v.dtype()));
-        symbols.insert(X(v), sym);
-        inputs.push(name.to_string());
+        text += &format!("(declare-const {s} {})\n", O::sort(v.dtype()));
+        symbols.insert(X(v), s);
+        inputs.push(name);
     }
 
-    let controlled: HashMap<Wire, &Var> = m.ctrl().iter().map(|v| (X(v), v)).collect();
+    let declarations = text.clone();
+    let controlled: HashMap<W<O>, &V<O>> = m.ctrl().iter().map(|v| (X(v), v)).collect();
     let mut next = vec![];
     let mut local: BTreeSet<Name> = BTreeSet::new();
     let mut unnamed = 0;
     for atom in m.atoms() {
-        let ctrl: Vec<&str> = atom.ctrl().iter().map(|v| t.name(v)).collect();
+        let ctrl: Vec<String> = atom.ctrl().iter().map(&name).collect();
         text += &format!("; atom controls {}\n", ctrl.join(", "));
         for term in block(atom) {
             let w = term.write()[0];
-            let sym = match controlled.get(&w) {
+            let s = match controlled.get(&w) {
                 Some(v) => {
-                    let name = t.name(v);
+                    let name = name(v);
                     let class = if m.intf().contains(v) {
                         "interface"
                     } else {
                         "private"
                     };
                     text += &format!("; v2rm-next {name} {} {class}\n", width(v));
-                    next.push(name.to_string());
-                    next_symbol(name)
+                    let s = sym(format!("X({name})"));
+                    next.push(name);
+                    s
                 }
                 None => {
-                    let name = t.wire_names.get(&w).cloned().unwrap_or_else(|| {
+                    let name = wire_names.get(&w).cloned().unwrap_or_else(|| {
                         unnamed += 1;
                         format!("%{unnamed}")
                     });
                     assert!(local.insert(name.clone()), "two wires named `{name}`");
-                    symbol(&name)
+                    sym(name)
                 }
             };
-            let s = sort(*w.dtype());
-            if let SvOp::Havoc(_) = term.itype() {
-                text += &format!("(declare-const {sym} {s})\n");
+            let sort = O::sort(w.dtype());
+            if term.itype().is_havoc() {
+                text += &format!("(declare-const {s} {sort})\n");
             } else {
-                let args: Vec<(String, Sort)> = term
+                let args: Vec<(String, O::Sort)> = term
                     .read()
                     .iter()
                     .map(|r| match symbols.get(r) {
                         Some(sym) => (sym.clone(), *r.dtype()),
-                        None => panic!("{sym} reads a wire before it is written"),
+                        None => panic!("{s} reads a wire before it is written"),
                     })
                     .collect();
-                text += &format!("(define-fun {sym} () {s} {})\n", apply(term.itype(), &args));
+                let e = term.itype().expr(&args);
+                text += &format!("(define-fun {s} () {sort} {e})\n");
             }
-            symbols.insert(w, sym);
+            symbols.insert(w, s);
         }
     }
     assert_eq!(
@@ -375,13 +452,83 @@ pub fn round(t: &Translation, phase: Phase) -> Round {
         latched,
         inputs,
         next,
+        declarations,
+        prefix: prefix.to_string(),
     }
 }
 
 /// The terms of the block of `a` that round `phase` runs.
-fn block(a: &Atom, phase: Phase) -> impl Iterator<Item = &Term> {
+fn block_of<O: Ops>(
+    a: &reactive::Atom<O, O, O, O::Sort>,
+    phase: Phase,
+) -> impl Iterator<Item = &dataflow::diagram::Term<O, O::Sort>> {
     match phase {
         Phase::Init => a.init().iter(),
         Phase::Update => a.update().iter(),
+    }
+}
+
+/// The ops of [`qfbv`] are SMT-LIB functions: `Bool` is
+/// `Bool`, a word `(_ BitVec w)`, a constant a binary literal, and every
+/// other op the function of its name (`Skip` the operand itself, `Ne`
+/// `distinct`). [`Ops::expr`] panics on `Havoc` and `Zero`.
+impl Ops for qfbv::Op {
+    type Sort = qfbv::Sort;
+    fn sort(s: &qfbv::Sort) -> String {
+        match s {
+            qfbv::Sort::Word(w) => format!("(_ BitVec {w})"),
+            qfbv::Sort::Bool => "Bool".to_string(),
+        }
+    }
+    fn width(s: &qfbv::Sort) -> usize {
+        match s {
+            qfbv::Sort::Word(w) => *w,
+            qfbv::Sort::Bool => 1,
+        }
+    }
+    fn is_havoc(&self) -> bool {
+        matches!(self, qfbv::Op::Havoc(_))
+    }
+    fn expr(&self, args: &[(String, qfbv::Sort)]) -> String {
+        use qfbv::Op::*;
+        let sorts: Vec<qfbv::Sort> = args.iter().map(|(_, s)| *s).collect();
+        if let Err(e) = self.result_sort(&sorts) {
+            panic!("{e}");
+        }
+        let call = |f: &str| {
+            let operands: Vec<&str> = args.iter().map(|(a, _)| a.as_str()).collect();
+            format!("({f} {})", operands.join(" "))
+        };
+        match self {
+            Num { value, width } => format!("#b{value:0width$b}"),
+            Havoc(_) | Zero(_) => panic!("{self} has no SMT-LIB expression"),
+            Skip => args[0].0.clone(),
+            Not => call("bvnot"),
+            And => call("bvand"),
+            Or => call("bvor"),
+            Xor => call("bvxor"),
+            Neg => call("bvneg"),
+            Add => call("bvadd"),
+            Sub => call("bvsub"),
+            Mul => call("bvmul"),
+            UDiv => call("bvudiv"),
+            URem => call("bvurem"),
+            SDiv => call("bvsdiv"),
+            SRem => call("bvsrem"),
+            Shl => call("bvshl"),
+            LShr => call("bvlshr"),
+            AShr => call("bvashr"),
+            Extract { hi, lo } => call(&format!("(_ extract {hi} {lo})")),
+            Concat => call("concat"),
+            ZeroExtend(i) => call(&format!("(_ zero_extend {i})")),
+            SignExtend(i) => call(&format!("(_ sign_extend {i})")),
+            Eq => call("="),
+            Ne => call("distinct"),
+            ULt => call("bvult"),
+            ULe => call("bvule"),
+            SLt => call("bvslt"),
+            SLe => call("bvsle"),
+            Ite => call("ite"),
+        }
     }
 }

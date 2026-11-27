@@ -84,6 +84,7 @@ pub mod iverilog;
 pub mod lower;
 pub mod miter;
 pub mod print;
+pub mod qfbv;
 pub mod rm_sim;
 pub mod sizing;
 pub mod smt;
