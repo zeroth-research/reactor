@@ -437,8 +437,8 @@ class Button(sugar.Module):
         return Havoc, False
 
     def update(self, press, up):
-        # flipped, an event is sent; kept, it is not
-        return ite(up, ~press, press), ~up
+        # shifted by its phase, the event is sent whenever the phase is up
+        return press ^ up, ~up
 
 
 def test_a_light_switches_when_its_button_is_pressed():

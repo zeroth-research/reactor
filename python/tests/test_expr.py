@@ -590,8 +590,8 @@ def test_an_event_is_received_when_it_changes():
     with collecting() as terms:
         happens = recv(e)
     assert isinstance(happens, BExpr) and happens.dtype == COND
-    # its next value differs from its latched one
-    assert [t.itype for t in terms] == [_ev.Ne([ev, ev])]
+    # the difference of its next value and its latched one
+    assert [t.itype for t in terms] == [_ev.Xor([ev, ev])]
     assert [w.id for w in terms[0].read] == [X(e).wire.id, e.wire.id]
     # an event has no constants
     for sort in [ev, Event]:
@@ -601,32 +601,49 @@ def test_an_event_is_received_when_it_changes():
         recv(expr(Var(COND)))
 
 
-def test_an_event_has_no_boolean_operations():
-    e = expr(Var(Event()))
-    # nor is it a condition: `recv(e)` is
-    with pytest.raises(TypeError):
-        ite(e, "on", "off")
-    with pytest.raises(TypeError):
-        e & e
-    # `~e` is its flip, an event of itself, not a boolean
+def test_an_event_is_shifted_by_a_boolean_in_either_order():
+    ev = Event()
+    e, c = expr(Var(ev)), expr(Var(COND))
+    for build, dom in [
+        (lambda: e ^ c, [ev, COND]),
+        (lambda: c ^ e, [COND, ev]),
+        (lambda: e ^ True, [ev, COND]),
+        (lambda: False ^ e, [COND, ev]),
+        (lambda: ~e, [ev, COND]),
+    ]:
+        with collecting() as terms:
+            r = build()
+        assert isinstance(r, EExpr) and r.dtype == ev
+        assert terms[-1].itype == _ev.Xor(dom)
+    # two values of it differ by a boolean
     with collecting() as terms:
-        f = ~e
-    assert isinstance(f, EExpr) and f.dtype == e.dtype
-    assert [t.itype for t in terms] == [_ev.Toggle(e.dtype)]
+        d = X(e) ^ e
+    assert isinstance(d, BExpr) and d.dtype == COND
+    assert [t.itype for t in terms] == [_ev.Xor([ev, ev])]
 
 
-def test_ite_chooses_between_values_of_one_event_by_a_scalar_condition():
-    ev, fv = Event(), Event()
-    e, f = expr(Var(ev)), expr(Var(fv))
-    with collecting() as terms:
-        r = ite(recv(e), ~f, f)
-    assert isinstance(r, EExpr) and r.dtype == fv
-    assert [t.itype for t in terms] == [_ev.Ne([ev, ev]), _ev.Toggle(fv), _ev.Ite([COND, fv, fv])]
-    # not between two events, nor with a constant, which an event has none of
-    with pytest.raises(TypeError):
-        ite(recv(e), e, f)
-    with pytest.raises(TypeError):
-        ite(recv(e), True, f)
+def test_an_event_meets_no_other_event_and_no_number():
+    e, f = expr(Var(Event())), expr(Var(Event()))
+    # the exclusive or rejects any other domain: another event, a wider boolean, a word
+    for build in [
+        lambda: e ^ f,
+        lambda: e ^ expr(Var(Bool([2, 2]))),
+        lambda: expr(Var(Bool([2, 2]))) ^ e,
+        lambda: e ^ expr(Var(Word(8, [1, 1]))),
+    ]:
+        with pytest.raises(ValueError):
+            build()
+    # a number has no sort to take, and an event is neither a condition, nor chosen
+    # between: it is shifted, `e ^ c`
+    for build in [
+        lambda: e ^ 1,
+        lambda: e & e,
+        lambda: ite(e, "on", "off"),
+        lambda: ite(recv(e), e, ~e),
+        lambda: ite(recv(e), e, f),
+    ]:
+        with pytest.raises(TypeError):
+            build()
 
 
 def test_enumerations_and_events_do_not_mix():

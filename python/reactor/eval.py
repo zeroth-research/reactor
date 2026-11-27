@@ -304,16 +304,17 @@ def eval_itype(itype, read, out_sort=None):
         case _en.Into(Enum(small), Enum(large)):
             # each position in the smaller enumeration, to that of its value in the larger
             return [torch.tensor([large.index(v) for v in small], dtype=torch.int64)[r[0]]]
-        case _en.Eq() | _ev.Eq():
+        case _en.Eq():
             return [r[0] == r[1]]
-        case _en.Ne() | _ev.Ne():
+        case _en.Ne():
             return [r[0] != r[1]]
-        case _en.Ite() | _ev.Ite():
+        case _en.Ite():
             return [torch.where(r[0], r[1], r[2])]
 
-        # --- events: flipped when they happen ---
-        case _ev.Toggle():
-            return [~r[0]]
+        # --- events: flipped when they happen; the shift of an event by a boolean, and the
+        # difference of two values of it, are both the exclusive or of their booleans ---
+        case _ev.Xor():
+            return [r[0] ^ r[1]]
 
     raise RuntimeError(f"cannot evaluate op: {itype}")
 

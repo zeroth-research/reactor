@@ -221,10 +221,7 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     {
         let event = PyModule::new(py, "event")?;
         event.add_class::<theory::event::Event>()?;
-        event.add_class::<theory::event::Toggle>()?;
-        event.add_class::<theory::event::Eq>()?;
-        event.add_class::<theory::event::Ne>()?;
-        event.add_class::<theory::event::Ite>()?;
+        event.add_class::<theory::event::Xor>()?;
         m.add("event", &event)?;
         namespaces.push(("event", event));
     }

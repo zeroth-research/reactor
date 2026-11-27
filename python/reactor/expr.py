@@ -11,7 +11,7 @@ are split by *operation family* (the sort picks the class):
     SExpr  — Signed word   Word           arithmetic + bitwise + width, signed  // % and comparisons
     UExpr  — Unsigned word Word           arithmetic + bitwise + width, unsigned // % and comparisons
     NExpr  — Enumeration   Enum           == != (-> BExpr), its constants written as strings
-    EExpr  — Event         Event          ~ (flip: send), recv(e) (-> BExpr); no constants, each its own sort
+    EExpr  — Event         Event          ^ a boolean (shift: send), ^ itself (-> BExpr), ~, recv(e); each its own sort
 
 The operations are those of the namespace of the operands' sort, ``reactor.real``,
 ``.int``, ``.bool``, ``.word``, ``.enum`` or ``.event``, built from the operands' sorts,
@@ -471,6 +471,9 @@ class BExpr(Expr):
         return self._binary(_bl.Or([self.dtype, o.dtype]), o)
 
     def __xor__(self, o):
+        # an event, shifted by me
+        if isinstance(o, EExpr):
+            return self._binary(_ev.Xor([self.dtype, o.dtype]), o)
         o = self._coerce(o)
         return self._binary(_bl.Xor([self.dtype, o.dtype]), o)
 
@@ -654,15 +657,27 @@ class NExpr(Expr):
 
 class EExpr(Expr):
     """Events (Event): a value that flips when the event happens, and is kept when it does
-    not; its state alone means nothing. ``~e`` is the event flipped, which, returned for
-    it, sends it: ``ite(c, ~e, e)``; ``recv(e)`` is whether it happens in this step,
-    ``X(e) != e``: ``ite(recv(e), a, b)``. Each event is its own sort, so that the values
-    of an event meet only its own: an event has no constants, and is flipped into no other
-    event."""
+    not; its state alone means nothing. Its values form a torsor over the booleans, both
+    by ``^``, the exclusive or of the theory: ``e ^ c``, or ``c ^ e``, is the event shifted
+    by the boolean ``c``, flipped when it holds, which, returned for it, sends it on ``c``;
+    and ``x ^ y`` is the difference of two values of it, a boolean. ``~e`` is ``e ^ True``,
+    the event always sent, and ``recv(e)`` is ``X(e) ^ e``, whether it happens in this step.
+    Each event is its own sort, so that the values of an event meet only its own: an event
+    has no constants, and is shifted into no other event."""
+
+    # the exclusive or of the theory, whose domain chooses its typing, and which rejects
+    # any other; a raw value is built as `expr()` makes it, a raw boolean a scalar one
+    def __xor__(self, o) -> "EExpr | BExpr":
+        o = o if isinstance(o, Expr) else expr(o)
+        return self._binary(_ev.Xor([self.dtype, o.dtype]), o)
+
+    def __rxor__(self, o) -> "EExpr":
+        o = expr(o)
+        return o._binary(_ev.Xor([o.dtype, self.dtype]), self)
 
     def __invert__(self) -> "EExpr":
-        """The event flipped: returned for it, an event happens."""
-        return self._unary(_ev.Toggle(self.dtype))
+        """The event flipped, `e ^ True`: returned for it, it is sent."""
+        return self ^ True
 
 
 # ---------------------------------------------------------------------------
@@ -886,8 +901,6 @@ def ite(cond: "BExpr", iftrue, iffalse) -> Expr:
             b = a._coerce(b)
             a = a._cast(b.dtype)
             choice = _en.Ite
-        case EExpr() if cond.shape == [1, 1]:
-            choice = _ev.Ite
         case RExpr() if cond.shape == a.shape:
             choice = _rl.Ite
         case RExpr() if cond.shape == [1, 1]:
@@ -904,7 +917,11 @@ def ite(cond: "BExpr", iftrue, iffalse) -> Expr:
             choice = _ww.Ite
         case WExpr() if cond.shape == [1, 1]:
             choice = _wb.Ite
-        case NExpr() | EExpr():
+        case EExpr():
+            raise TypeError(
+                "ite(): an event is not chosen between: shift it by the condition, e ^ c"
+            )
+        case NExpr():
             raise TypeError(
                 f"ite(): the condition of a choice between scalars must be a scalar, "
                 f"[1, 1]; got {cond.shape}"
@@ -921,11 +938,11 @@ def ite(cond: "BExpr", iftrue, iffalse) -> Expr:
 
 
 def recv(e: "EExpr") -> "BExpr":
-    """Whether the event `e` is received: whether it happens in this step, its next value
-    differing from its latched one, ``X(e) != e``."""
+    """Whether the event `e` is received: whether it happens in this step, the difference
+    of its next value and its latched one, ``X(e) ^ e``."""
     if not isinstance(e, EExpr):
         raise TypeError(f"recv() needs an event, got {e!r}")
-    return X(e)._binary(_ev.Ne([e.dtype, e.dtype]), e)
+    return X(e) ^ e
 
 
 def relu(e: Expr) -> Expr:

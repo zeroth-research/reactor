@@ -111,7 +111,7 @@ impl<'py> IntoPyObject<'py> for crate::Op<tch::Tensor> {
             Op::Skip(op) => op.into_pyobject(py).map(Bound::into_any),
             Op::Zero(op) => op.into_pyobject(py).map(Bound::into_any),
             Op::Enum(op) => op.into_pyobject(py),
-            Op::Event(op) => op.into_pyobject(py),
+            Op::Event(op) => op.into_pyobject(py).map(Bound::into_any),
         }
     }
 }

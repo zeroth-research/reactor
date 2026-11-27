@@ -5,7 +5,7 @@ use base::boundary::{Boundary, Poly};
 use base::differentiable::T;
 use base::mono;
 use theory::zero::Real0;
-use theory::{Any, Combinatorial, Differential, Matrix, Reals, Sequential};
+use theory::{Any, Combinatorial, Differential, Events, Matrix, Reals, Sequential};
 use theory::{bool::Bool, r#enum::Enum, event, event::Event, int::Int, real, real::Real};
 
 /// A matrix carrying its shape only, enough to compute boundaries.
@@ -49,6 +49,26 @@ fn the_subsets_hold_the_matrix_sorts_only() {
 }
 
 #[test]
+fn the_events_subset_holds_events_and_booleans() {
+    let (ev, b) = (Event::new(), Bool::new_unchecked([1, 1]));
+    assert_eq!(
+        Events::try_from(Any::from(ev)).ok(),
+        Some(Events::Event(ev))
+    );
+    assert_eq!(Events::try_from(Any::from(b)).ok(), Some(Events::Bool(b)));
+    assert_eq!(
+        Events::try_from(Any::Zero(Real0)).ok(),
+        Some(Events::Zero(Real0))
+    );
+    assert!(Events::try_from(Any::from(Real::new_unchecked([1, 1]))).is_err());
+    // `Copy`, as its sorts are
+    let s = Events::from(ev);
+    let t = s;
+    assert_eq!(s, t);
+    assert_eq!(s.to_string(), ev.to_string());
+}
+
+#[test]
 fn tangents_are_taken_within_any() {
     let r = Real::new_unchecked([2, 3]);
     assert_eq!(T(Any::from(r)), Any::from(T(r)));
@@ -67,15 +87,15 @@ fn the_operations_of_every_theory_lift_their_boundary() {
     assert_eq!(add.dom(), mono![real.clone(), real.clone()].into());
     assert_eq!(add.cod(), mono![real].into());
 
-    // a scalar operation, whose comparison writes a boolean of the shape [1, 1]
+    // a scalar operation, whose difference writes a boolean of the shape [1, 1]
     let ev = Event::new();
-    let ne: Op = event::Op::from(event::Ne::with_dom([ev, ev]).unwrap()).into();
-    assert_eq!(ne.dom(), mono![Any::from(ev), Any::from(ev)].into());
+    let diff: Op = event::Xor::with_dom([ev.into(), ev.into()]).unwrap().into();
+    assert_eq!(diff.dom(), mono![Any::from(ev), Any::from(ev)].into());
     assert_eq!(
-        ne.cod(),
+        diff.cod(),
         mono![Any::from(Bool::new_unchecked([1, 1]))].into()
     );
-    assert_eq!(ne.to_string(), "Ne");
+    assert_eq!(diff.to_string(), "Xor");
 
     // the zero rate of change of a discrete value writes the one Real0
     let zero = Op::Zero(theory::zero::Zero);

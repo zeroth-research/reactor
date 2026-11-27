@@ -216,63 +216,62 @@ mod event {
     use theory::event::Event;
     use theory::event::*;
 
-    fn cond() -> Sort {
-        Bool::new_unchecked([1, 1]).into()
-    }
-
     #[test]
-    fn toggle_flips_an_event_into_itself() {
+    fn the_difference_of_two_values_of_an_event_is_a_bool() {
         let e = Event::new();
-        for op in [Toggle::with_dom([e]), Toggle::with_cod([e])] {
-            let op = Op::from(op.unwrap());
-            assert_eq!(op.dom(), mono![e.into()].into());
-            assert_eq!(op.cod(), mono![e.into()].into());
-        }
+        let c: Sort = Bool::new_unchecked([1, 1]).into();
+        let op = Xor::with_dom([e.into(), e.into()]).unwrap();
+        assert_eq!(op.dom(), mono![e.into(), e.into()].into());
+        assert_eq!(op.cod(), mono![c].into());
     }
 
     #[test]
-    fn the_comparisons_read_two_values_of_one_event() {
-        let (e, f) = (Event::new(), Event::new());
-        for op in [
-            Op::from(Eq::with_dom([e, e]).unwrap()),
-            Op::from(Ne::with_dom([e, e]).unwrap()),
-        ] {
-            assert_eq!(op.dom(), mono![e.into(), e.into()].into());
-            assert_eq!(op.cod(), mono![cond()].into());
-        }
-        // the values of two events never meet
-        assert!(Eq::with_dom([e, f]).is_err());
-        assert!(Ne::with_dom([e, f]).is_err());
-        // each operation is of its event
-        assert_ne!(Ne::with_dom([e, e]).unwrap(), Ne::with_dom([f, f]).unwrap());
-    }
-
-    #[test]
-    fn ite_chooses_by_a_bool_between_values_of_one_event() {
-        let (e, f) = (Event::new(), Event::new());
-        let op = Op::from(Ite::with_dom([cond(), e.into(), e.into()]).unwrap());
-        assert_eq!(op.dom(), mono![cond(), e.into(), e.into()].into());
+    fn the_shift_of_an_event_by_a_bool_is_a_value_of_it() {
+        let e = Event::new();
+        let c: Sort = Bool::new_unchecked([1, 1]).into();
+        let shift = Xor::with_dom([e.into(), c.clone()]).unwrap();
+        assert_eq!(shift.dom(), mono![e.into(), c.clone()].into());
+        assert_eq!(shift.cod(), mono![e.into()].into());
+        // in either order
+        let op = Xor::with_dom([c.clone(), e.into()]).unwrap();
+        assert_eq!(op.dom(), mono![c.clone(), e.into()].into());
         assert_eq!(op.cod(), mono![e.into()].into());
-        assert_eq!(
-            Ite::with_cod([e]).unwrap(),
-            Ite::with_dom([cond(), e.into(), e.into()]).unwrap()
+        // each typing is its own operation
+        let diff = Xor::with_dom([e.into(), e.into()]).unwrap();
+        assert_ne!(op, shift);
+        assert_ne!(shift, diff);
+    }
+
+    #[test]
+    fn the_values_of_two_events_never_meet() {
+        let (e, f) = (Event::new(), Event::new());
+        let c: Sort = Bool::new_unchecked([1, 1]).into();
+        assert!(Xor::with_dom([e.into(), f.into()]).is_err());
+        assert_ne!(
+            Xor::with_dom([e.into(), e.into()]).unwrap(),
+            Xor::with_dom([f.into(), f.into()]).unwrap()
         );
-        // not between two events, nor by a condition that is no scalar boolean
-        assert!(Ite::with_dom([cond(), e.into(), f.into()]).is_err());
-        let wide = Bool::new_unchecked([2, 2]).into();
-        assert!(Ite::with_dom([wide, e.into(), e.into()]).is_err());
+        assert_ne!(
+            Xor::with_dom([e.into(), c.clone()]).unwrap(),
+            Xor::with_dom([f.into(), c.clone()]).unwrap()
+        );
+        // no event is made of booleans, nor shifted by a wider boolean
+        assert!(Xor::with_dom([c.clone(), c]).is_err());
+        let wide: Sort = Bool::new_unchecked([2, 2]).into();
+        assert!(Xor::with_dom([e.into(), wide.clone()]).is_err());
+        assert!(Xor::with_dom([wide, e.into()]).is_err());
     }
 
     #[test]
     fn display() {
         let e = Event::new();
-        for (op, name) in [
-            (Op::from(Toggle::with_dom([e]).unwrap()), "Toggle"),
-            (Op::from(Eq::with_dom([e, e]).unwrap()), "Eq"),
-            (Op::from(Ne::with_dom([e, e]).unwrap()), "Ne"),
-            (Op::from(Ite::with_cod([e]).unwrap()), "Ite"),
+        let c: Sort = Bool::new_unchecked([1, 1]).into();
+        for dom in [
+            [e.into(), e.into()],
+            [e.into(), c.clone()],
+            [c.clone(), e.into()],
         ] {
-            assert_eq!(op.to_string(), name);
+            assert_eq!(Xor::with_dom(dom).unwrap().to_string(), "Xor");
         }
     }
 }
@@ -324,10 +323,10 @@ mod op {
                 "Eq",
             ),
             (
-                event::Op::from(event::Toggle::with_dom([ev]).unwrap()).into(),
+                event::Xor::with_dom([ev.into(), b.into()]).unwrap().into(),
+                mono![Any::from(ev), Any::from(b)].into(),
                 mono![Any::from(ev)].into(),
-                mono![Any::from(ev)].into(),
-                "Toggle",
+                "Xor",
             ),
         ];
         for (op, dom, cod, name) in cases {
@@ -338,9 +337,9 @@ mod op {
     }
 
     #[test]
-    fn the_comparisons_write_the_booleans_of_the_matrix_theories() {
+    fn the_differences_write_the_booleans_of_the_matrix_theories() {
         let ev = Event::new();
-        let op: Op = event::Op::from(event::Ne::with_dom([ev, ev]).unwrap()).into();
+        let op: Op = event::Xor::with_dom([ev.into(), ev.into()]).unwrap().into();
         assert_eq!(
             op.cod(),
             mono![Any::Bool(Bool::new_unchecked([1, 1]))].into()

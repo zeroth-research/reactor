@@ -13,8 +13,8 @@ compute their own boundary.
 
 The operations are organised in two levels. Each theory module gathers its
 operations in an enum named after the logic of that theory alone:
-[`real::NRA`], [`int::NIA`], [`bool::Prop`], [`word::BV`], `enum::Op`
-and [`event::Op`]. The arithmetic ones mark their linear operations with a
+[`real::NRA`], [`int::NIA`], [`bool::Prop`], [`word::BV`] and `enum::Op`,
+while the events have their one operation, [`event::Xor`]. The arithmetic ones mark their linear operations with a
 subenum named after the linear logic: [`real::LRA`] and [`int::LIA`].
 Here, [`Op`] holds the operations of all theories, one variant per
 theory, and each logic picks the theories it combines, restricting
@@ -64,6 +64,7 @@ plural the sorts of a theory:
 | [`Ints`] | [`Int`], [`Bool`], [`Real0`] | `Ints` |
 | [`Nums`] | [`Real`], [`Int`], [`Bool`], [`Real0`] | `Reals_Ints` |
 | [`Words`] | [`Word`], [`Bool`], [`Real0`] | `FixedSizeBitVectors` |
+| [`Events`] | [`Event`], [`Bool`], [`Real0`] | none: `Core`, an event a `Bool` |
 
 [`Nums`], the sorts of both kinds of numbers, shortens `Reals_Ints`, and
 [`Words`] follows our sort [`Word`] rather than SMT-LIB2's longer name.
@@ -114,7 +115,8 @@ use zero::Real0;
     Reals(derive(Copy)),
     Ints(derive(Copy)),
     Nums(derive(Copy)),
-    Words(derive(Copy))
+    Words(derive(Copy)),
+    Events(derive(Copy))
 )]
 #[derive(Clone, PartialEq, Debug, Eq, From)]
 pub enum Any {
@@ -122,13 +124,14 @@ pub enum Any {
     Real(Real),
     #[subenum(Ints, Nums)]
     Int(Int),
-    #[subenum(Bools, Reals, Ints, Nums, Words)]
+    #[subenum(Bools, Reals, Ints, Nums, Words, Events)]
     Bool(Bool),
     #[subenum(Words)]
     Word(Word),
     Enum(Enum),
+    #[subenum(Events)]
     Event(Event),
-    #[subenum(Bools, Reals, Ints, Nums, Words)]
+    #[subenum(Bools, Reals, Ints, Nums, Words, Events)]
     Zero(Real0),
 }
 
@@ -175,7 +178,7 @@ macro_rules! display_subset {
     )*};
 }
 
-display_subset!(Bools, Reals, Ints, Nums, Words);
+display_subset!(Bools, Reals, Ints, Nums, Words, Events);
 
 /// All the sorts of words are discrete, so their tangent is trivial: the singleton
 /// sort [`Real0`].
@@ -295,7 +298,7 @@ pub enum Op<T> {
     #[subenum(BV)]
     Word(word::BV<T>),
     Enum(r#enum::Op),
-    Event(event::Op),
+    Event(event::Xor),
     Havoc(Havoc),
     Skip(Skip),
     Zero(zero::Zero),
@@ -757,7 +760,7 @@ where
         if let Ok(op) = ob.extract::<r#enum::Op>() {
             return Ok(Op::Enum(op));
         }
-        if let Ok(op) = ob.extract::<event::Op>() {
+        if let Ok(op) = ob.extract::<event::Xor>() {
             return Ok(Op::Event(op));
         }
         if let Ok(op) = ob.extract::<Havoc>() {

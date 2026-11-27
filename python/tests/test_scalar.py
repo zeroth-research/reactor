@@ -8,7 +8,7 @@ from reactor import Havoc, Skip, T, Term, Wire
 from reactor.bool import Bool
 from reactor.zero import Real0
 from reactor.enum import Enum, Sym, Into
-from reactor.event import Event, Toggle
+from reactor.event import Event, Xor
 import reactor.enum as enum_
 import reactor.event as event_
 
@@ -123,31 +123,32 @@ def test_the_choice_of_enumerations_reads_a_scalar_condition():
         enum_.Ite([Bool([2, 2]), e, e])
 
 
-def test_the_operations_on_events_read_the_values_of_one_event():
+def test_the_exclusive_or_of_an_event_is_typed_by_its_domain():
     ev, other = Event(), Event()
+    # the difference of two values of an event, and its shift by a boolean, in either order
     cases = [
-        (Toggle, ev, ev, other),
-        (event_.Eq, [ev, ev], COND, [other, other]),
-        (event_.Ne, [ev, ev], COND, [other, other]),
-        (event_.Ite, [COND, ev, ev], ev, [COND, other, other]),
+        ([ev, ev], COND, [other, other]),
+        ([ev, COND], ev, [other, COND]),
+        ([COND, ev], ev, [COND, other]),
     ]
-    for cls, dom, cod, dom_of_other in cases:
-        op = cls(dom)
+    for dom, cod, dom_of_other in cases:
+        op = Xor(dom)
         assert (op.dom, op.cod) == (dom, cod)
         # the codomain, given, must be the one it writes: not another event
-        assert cls(dom, cod) == op
+        assert Xor(dom, cod) == op
         with pytest.raises(ValueError):
-            cls(dom, other)
+            Xor(dom, other)
         match op:
-            case cls(d, c):
+            case Xor(d, c):
                 assert (d, c) == (dom, cod)
-        # each operation is of its event
-        assert op != cls(dom_of_other)
-    # the values of two events never meet
-    with pytest.raises(ValueError):
-        event_.Ne([ev, other])
-    with pytest.raises(ValueError):
-        event_.Ite([COND, ev, other])
+        # each is of its event
+        assert op != Xor(dom_of_other)
+    # each typing is its own operation
+    assert Xor([ev, COND]) != Xor([COND, ev]) != Xor([ev, ev])
+    # the values of two events never meet, and no event is made of booleans
+    for dom in [[ev, other], [COND, COND], [ev, Bool([2, 2])]]:
+        with pytest.raises(ValueError):
+            Xor(dom)
 
 
 def test_the_scalar_sorts_and_operations_go_through_terms():
@@ -155,8 +156,8 @@ def test_the_scalar_sorts_and_operations_go_through_terms():
     for op, read, write in [
         (Sym("idle", e), [], [Wire(e)]),
         (enum_.Eq([e, e]), [Wire(e), Wire(e)], [Wire(COND)]),
-        (Toggle(ev), [Wire(ev)], [Wire(ev)]),
-        (event_.Ne([ev, ev]), [Wire(ev), Wire(ev)], [Wire(COND)]),
+        (Xor([ev, COND]), [Wire(ev), Wire(COND)], [Wire(ev)]),
+        (Xor([ev, ev]), [Wire(ev), Wire(ev)], [Wire(COND)]),
         (Havoc(e), [], [Wire(e)]),
         (Skip(ev), [Wire(ev)], [Wire(ev)]),
     ]:
