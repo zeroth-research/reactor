@@ -598,8 +598,25 @@ pub fn accepted(src: &str) -> Translation {
     accepted_with(src, Check::All)
 }
 
+/// If `V2RM_SNIPPETS` names a directory, writes the accepted design `src`
+/// there as `<hash>.sv`, for the Python tests (`python/tests/test_verilog.py`)
+/// to run as well.
+fn dump_snippet(src: &str) {
+    let Some(dir) = std::env::var_os("V2RM_SNIPPETS") else {
+        return;
+    };
+    let dir = PathBuf::from(dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    // FNV-1a: the same name for the same text in every run
+    let hash = (src.bytes()).fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    });
+    std::fs::write(dir.join(format!("{hash:016x}.sv")), src).unwrap();
+}
+
 /// [`accepted`], with the checks `check`.
 pub fn accepted_with(src: &str, check: Check) -> Translation {
+    dump_snippet(src);
     let dir = TempDir::new("accepted");
     let path = dir.write("test.sv", src);
     let inst = elab::load(src, &path).unwrap_or_else(|e| panic!("{src}\n{e}"));
