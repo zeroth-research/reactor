@@ -51,7 +51,7 @@ use std::convert::Into as _;
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 #[cfg_attr(
     feature = "pyo3",
-    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.enum")
+    pyo3::pyclass(frozen, from_py_object, eq, str, sequence, module = "reactor.enum")
 )]
 pub struct Enum {
     /// The values, strictly increasing: sorted, without repetitions, and never
@@ -84,9 +84,14 @@ impl Enum {
         Ok(Enum { values })
     }
 
-    /// The symbolic constants of the enumeration, sorted.
-    pub fn values(&self) -> &[String] {
+    /// The symbolic constants of the enumeration, sorted, as a slice.
+    pub fn as_slice(&self) -> &[String] {
         &self.values
+    }
+
+    /// An iterator over the symbolic constants of the enumeration, sorted.
+    pub fn iter(&self) -> std::slice::Iter<'_, String> {
+        self.values.iter()
     }
 
     /// Whether `value` is one of the symbolic constants of the enumeration.
@@ -141,9 +146,22 @@ impl Enum {
     }
 }
 
+/// Iterates over the symbolic constants of the enumeration, sorted, as
+/// `for v in &e`.
+impl<'a> IntoIterator for &'a Enum {
+    type Item = &'a String;
+    type IntoIter = std::slice::Iter<'a, String>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 /// Python builds it from its values, any iterable of distinct strings, and
 /// matches it by them, sorted; `|` is the union of enumerations, and `in` the
-/// membership of a value.
+/// membership of a value. It is a sequence of its values, sorted: `len(e)`,
+/// `e[i]`, from the start only, and `for v in e`, which indexes it until
+/// `IndexError`.
 #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Enum {
     /// A string is not taken for the iterable of its characters: the values
@@ -188,6 +206,21 @@ impl Enum {
     #[cfg(feature = "pyo3")]
     fn __or__(&self, other: &Self) -> Self {
         self.union(other)
+    }
+
+    /// The number of its values, `len(self)`.
+    #[cfg(feature = "pyo3")]
+    fn __len__(&self) -> usize {
+        self.len()
+    }
+
+    /// The value at `index` of its sorted values, `self[index]`; fails with
+    /// `IndexError` past the end, and with `OverflowError` when negative.
+    #[cfg(feature = "pyo3")]
+    fn __getitem__(&self, index: usize) -> PyResult<String> {
+        self.values.get(index).cloned().ok_or_else(|| {
+            pyo3::exceptions::PyIndexError::new_err("enumeration index out of range")
+        })
     }
 
     /// The membership `value in self`: whether `value` is one of its

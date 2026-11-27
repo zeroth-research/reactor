@@ -33,6 +33,20 @@ def test_an_enumeration_is_the_set_of_its_values():
     # a string is not the iterable of its letters
     with pytest.raises(TypeError):
         Enum("idle")
+
+
+def test_an_enumeration_is_the_sequence_of_its_values():
+    e = Enum(["idle", "busy", "done"])
+    assert len(e) == 3
+    assert list(e) == ["busy", "done", "idle"] == [v for v in e]
+    assert (e[0], e[1], e[2]) == ("busy", "done", "idle")
+    with pytest.raises(IndexError):
+        e[3]
+    # the index is never negative
+    with pytest.raises(OverflowError):
+        e[-1]
+    assert "done" in e and "stop" not in e and 0 not in e
+    assert Enum(e) == e
     with pytest.raises(TypeError):
         Enum({"idle", 1})
     with pytest.raises(TypeError):

@@ -18,7 +18,11 @@ mod sort {
         assert_eq!(e.len(), 2);
         assert!(e.contains("idle") && e.contains("busy"));
         assert!(!e.contains("done"));
-        let values: Vec<&str> = e.values().iter().map(|v| &**v).collect();
+        assert_eq!(e.as_slice(), ["busy", "idle"]);
+        // it iterates over its values, sorted
+        let values: Vec<&str> = e.iter().map(String::as_str).collect();
+        assert_eq!(values, ["busy", "idle"]);
+        let values: Vec<&String> = (&e).into_iter().collect();
         assert_eq!(values, ["busy", "idle"]);
     }
 
@@ -36,8 +40,7 @@ mod sort {
         let c = Enum::new(["a", "c", "e"]).unwrap();
         let d = Enum::new(["b", "d", "f", "g"]).unwrap();
         let union = c.union(&d);
-        let values: Vec<&str> = union.values().iter().map(String::as_str).collect();
-        assert_eq!(values, ["a", "b", "c", "d", "e", "f", "g"]);
+        assert_eq!(union.as_slice(), ["a", "b", "c", "d", "e", "f", "g"]);
         // inclusion needs every value, wherever it falls
         assert!(!Enum::new(["a", "z"]).unwrap().is_subset(&c));
         assert!(!Enum::new(["0"]).unwrap().is_subset(&c));
