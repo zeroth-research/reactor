@@ -19,7 +19,7 @@ use verilog::elab::{self, Inst};
 use verilog::lower::{Translation, init_name, lower_inst};
 use verilog::miter::{self, Verdict};
 use verilog::rm_sim::{Sim, Valuation};
-use verilog::{BitVec, qfbv, typing, yosys, z3};
+use verilog::{BitVec, any, qfbv, typing, yosys, z3};
 
 // ---------------------------------------------------------------------
 // external tools
@@ -462,27 +462,121 @@ pub fn miter_equal(
 }
 
 /// Rewrites the module of `t` into the SMT-LIB bit-vector op set
-/// ([`qfbv::bridge`]) and checks with z3 that its init and update rounds
-/// compute what those of `t` compute. Returns the bridged module, or
-/// `None` if `t` has words too wide for the op set; skips the z3 check
-/// (with a message, see [`missing`]) if z3 is missing. `label` names the
-/// design in a failure.
-pub fn bridge_equal(label: &str, t: &Translation) -> Option<qfbv::Bridged> {
+/// ([`qfbv::bridge`]) and that into the ops of `theory::bv`
+/// ([`any::desugar`]), and checks with z3 that the init and update rounds
+/// of each compute what those of the one before compute; then exports the
+/// last into `theory::any` and checks that it is the same module
+/// ([`exported_equal`]). Returns the bridged and the desugared module, or `None` if `t` has
+/// words too wide for the op sets; skips the z3 checks (with a message, see
+/// [`missing`]) if z3 is missing. `label` names the design in a failure.
+pub fn bridge_equal(label: &str, t: &Translation) -> Option<(qfbv::Bridged, any::Desugared)> {
     let b = match qfbv::bridge(t) {
         Ok(b) => b,
         Err(e) if e.kind == ErrorKind::Unsupported => return None,
         Err(e) => panic!("{label}bridging: {e}"),
     };
+    let d = desugar_equal(label, &b);
+    if let Some(z3) = z3::find() {
+        let differ = qfbv::bridge::check(&z3, t, &b).unwrap_or_else(|e| panic!("{label}z3: {e}"));
+        assert!(
+            differ.is_empty(),
+            "{label}the bridged module differs: {differ:?}"
+        );
+    }
+    exported_equal(label, &d);
+    Some((b, d))
+}
+
+/// Desugars the `qfbv` module `b` ([`any::desugar`]) and checks with z3
+/// that its rounds compute what those of `b` compute (skipped with a
+/// message if z3 is missing).
+pub fn desugar_equal(label: &str, b: &qfbv::Bridged) -> any::Desugared {
+    let d = any::desugar(b).unwrap_or_else(|e| panic!("{label}desugaring: {e}"));
     let Some(z3) = z3::find() else {
-        missing("z3", "the check of the bridged module");
-        return Some(b);
+        missing("z3", "the check of the bridged and desugared modules");
+        return d;
     };
-    let differ = qfbv::bridge::check(&z3, t, &b).unwrap_or_else(|e| panic!("{label}z3: {e}"));
+    let differ = any::desugar::check(&z3, b, &d).unwrap_or_else(|e| panic!("{label}z3: {e}"));
     assert!(
         differ.is_empty(),
-        "{label}the bridged module differs: {differ:?}"
+        "{label}the desugared module differs: {differ:?}"
     );
-    Some(b)
+    d
+}
+
+/// Exports `d` into `theory::any` (constants as `Uninterpreted` ops named
+/// by their value: this crate cannot make tensors) and checks that the
+/// result is `d` renamed: the same variables (by width and class), atoms,
+/// blocks and terms, each term with the op of the same name on wires of the
+/// same widths, a wire written or read in two places in one of the same in
+/// the other.
+pub fn exported_equal(label: &str, d: &any::Desugared) -> any::Exported {
+    use theory::any::Sort as S;
+    use theory::bv::BV;
+    let e = any::export(d, |v, w| BV::Uninterpreted(format!("{w}'d{v}")))
+        .unwrap_or_else(|e| panic!("{label}export: {e}"));
+    let (m, n) = (&d.module, &e.module);
+    let width = |s: &S| match s {
+        S::BitVec(w, [1, 1]) => *w,
+        _ => panic!("{label}exported sort {s}"),
+    };
+    for (ours, theirs) in [
+        (m.extl(), n.extl()),
+        (m.intf(), n.intf()),
+        (m.prvt(), n.prvt()),
+    ] {
+        let mapped: BTreeSet<_> = ours.iter().map(|v| e.vars[v]).collect();
+        let theirs: BTreeSet<_> = theirs.iter().copied().collect();
+        assert_eq!(mapped, theirs, "{label}exported variables");
+    }
+    for (v, x) in &e.vars {
+        assert_eq!(
+            v.dtype().width(),
+            width(x.dtype()),
+            "{label}width of a variable"
+        );
+    }
+    assert_eq!(m.atoms().len(), n.atoms().len(), "{label}exported atoms");
+    let mut wires = std::collections::HashMap::new();
+    for (a, b) in m.atoms().iter().zip(n.atoms()) {
+        let blocks = [
+            (
+                a.init().iter().collect::<Vec<_>>(),
+                b.init()
+                    .iter()
+                    .map(|t| (t.itype().to_string(), t.write(), t.read()))
+                    .collect::<Vec<_>>(),
+            ),
+            (
+                a.update().iter().collect(),
+                b.update()
+                    .iter()
+                    .map(|t| (t.itype().to_string(), t.write(), t.read()))
+                    .collect(),
+            ),
+        ];
+        for (ours, theirs) in blocks {
+            assert_eq!(ours.len(), theirs.len(), "{label}exported block");
+            for (t, (op, write, read)) in ours.iter().zip(theirs) {
+                let name = match t.itype() {
+                    any::Op::Const { value, width } => format!("Uninterpreted({width}'d{value})"),
+                    op => op.to_string(),
+                };
+                assert_eq!(name, op, "{label}exported op");
+                let pairs = t.write().iter().zip(write).chain(t.read().iter().zip(read));
+                assert_eq!(t.write().len() + t.read().len(), write.len() + read.len());
+                for (x, y) in pairs {
+                    assert_eq!(x.dtype().width(), width(y.dtype()), "{label}wire width");
+                    assert_eq!(
+                        *wires.entry(*x).or_insert(*y),
+                        *y,
+                        "{label}wire renamed twice"
+                    );
+                }
+            }
+        }
+    }
+    e
 }
 
 /// How an accepted design is checked by [`accepted_with`].

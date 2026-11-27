@@ -625,32 +625,21 @@ fn negedge(inst: &Inst) -> bool {
     own || inst.children.iter().any(|(_, c)| negedge(c))
 }
 
-/// Every example rewritten into the SMT-LIB bit-vector op set computes the
-/// same rounds (checked by z3); prints the growth in terms and the widest
-/// wire.
+/// Every example rewritten into the SMT-LIB bit-vector op set, and that into
+/// the ops of the `theory` crate, computes the same rounds (checked by z3);
+/// prints the growth in terms and the widest wire.
 #[test]
 fn bridged_examples() {
-    let (mut before, mut after, mut widest) = (0, 0, 0);
+    let (mut before, mut bridged, mut desugared, mut widest) = (0, 0, 0, 0);
+    let updates = |atoms: &mut dyn Iterator<Item = usize>| atoms.sum::<usize>();
     for path in examples() {
         let (_, t) = load(&path);
         let label = format!("{}: ", path.display());
-        let b = bridge_equal(&label, &t).unwrap_or_else(|| panic!("{label}too wide"));
-        before += t
-            .module
-            .atoms()
-            .iter()
-            .map(|a| a.update().len())
-            .sum::<usize>();
-        after += b
-            .module
-            .atoms()
-            .iter()
-            .map(|a| a.update().len())
-            .sum::<usize>();
-        let wires = b
-            .module
-            .atoms()
-            .iter()
+        let (b, d) = bridge_equal(&label, &t).unwrap_or_else(|| panic!("{label}too wide"));
+        before += updates(&mut t.module.atoms().iter().map(|a| a.update().len()));
+        bridged += updates(&mut b.module.atoms().iter().map(|a| a.update().len()));
+        desugared += updates(&mut d.module.atoms().iter().map(|a| a.update().len()));
+        let wires = (b.module.atoms().iter())
             .flat_map(|a| a.update().iter())
             .flat_map(|t| t.write().iter());
         widest = widest.max(
@@ -663,5 +652,8 @@ fn bridged_examples() {
                 .unwrap_or(0),
         );
     }
-    println!("update terms: {before} before, {after} after bridging; widest word: {widest} bits");
+    println!(
+        "update terms: {before} before, {bridged} after bridging, {desugared} after \
+         desugaring; widest word: {widest} bits"
+    );
 }

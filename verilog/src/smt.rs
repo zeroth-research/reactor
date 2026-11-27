@@ -457,6 +457,70 @@ pub fn round_of<O: Ops>(
     }
 }
 
+/// The SMT-LIB script that checks two rounds of modules with the same
+/// variables against each other: both rounds on the same latched and input
+/// values (`theirs` without its [`Round::declarations`]; its defined symbols
+/// must have another prefix), and for every controlled variable in turn a
+/// query whether the two next values can differ, between `(push)` and
+/// `(pop)`. Each query answers `unsat` if they cannot. Returns the script
+/// and the variables in the order of the queries. Panics if the rounds read
+/// or define other variables.
+///
+/// The rounds share the declared values rather than declaring their own
+/// and asserting them equal: then an op both keep (a multiplication, say)
+/// is the same term on both sides, which z3 sees at once, while from
+/// equated copies it would have to prove two multipliers equal bit by bit.
+pub fn equivalence(ours: &Round, theirs: &Round) -> (String, Vec<Name>) {
+    assert_eq!(
+        ours.latched, theirs.latched,
+        "the rounds read other latched values"
+    );
+    assert_eq!(ours.inputs, theirs.inputs, "the rounds read other inputs");
+    assert_eq!(ours.next, theirs.next, "the rounds define other variables");
+    assert_eq!(
+        ours.declarations, theirs.declarations,
+        "the rounds declare other values"
+    );
+    let mut s = String::from("(set-logic QF_BV)\n");
+    s += &ours.text;
+    s += &theirs.text[theirs.declarations.len()..];
+    for n in &ours.next {
+        s += &format!(
+            "(push)\n(assert (distinct {} {}))\n(check-sat)\n(pop)\n",
+            ours.next_sym(n),
+            theirs.next_sym(n)
+        );
+    }
+    (s, ours.next.clone())
+}
+
+/// Runs the [`equivalence`] script of the init round and of an update
+/// round (`script` makes them) with the z3 binary `z3`; returns the
+/// variables (with the round) for which z3 does not answer `unsat`, with
+/// its answer.
+pub fn differences(
+    z3: &std::path::Path,
+    script: impl Fn(Phase) -> (String, Vec<Name>),
+) -> Result<Vec<(Phase, Name, String)>, String> {
+    let mut differ = vec![];
+    for phase in [Phase::Init, Phase::Update] {
+        let (s, names) = script(phase);
+        let answers = crate::z3::run(z3, &s)?;
+        if answers.len() != names.len() {
+            return Err(format!(
+                "z3 answered {answers:?} to {} queries",
+                names.len()
+            ));
+        }
+        for (n, a) in names.into_iter().zip(answers) {
+            if a != "unsat" {
+                differ.push((phase, n, a));
+            }
+        }
+    }
+    Ok(differ)
+}
+
 /// The terms of the block of `a` that round `phase` runs.
 fn block_of<O: Ops>(
     a: &reactive::Atom<O, O, O, O::Sort>,
@@ -529,6 +593,58 @@ impl Ops for qfbv::Op {
             SLt => call("bvslt"),
             SLe => call("bvsle"),
             Ite => call("ite"),
+        }
+    }
+}
+
+/// The ops of [`any`](crate::any) are SMT-LIB functions on words: a
+/// constant is a binary literal, `Id` the operand itself, `UMod` `bvurem`,
+/// `BitSelect` and `Extend` `extract` and `zero_extend`; a comparison is 1
+/// if it holds, else 0, and `Ite` takes the second operand if the first is
+/// 1. [`Ops::expr`] panics on `HAVOC` and `ZERO`.
+impl Ops for crate::any::Op {
+    type Sort = Sort;
+    fn sort(s: &Sort) -> String {
+        sort(*s)
+    }
+    fn width(s: &Sort) -> usize {
+        s.width()
+    }
+    fn is_havoc(&self) -> bool {
+        matches!(self, crate::any::Op::Havoc(_))
+    }
+    fn expr(&self, args: &[(String, Sort)]) -> String {
+        use crate::any::Op::*;
+        let sorts: Vec<Sort> = args.iter().map(|(_, s)| *s).collect();
+        if let Err(e) = self.result_sort(&sorts) {
+            panic!("{e}");
+        }
+        let call = |f: &str| {
+            let operands: Vec<&str> = args.iter().map(|(a, _)| a.as_str()).collect();
+            format!("({f} {})", operands.join(" "))
+        };
+        let bit = |f: &str| format!("(ite {} #b1 #b0)", call(f));
+        match self {
+            Const { value, width } => format!("#b{value:0width$b}"),
+            Havoc(_) | Zero(_) => panic!("{self} has no SMT-LIB expression"),
+            Id => args[0].0.clone(),
+            Not => call("bvnot"),
+            And => call("bvand"),
+            Or => call("bvor"),
+            Xor => call("bvxor"),
+            Neg => call("bvneg"),
+            Add => call("bvadd"),
+            Sub => call("bvsub"),
+            Mul => call("bvmul"),
+            UDiv => call("bvudiv"),
+            UMod => call("bvurem"),
+            Eq => bit("="),
+            Ne => bit("distinct"),
+            ULt => bit("bvult"),
+            ULe => bit("bvule"),
+            Ite => format!("(ite (= {} #b1) {} {})", args[0].0, args[1].0, args[2].0),
+            BitSelect { high, low } => call(&format!("(_ extract {high} {low})")),
+            Extend { extra } => call(&format!("(_ zero_extend {extra})")),
         }
     }
 }

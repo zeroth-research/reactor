@@ -62,6 +62,17 @@ pub struct Bridged {
 }
 
 impl Bridged {
+    /// A module over [`Op`] built otherwise than by [`bridge`], with the
+    /// names of its variables (`vars` is empty).
+    pub fn new(module: Module, names: HashMap<Var, Name>) -> Self {
+        Self {
+            module,
+            vars: HashMap::new(),
+            names,
+            wire_names: HashMap::new(),
+        }
+    }
+
     /// The name of `var`, or `?` if it is not a variable of the module.
     pub fn name(&self, var: &Var) -> &str {
         self.names.get(var).map(String::as_str).unwrap_or("?")
@@ -410,17 +421,9 @@ impl<'a> Block<'a> {
 }
 
 /// The SMT-LIB script that checks round `phase` of `b` against the same
-/// round of `t`: both rounds ([`smt::round`] and [`smt::round_of`], the
-/// bridged one with its defined symbols prefixed by `b:`) on the same
-/// latched and input values, and for every controlled variable in turn a
-/// query whether the two next values can differ, between `(push)` and
-/// `(pop)`. Each query answers `unsat` if they cannot. Returns the script
-/// and the variables in the order of the queries.
-///
-/// The rounds share the declared values rather than declaring their own
-/// and asserting them equal: then an op the bridge keeps (a multiplication,
-/// say) is the same term on both sides, which z3 sees at once, while from
-/// equated copies it would have to prove two multipliers equal bit by bit.
+/// round of `t` ([`smt::round`], and [`smt::round_of`] with the defined
+/// symbols prefixed by `b:`), as [`smt::equivalence`] builds it. Returns
+/// the script and the variables in the order of the queries.
 pub fn script(t: &Translation, b: &Bridged, phase: Phase) -> (String, Vec<Name>) {
     let ours = smt::round(t, phase);
     let theirs = smt::round_of(
@@ -430,53 +433,16 @@ pub fn script(t: &Translation, b: &Bridged, phase: Phase) -> (String, Vec<Name>)
         phase,
         "b:",
     );
-    assert_eq!(
-        ours.latched, theirs.latched,
-        "the rounds read other latched values"
-    );
-    assert_eq!(ours.inputs, theirs.inputs, "the rounds read other inputs");
-    assert_eq!(ours.next, theirs.next, "the rounds define other variables");
-    assert_eq!(
-        ours.declarations, theirs.declarations,
-        "the rounds declare other values"
-    );
-    let mut s = String::from("(set-logic QF_BV)\n");
-    s += &ours.text;
-    s += &theirs.text[theirs.declarations.len()..];
-    for n in &ours.next {
-        s += &format!(
-            "(push)\n(assert (distinct {} {}))\n(check-sat)\n(pop)\n",
-            ours.next_sym(n),
-            theirs.next_sym(n)
-        );
-    }
-    (s, ours.next)
+    smt::equivalence(&ours, &theirs)
 }
 
 /// Checks with the z3 binary `z3` that the init round and an update round
 /// of `b` compute the same next values as those of `t` from the same
-/// latched and input values; returns the variables (with the round) for
-/// which z3 does not answer `unsat`, with its answer.
+/// latched and input values ([`smt::differences`]).
 pub fn check(
     z3: &Path,
     t: &Translation,
     b: &Bridged,
 ) -> Result<Vec<(Phase, Name, String)>, String> {
-    let mut differ = vec![];
-    for phase in [Phase::Init, Phase::Update] {
-        let (s, names) = script(t, b, phase);
-        let answers = crate::z3::run(z3, &s)?;
-        if answers.len() != names.len() {
-            return Err(format!(
-                "z3 answered {answers:?} to {} queries",
-                names.len()
-            ));
-        }
-        for (n, a) in names.into_iter().zip(answers) {
-            if a != "unsat" {
-                differ.push((phase, n, a));
-            }
-        }
-    }
-    Ok(differ)
+    smt::differences(z3, |phase| script(t, b, phase))
 }

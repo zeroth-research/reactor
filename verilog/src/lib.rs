@@ -23,6 +23,9 @@ where the edge of its clock happens (see [`lower`]).
   [`ast_interp`] runs a hierarchy.
 - [`lower`]: the translation of a hierarchy into a [`Module`]; [`print`](mod@print)
   prints modules with names.
+- [`qfbv`]: the rewriting of a module into the SMT-LIB bit-vector ops;
+  [`any`] rewrites that into the bit-vector ops of the `theory` crate and
+  exports it as a module of `theory::any`, the form the Python side takes.
 
 ## The boundary of a design: blackboxes
 
@@ -75,6 +78,7 @@ a tool is not found; with `V2RM_REQUIRE_TOOLS=1` they fail instead.
 // the deeply nested syntax tree of `sv-parser`
 #![recursion_limit = "256"]
 
+pub mod any;
 pub mod ast;
 pub mod ast_interp;
 pub mod constant;
