@@ -69,10 +69,10 @@ def test_a_value_is_in_an_enumeration_when_it_is_one_of_its_constants():
 
 def test_each_event_is_its_own_sort():
     e, f = Event(), Event()
-    assert e != f and e.id != f.id
+    assert e != f and str(e) != str(f)
     # equal to itself, and hashable, as a sort
     assert e == e and len({e, e, f}) == 2
-    assert str(e) == f"Event#{e.id}"
+    assert str(e).startswith("Event#")
     match e:
         case Event():
             pass

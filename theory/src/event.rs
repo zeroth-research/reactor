@@ -73,12 +73,6 @@ impl Event {
         }
     }
 
-    /// Its process-unique identity.
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn id(&self) -> usize {
-        self.id
-    }
-
     #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__(py: Python<'_>) -> Bound<'_, pyo3::types::PyTuple> {

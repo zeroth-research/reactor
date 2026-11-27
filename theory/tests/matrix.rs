@@ -143,12 +143,9 @@ mod op {
 
         // a constant word has the shape of its tensor
         assert!(word::Num::with_cod(Mat([1, 2]), [word::Word::new(8, [2, 1]).unwrap()]).is_err());
-        assert_eq!(
-            word::Num::with_cod(Mat([1, 2]), [word::Word::new(8, [1, 2]).unwrap()])
-                .unwrap()
-                .width(),
-            8
-        );
+        let w = word::Word::new(8, [1, 2]).unwrap();
+        let cod: Poly<Words> = base::mono![w.into()].into();
+        assert_eq!(word::Num::with_cod(Mat([1, 2]), [w]).unwrap().cod(), cod);
     }
 
     #[test]
@@ -376,7 +373,7 @@ mod op {
         // a real rate of change: the zero matrix, of its degree
         let rate: Any = T(real::Real::new_unchecked([2, 3])).into();
         let op = Op::zero(&rate);
-        assert!(matches!(&op, Op::Real(real::NRA::Zero(z)) if z.degree() == 1));
+        assert!(matches!(&op, Op::Real(real::NRA::Zero(_))));
         assert!(LRA::try_from(Op::zero(&rate)).is_ok());
         assert_eq!(op.dom(), Poly::unit());
         assert_eq!(op.cod(), base::mono![rate].into());
@@ -473,11 +470,10 @@ mod op {
         );
         assert_eq!(op.dom(), base::mono![r(2), r(1)].into());
         assert_eq!(op.cod(), base::mono![r(1)].into());
+        let x = real::Real::new_unchecked([2, 3]);
         assert_eq!(
-            real::Div::with_dom([real::Real::new_unchecked([2, 3]); 2])
-                .unwrap()
-                .degrees(),
-            [0, 0]
+            real::Div::with_dom([x; 2]).unwrap().cod(),
+            base::mono![x].into()
         );
         // a negative degree is not defined
         assert!(
@@ -502,11 +498,10 @@ mod op {
         let sort: Poly<Any> = base::mono![T(real::Real::new_unchecked([2, 3])).into()].into();
         assert_eq!(op.dom(), sort);
         assert_eq!(op.cod(), sort);
+        let x = real::Real::new_unchecked([2, 3]);
         assert_eq!(
-            real::Neg::with_dom([real::Real::new_unchecked([2, 3]); 1])
-                .unwrap()
-                .degree(),
-            0
+            real::Neg::with_dom([x; 1]).unwrap().cod(),
+            base::mono![x].into()
         );
     }
 
@@ -1088,7 +1083,7 @@ mod int {
             MatMul::with_dom([Int::new_unchecked([2, 3]), Int::new_unchecked([4, 5])]).is_err()
         );
         let p = MatMul::with_dom([Int::new_unchecked([2, 3]), Int::new_unchecked([3, 4])]).unwrap();
-        assert_eq!(p.shapes(), [[2, 3], [3, 4]]);
+        assert_eq!(p.cod(), mono![Int::new_unchecked([2, 4])].into());
     }
 
     #[test]
@@ -1307,7 +1302,7 @@ mod real {
         );
         let p =
             MatMul::with_dom([Real::new_unchecked([2, 3]), Real::new_unchecked([3, 4])]).unwrap();
-        assert_eq!(p.shapes(), [[2, 3], [3, 4]]);
+        assert_eq!(p.cod(), mono![Real::new_unchecked([2, 4])].into());
     }
 
     #[test]
@@ -1350,8 +1345,8 @@ mod real {
         assert_eq!(
             Mul::with_dom([T(Real::new_unchecked([2, 3])), Real::new_unchecked([2, 3])])
                 .unwrap()
-                .degrees(),
-            [1, 0]
+                .cod(),
+            mono![T(Real::new_unchecked([2, 3]))].into()
         );
     }
 
@@ -1983,14 +1978,11 @@ mod word {
     }
 
     #[test]
-    fn getters_read_the_fields() {
+    fn getters_read_the_parameters_that_the_boundary_does_not_determine() {
         let e = Extract::with_dom(7, 4, [Word::new(8, [2, 3]).unwrap(); 1]).unwrap();
-        assert_eq!((e.i(), e.j(), e.width(), e.shape()), (7, 4, 8, [2, 3]));
-        let c = Concat::with_dom([Word::new(8, [2, 3]).unwrap(), Word::new(4, [2, 3]).unwrap()])
-            .unwrap();
-        assert_eq!((c.widths(), c.shape()), ([8, 4], [2, 3]));
+        assert_eq!((e.i(), e.j()), (7, 4));
         let r = RotateRight::with_dom(3, [Word::new(8, [2, 3]).unwrap(); 1]).unwrap();
-        assert_eq!((r.i(), r.width(), r.shape()), (3, 8, [2, 3]));
+        assert_eq!(r.i(), 3);
     }
 
     /// The width of the words that an operation writes must fit a `usize`,

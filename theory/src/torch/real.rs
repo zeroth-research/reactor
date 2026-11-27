@@ -52,11 +52,6 @@ impl Linear {
         PyTensor(self.0.shallow_clone())
     }
 
-    #[getter]
-    fn degree(&self) -> u8 {
-        self.1.degree()
-    }
-
     /// The tensors it carries, then its domain, when it reads anything, and
     /// its codomain.
     #[classattr]
@@ -143,7 +138,7 @@ impl Affine {
         Ok(Affine(
             op.a().shallow_clone(),
             op.b().shallow_clone(),
-            op.degree(),
+            super::sole(base::boundary::Boundary::cod(&op)).degree(),
         ))
     }
 
@@ -155,11 +150,6 @@ impl Affine {
     #[getter]
     fn b(&self) -> PyTensor {
         PyTensor(self.1.shallow_clone())
-    }
-
-    #[getter]
-    fn degree(&self) -> u8 {
-        self.2
     }
 
     /// The tensors it carries, then its domain, when it reads anything, and
@@ -230,17 +220,12 @@ impl Num {
             None => Real::new(crate::Matrix::shape(&tensor.0))?,
         };
         let op = real::Num::with_cod(tensor.0, [cod])?;
-        Ok(Num(op.tensor().shallow_clone(), op.degree()))
+        Ok(Num(op.tensor().shallow_clone(), cod.degree()))
     }
 
     #[getter]
     fn tensor(&self) -> PyTensor {
         PyTensor(self.0.shallow_clone())
-    }
-
-    #[getter]
-    fn degree(&self) -> u8 {
-        self.1
     }
 
     /// The tensors it carries, then its domain, when it reads anything, and
@@ -276,7 +261,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::real::Num<tch::Tensor> {
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::real::Num<tch::Tensor> {
     fn clone(&self) -> Self {
-        let cod = Real::with_degree(crate::Matrix::shape(self.tensor()), self.degree());
+        let cod = super::sole(base::boundary::Boundary::cod(self));
         crate::real::Num::with_cod(self.tensor().shallow_clone(), [cod])
             .expect("a clone has the sort of the original")
     }
@@ -314,17 +299,12 @@ impl Scale {
             None => Real::new(crate::Matrix::shape(&tensor.0))?,
         };
         let op = crate::check_cod(real::Scale::with_dom(tensor.0, [dom]), cod)?;
-        Ok(Scale(op.tensor().shallow_clone(), op.degree()))
+        Ok(Scale(op.tensor().shallow_clone(), dom.degree()))
     }
 
     #[getter]
     fn tensor(&self) -> PyTensor {
         PyTensor(self.0.shallow_clone())
-    }
-
-    #[getter]
-    fn degree(&self) -> u8 {
-        self.1
     }
 
     /// The tensors it carries, then its domain, when it reads anything, and
@@ -367,7 +347,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::real::Scale<tch::Tensor> {
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::real::Scale<tch::Tensor> {
     fn clone(&self) -> Self {
-        let dom = Real::with_degree(crate::Matrix::shape(self.tensor()), self.degree());
+        let dom = super::sole(base::boundary::Boundary::dom(self));
         crate::real::Scale::with_dom(self.tensor().shallow_clone(), [dom])
             .expect("a clone has the sort of the original")
     }
@@ -377,7 +357,7 @@ impl Clone for crate::real::Scale<tch::Tensor> {
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::real::Affine<tch::Tensor> {
     fn clone(&self) -> Self {
-        let cod = Real::with_degree(crate::Matrix::shape(self.b()), self.degree());
+        let cod = super::sole(base::boundary::Boundary::cod(self));
         crate::real::Affine::with_cod(self.a().shallow_clone(), self.b().shallow_clone(), [cod])
             .expect("a clone has the shapes of the original")
     }
@@ -395,12 +375,18 @@ impl<'py> IntoPyObject<'py> for crate::real::NRA<tch::Tensor> {
         use crate::real::NRA;
 
         match self {
-            NRA::Num(op) => Num(op.tensor().shallow_clone(), op.degree())
-                .into_pyobject(py)
-                .map(Bound::into_any),
-            NRA::Scale(op) => Scale(op.tensor().shallow_clone(), op.degree())
-                .into_pyobject(py)
-                .map(Bound::into_any),
+            NRA::Num(op) => Num(
+                op.tensor().shallow_clone(),
+                super::sole(base::boundary::Boundary::cod(&op)).degree(),
+            )
+            .into_pyobject(py)
+            .map(Bound::into_any),
+            NRA::Scale(op) => Scale(
+                op.tensor().shallow_clone(),
+                super::sole(base::boundary::Boundary::dom(&op)).degree(),
+            )
+            .into_pyobject(py)
+            .map(Bound::into_any),
             NRA::Add(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Sub(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Mul(op) => op.into_pyobject(py).map(Bound::into_any),
@@ -411,9 +397,13 @@ impl<'py> IntoPyObject<'py> for crate::real::NRA<tch::Tensor> {
             )
             .into_pyobject(py)
             .map(Bound::into_any),
-            NRA::Affine(op) => Affine(op.a().shallow_clone(), op.b().shallow_clone(), op.degree())
-                .into_pyobject(py)
-                .map(Bound::into_any),
+            NRA::Affine(op) => Affine(
+                op.a().shallow_clone(),
+                op.b().shallow_clone(),
+                super::sole(base::boundary::Boundary::cod(&op)).degree(),
+            )
+            .into_pyobject(py)
+            .map(Bound::into_any),
             NRA::ReLU(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Abs(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Neg(op) => op.into_pyobject(py).map(Bound::into_any),

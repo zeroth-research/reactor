@@ -60,8 +60,9 @@ mod sort {
         assert_eq!(e.to_string(), r#"Enum(["busy", "idle"])"#);
         // an event by its identity, as a wire
         let ev = Event::new();
-        let name = format!("Event#{}", ev.id());
-        assert_eq!(ev.to_string(), name);
+        let name = ev.to_string();
+        assert!(name.starts_with("Event#"), "{name}");
+        assert_ne!(name, Event::new().to_string());
         assert_eq!(Any::from(ev).to_string(), name);
         assert_eq!(Any::from(e).to_string(), r#"Enum(["busy", "idle"])"#);
     }
@@ -78,7 +79,6 @@ mod sort {
     fn each_event_is_its_own_sort() {
         let (e, f) = (Event::new(), Event::new());
         assert_ne!(e, f);
-        assert_ne!(e.id(), f.id());
         // a copy is the same event
         let g = e;
         assert_eq!(g, e);

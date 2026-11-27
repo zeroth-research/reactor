@@ -30,17 +30,12 @@ impl Num {
             )));
         }
         let op = crate::word::Num::with_cod(tensor.0, [cod])?;
-        Ok(Num(op.tensor().shallow_clone(), op.width()))
+        Ok(Num(op.tensor().shallow_clone(), cod.width()))
     }
 
     #[getter]
     fn tensor(&self) -> PyTensor {
         PyTensor(self.0.shallow_clone())
-    }
-
-    #[getter]
-    fn width(&self) -> usize {
-        self.1
     }
 
     /// The tensors it carries, then its domain, when it reads anything, and
@@ -76,8 +71,9 @@ impl<'a, 'py> FromPyObject<'a, 'py> for crate::word::Num<tch::Tensor> {
 /// so this takes a shallow clone of it, as libtorch counts its references.
 impl Clone for crate::word::Num<tch::Tensor> {
     fn clone(&self) -> Self {
-        let cod =
-            crate::word::Word::new_unchecked(self.width(), crate::Matrix::shape(self.tensor()));
+        let crate::Words::Word(cod) = super::sole(base::boundary::Boundary::cod(self)) else {
+            unreachable!("a numeral writes a word")
+        };
         crate::word::Num::with_cod(self.tensor().shallow_clone(), [cod])
             .expect("a clone has the sort of the original")
     }
@@ -95,9 +91,15 @@ impl<'py> IntoPyObject<'py> for crate::word::BV<tch::Tensor> {
         use crate::word::BV;
 
         match self {
-            BV::Num(op) => Num(op.tensor().shallow_clone(), op.width())
-                .into_pyobject(py)
-                .map(Bound::into_any),
+            BV::Num(op) => {
+                let crate::Words::Word(cod) = super::sole(base::boundary::Boundary::cod(&op))
+                else {
+                    unreachable!("a numeral writes a word")
+                };
+                Num(op.tensor().shallow_clone(), cod.width())
+                    .into_pyobject(py)
+                    .map(Bound::into_any)
+            }
             BV::Concat(op) => op.into_pyobject(py).map(Bound::into_any),
             BV::Extract(op) => op.into_pyobject(py).map(Bound::into_any),
             BV::Repeat(op) => op.into_pyobject(py).map(Bound::into_any),

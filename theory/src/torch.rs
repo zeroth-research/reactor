@@ -69,13 +69,15 @@ fn check_matrix(tensor: &tch::Tensor) -> Result<(), crate::Error> {
 }
 
 /// The sort of a boundary holding exactly one: that of the operations
-/// reading or writing a single matrix.
-fn sole<S>(sorts: base::boundary::Poly<S>) -> S {
-    sorts
-        .into_iter()
-        .flatten()
-        .next()
-        .expect("a boundary of one sort")
+/// reading or writing a single matrix. Panics for any other boundary.
+fn sole<S: Clone>(sorts: base::boundary::Poly<S>) -> S {
+    let [m] = sorts.as_slice() else {
+        panic!("expected a boundary of one product");
+    };
+    let [s] = m.as_slice() else {
+        panic!("expected a boundary of one sort");
+    };
+    s.clone()
 }
 
 /// Fails unless `a` and `b` are the matrices of an affine map `x ↦ A·x + B`:

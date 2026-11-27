@@ -173,11 +173,6 @@ impl<T> Num<T> {
     pub fn tensor(&self) -> &T {
         &self.tensor
     }
-
-    /// The degree of the constant.
-    pub fn degree(&self) -> u8 {
-        self.degree
-    }
 }
 
 /// The pointwise product `x ↦ C ⊙ x` of `[m, n]` matrices with a constant
@@ -230,11 +225,6 @@ impl<T> Scale<T> {
     /// The tensor holding the constant `C`.
     pub fn tensor(&self) -> &T {
         &self.tensor
-    }
-
-    /// The degree of the matrices it maps.
-    pub fn degree(&self) -> u8 {
-        self.degree
     }
 }
 
@@ -362,11 +352,6 @@ impl<T> Linear<T> {
     pub fn a(&self) -> &T {
         &self.a
     }
-
-    /// The degree of the matrices it maps.
-    pub fn degree(&self) -> u8 {
-        self.degree
-    }
 }
 
 /// The affine map `x ↦ A·x + B`, where `A` and `B` are constants: `A` a
@@ -430,11 +415,6 @@ impl<T> Affine<T> {
     /// The tensor of `B`.
     pub fn b(&self) -> &T {
         &self.b
-    }
-
-    /// The degree of the matrices it maps.
-    pub fn degree(&self) -> u8 {
-        self.degree
     }
 }
 
@@ -1566,16 +1546,6 @@ impl Add {
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
     }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn degree(&self) -> u8 {
-        self.degree
-    }
 }
 
 impl Sub {
@@ -1631,24 +1601,9 @@ impl Sub {
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
     }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn degree(&self) -> u8 {
-        self.degree
-    }
 }
 
 impl Mul {
-    /// The degrees `[p, q]` of the factors.
-    pub fn degrees(&self) -> [u8; 2] {
-        self.degrees
-    }
-
     /// The operation reading the real matrices of `dom`; fails unless they are of the same shape.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
         let [x, y] = dom;
@@ -1701,27 +1656,9 @@ impl Mul {
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
     }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
-    }
-
-    /// The degrees of the factors, as a list: pyo3 would make `[u8; 2]`
-    /// into `bytes`.
-    #[cfg(feature = "pyo3")]
-    #[getter(degrees)]
-    fn py_degrees(&self) -> [usize; 2] {
-        self.degrees.map(usize::from)
-    }
 }
 
 impl Div {
-    /// The degrees `[p, q]` of the dividend and the divisor.
-    pub fn degrees(&self) -> [u8; 2] {
-        self.degrees
-    }
-
     /// The operation reading the real matrices of `dom`; fails unless they are of the same shape.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
         let [x, y] = dom;
@@ -1753,14 +1690,6 @@ impl Div {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 
-    /// The degrees of the dividend and the divisor, as a list: pyo3 would
-    /// make `[u8; 2]` into `bytes`.
-    #[cfg(feature = "pyo3")]
-    #[getter(degrees)]
-    fn py_degrees(&self) -> [usize; 2] {
-        self.degrees.map(usize::from)
-    }
-
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
@@ -1781,11 +1710,6 @@ impl Div {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -1825,16 +1749,6 @@ impl Zero {
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
     }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn degree(&self) -> u8 {
-        self.degree
-    }
 }
 
 impl Neg {
@@ -1890,16 +1804,6 @@ impl Neg {
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
     }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn degree(&self) -> u8 {
-        self.degree
-    }
 }
 
 impl Abs {
@@ -1934,11 +1838,6 @@ impl Abs {
         crate::check_cod(Self::with_dom([dom]), cod)
     }
 
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn degree(&self) -> u8 {
-        self.degree
-    }
-
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
@@ -1959,11 +1858,6 @@ impl Abs {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -1999,11 +1893,6 @@ impl ReLU {
         crate::check_cod(Self::with_dom([dom]), cod)
     }
 
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn degree(&self) -> u8 {
-        self.degree
-    }
-
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
@@ -2024,11 +1913,6 @@ impl ReLU {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -2055,11 +1939,6 @@ impl Argmax {
         crate::check_cod(Self::with_dom([dom]), cod)
     }
 
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn degree(&self) -> u8 {
-        self.degree
-    }
-
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
@@ -2080,11 +1959,6 @@ impl Argmax {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -2120,11 +1994,6 @@ impl Min {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn degree(&self) -> u8 {
-        self.degree
-    }
-
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
@@ -2145,11 +2014,6 @@ impl Min {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -2185,11 +2049,6 @@ impl Max {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn degree(&self) -> u8 {
-        self.degree
-    }
-
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
@@ -2210,11 +2069,6 @@ impl Max {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -2251,11 +2105,6 @@ impl Transpose {
         crate::check_cod(Self::with_dom([dom]), cod)
     }
 
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn degree(&self) -> u8 {
-        self.degree
-    }
-
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
@@ -2277,19 +2126,9 @@ impl Transpose {
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
     }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
-    }
 }
 
 impl MatMul {
-    /// The degrees `[p, q]` of the factors.
-    pub fn degrees(&self) -> [u8; 2] {
-        self.degrees
-    }
-
     /// The product of the real matrices of `dom`; fails unless the columns of
     /// the first are the rows of the second.
     pub fn with_dom(dom: [Real; 2]) -> Result<Self, crate::Error> {
@@ -2325,14 +2164,6 @@ impl MatMul {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 
-    /// The degrees of the factors, as a list: pyo3 would make `[u8; 2]`
-    /// into `bytes`.
-    #[cfg(feature = "pyo3")]
-    #[getter(degrees)]
-    fn py_degrees(&self) -> [usize; 2] {
-        self.degrees.map(usize::from)
-    }
-
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
@@ -2353,12 +2184,6 @@ impl MatMul {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    /// The shapes of the factors, `[[m, n], [n, k]]`.
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shapes(&self) -> [[usize; 2]; 2] {
-        self.shapes
     }
 }
 
@@ -2385,11 +2210,6 @@ impl Lt {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn degree(&self) -> u8 {
-        self.degree
-    }
-
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
@@ -2410,11 +2230,6 @@ impl Lt {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -2461,11 +2276,6 @@ impl Ite {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn degree(&self) -> u8 {
-        self.degree
-    }
-
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
@@ -2486,11 +2296,6 @@ impl Ite {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -2517,11 +2322,6 @@ impl Le {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn degree(&self) -> u8 {
-        self.degree
-    }
-
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
@@ -2542,11 +2342,6 @@ impl Le {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -2573,11 +2368,6 @@ impl Gt {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn degree(&self) -> u8 {
-        self.degree
-    }
-
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
@@ -2598,11 +2388,6 @@ impl Gt {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -2629,11 +2414,6 @@ impl Ge {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn degree(&self) -> u8 {
-        self.degree
-    }
-
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
@@ -2654,11 +2434,6 @@ impl Ge {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -2685,11 +2460,6 @@ impl Eq {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn degree(&self) -> u8 {
-        self.degree
-    }
-
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
@@ -2710,11 +2480,6 @@ impl Eq {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -2741,11 +2506,6 @@ impl Ne {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn degree(&self) -> u8 {
-        self.degree
-    }
-
     /// The parameters that its boundary does not determine, then its domain, when it
     /// reads anything, and its codomain.
     #[cfg(feature = "pyo3")]
@@ -2766,11 +2526,6 @@ impl Ne {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -2861,11 +2616,6 @@ pub mod broadcast {
             crate::check_cod(Self::with_dom(dom), cod)
         }
 
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn degree(&self) -> u8 {
-            self.degree
-        }
-
         /// The parameters that its boundary does not determine, then its domain, when it
         /// reads anything, and its codomain.
         #[cfg(feature = "pyo3")]
@@ -2892,11 +2642,6 @@ pub mod broadcast {
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
             crate::py_boundary(py, Boundary::cod(self))
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn shape(&self) -> [usize; 2] {
-            self.shape
         }
     }
 }

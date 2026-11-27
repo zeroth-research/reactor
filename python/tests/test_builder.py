@@ -104,15 +104,15 @@ def test_mul_scales_a_column_vector(sort, dtype, n):
 def test_neg_keeps_the_degree_of_reals():
     x = Wire(T(Real([1, 1])))
     term = RealTermBuilder().neg(x)
-    assert term.itype.degree == 1
+    assert term.itype.dom == T(Real([1, 1]))
     assert term.write[0].dtype == T(Real([1, 1]))
 
 
 def test_builder_takes_the_degree_of_reals():
     b = RealTermBuilder()
     x, dx = Wire(Real([1, 1])), Wire(T(Real([1, 1])))
-    assert b.relu(dx).itype.degree == 1
-    assert b.lt(dx, dx).itype.degree == 1
+    assert b.relu(dx).itype.dom == T(Real([1, 1]))
+    assert b.lt(dx, dx).itype.dom == [T(Real([1, 1]))] * 2
     assert b.div(dx, x).write[0].dtype == T(Real([1, 1]))
     with pytest.raises(TheoryError):
         b.div(x, dx)  # a negative degree is not defined

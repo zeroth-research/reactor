@@ -182,11 +182,6 @@ impl<T> Num<T> {
     pub fn tensor(&self) -> &T {
         &self.tensor
     }
-
-    /// The width of the words.
-    pub fn width(&self) -> usize {
-        self.width
-    }
 }
 
 /// Pointwise concatenation `x ++ y` of a `u`-bit word `x`, the high bits
@@ -1421,16 +1416,6 @@ pub mod signed {
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
             crate::py_boundary(py, Boundary::cod(self))
         }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn width(&self) -> usize {
-            self.width
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn shape(&self) -> [usize; 2] {
-            self.shape
-        }
     }
 
     impl Abs {
@@ -1492,16 +1477,6 @@ pub mod signed {
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
             crate::py_boundary(py, Boundary::cod(self))
         }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn width(&self) -> usize {
-            self.width
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn shape(&self) -> [usize; 2] {
-            self.shape
-        }
     }
 
     impl Rem {
@@ -1562,16 +1537,6 @@ pub mod signed {
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
             crate::py_boundary(py, Boundary::cod(self))
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn width(&self) -> usize {
-            self.width
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn shape(&self) -> [usize; 2] {
-            self.shape
         }
     }
 
@@ -1634,16 +1599,6 @@ pub mod signed {
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
             crate::py_boundary(py, Boundary::cod(self))
         }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn width(&self) -> usize {
-            self.width
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn shape(&self) -> [usize; 2] {
-            self.shape
-        }
     }
 
     impl Shr {
@@ -1704,16 +1659,6 @@ pub mod signed {
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
             crate::py_boundary(py, Boundary::cod(self))
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn width(&self) -> usize {
-            self.width
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn shape(&self) -> [usize; 2] {
-            self.shape
         }
     }
 
@@ -1797,16 +1742,6 @@ pub mod signed {
         pub fn i(&self) -> usize {
             self.i
         }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn width(&self) -> usize {
-            self.width
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn shape(&self) -> [usize; 2] {
-            self.shape
-        }
     }
 
     impl Lt {
@@ -1858,16 +1793,6 @@ pub mod signed {
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
             crate::py_boundary(py, Boundary::cod(self))
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn width(&self) -> usize {
-            self.width
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn shape(&self) -> [usize; 2] {
-            self.shape
         }
     }
 
@@ -1921,16 +1846,6 @@ pub mod signed {
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
             crate::py_boundary(py, Boundary::cod(self))
         }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn width(&self) -> usize {
-            self.width
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn shape(&self) -> [usize; 2] {
-            self.shape
-        }
     }
 
     impl Gt {
@@ -1983,16 +1898,6 @@ pub mod signed {
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
             crate::py_boundary(py, Boundary::cod(self))
         }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn width(&self) -> usize {
-            self.width
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn shape(&self) -> [usize; 2] {
-            self.shape
-        }
     }
 
     impl Ge {
@@ -2044,16 +1949,6 @@ pub mod signed {
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
             crate::py_boundary(py, Boundary::cod(self))
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn width(&self) -> usize {
-            self.width
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn shape(&self) -> [usize; 2] {
-            self.shape
         }
     }
 }
@@ -2365,16 +2260,6 @@ pub mod unsigned {
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
             crate::py_boundary(py, Boundary::cod(self))
         }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn width(&self) -> usize {
-            self.width
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn shape(&self) -> [usize; 2] {
-            self.shape
-        }
     }
 
     impl Rem {
@@ -2436,16 +2321,6 @@ pub mod unsigned {
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
             crate::py_boundary(py, Boundary::cod(self))
         }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn width(&self) -> usize {
-            self.width
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn shape(&self) -> [usize; 2] {
-            self.shape
-        }
     }
 
     impl Shr {
@@ -2506,16 +2381,6 @@ pub mod unsigned {
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
             crate::py_boundary(py, Boundary::cod(self))
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn width(&self) -> usize {
-            self.width
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn shape(&self) -> [usize; 2] {
-            self.shape
         }
     }
 
@@ -2599,16 +2464,6 @@ pub mod unsigned {
         pub fn i(&self) -> usize {
             self.i
         }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn width(&self) -> usize {
-            self.width
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn shape(&self) -> [usize; 2] {
-            self.shape
-        }
     }
 
     impl Lt {
@@ -2660,16 +2515,6 @@ pub mod unsigned {
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
             crate::py_boundary(py, Boundary::cod(self))
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn width(&self) -> usize {
-            self.width
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn shape(&self) -> [usize; 2] {
-            self.shape
         }
     }
 
@@ -2723,16 +2568,6 @@ pub mod unsigned {
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
             crate::py_boundary(py, Boundary::cod(self))
         }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn width(&self) -> usize {
-            self.width
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn shape(&self) -> [usize; 2] {
-            self.shape
-        }
     }
 
     impl Gt {
@@ -2785,16 +2620,6 @@ pub mod unsigned {
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
             crate::py_boundary(py, Boundary::cod(self))
         }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn width(&self) -> usize {
-            self.width
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn shape(&self) -> [usize; 2] {
-            self.shape
-        }
     }
 
     impl Ge {
@@ -2846,16 +2671,6 @@ pub mod unsigned {
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
             crate::py_boundary(py, Boundary::cod(self))
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn width(&self) -> usize {
-            self.width
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn shape(&self) -> [usize; 2] {
-            self.shape
         }
     }
 }
@@ -3057,17 +2872,6 @@ impl Concat {
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
     }
-
-    /// The widths `[u, v]` of the words read, high bits first.
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn widths(&self) -> [usize; 2] {
-        self.widths
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
-    }
 }
 
 impl Extract {
@@ -3131,16 +2935,6 @@ impl Extract {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn j(&self) -> usize {
         self.j
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -3221,16 +3015,6 @@ impl Repeat {
     pub fn i(&self) -> usize {
         self.i
     }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
-    }
 }
 
 impl Not {
@@ -3285,16 +3069,6 @@ impl Not {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -3351,16 +3125,6 @@ impl And {
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
     }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
-    }
 }
 
 impl Or {
@@ -3415,16 +3179,6 @@ impl Or {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -3481,16 +3235,6 @@ impl Xor {
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
     }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
-    }
 }
 
 impl Nand {
@@ -3545,16 +3289,6 @@ impl Nand {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -3611,16 +3345,6 @@ impl Nor {
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
     }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
-    }
 }
 
 impl Xnor {
@@ -3675,16 +3399,6 @@ impl Xnor {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -3740,16 +3454,6 @@ impl Neg {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -3817,16 +3521,6 @@ impl Ite {
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
     }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
-    }
 }
 
 impl Add {
@@ -3881,16 +3575,6 @@ impl Add {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -3947,16 +3631,6 @@ impl Sub {
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
     }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
-    }
 }
 
 impl Mul {
@@ -4012,16 +3686,6 @@ impl Mul {
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
     }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
-    }
 }
 
 impl Shl {
@@ -4076,16 +3740,6 @@ impl Shl {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -4149,16 +3803,6 @@ impl RotateLeft {
     pub fn i(&self) -> usize {
         self.i
     }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
-    }
 }
 
 impl RotateRight {
@@ -4220,16 +3864,6 @@ impl RotateRight {
     #[cfg_attr(feature = "pyo3", getter)]
     pub fn i(&self) -> usize {
         self.i
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -4277,16 +3911,6 @@ impl Eq {
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
     }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
-    }
 }
 
 impl Ne {
@@ -4332,16 +3956,6 @@ impl Ne {
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
         crate::py_boundary(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn width(&self) -> usize {
-        self.width
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn shape(&self) -> [usize; 2] {
-        self.shape
     }
 }
 
@@ -4456,16 +4070,6 @@ pub mod broadcast {
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
             crate::py_boundary(py, Boundary::cod(self))
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn width(&self) -> usize {
-            self.width
-        }
-
-        #[cfg_attr(feature = "pyo3", getter)]
-        pub fn shape(&self) -> [usize; 2] {
-            self.shape
         }
     }
 }

@@ -147,7 +147,9 @@ fn constants_extract_from_the_class_of_their_theory() {
         let op = constant
             .extract::<theory::word::Num<tch::Tensor>>()
             .unwrap();
-        assert_eq!(op.width(), 8);
+        let cod: base::boundary::Poly<theory::Words> =
+            base::mono![Word::new_unchecked(8, [2, 3]).into()].into();
+        assert_eq!(op.cod(), cod);
     });
 }
 
