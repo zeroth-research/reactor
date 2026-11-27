@@ -10,7 +10,7 @@ cfg_eval = { version = "0.1.2", features = ["items"], optional = true }
 tch = { version = "0.27", optional = true }
 pyo3-tch = { version = "0.27", optional = true }
 subenum = "1.2.0"
-derive_more = { version = "2.1.1", features = ["from"] }
+derive_more = { version = "2.1.1", features = ["from", "display"] }
 
 [features]
 # `pyo3` builds the Python bindings. Their `#[pymethods]` blocks are also the

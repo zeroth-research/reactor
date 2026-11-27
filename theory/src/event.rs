@@ -41,6 +41,7 @@ use crate::zero::Real0;
 use base::boundary::{Boundary, Mono, Poly};
 use base::differentiable::Differentiable;
 use base::mono;
+use derive_more::Display;
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 use std::fmt;
@@ -110,7 +111,8 @@ impl Differentiable for Event {
 /// such a boolean, in either order, writing the event shifted by it.
 ///
 /// SMT-LIB2: `(xor x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Xor")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.event")
@@ -152,12 +154,6 @@ impl Boundary<Bools> for Xor {
 
     fn cod(&self) -> Poly<Bools> {
         mono![self.cod].into()
-    }
-}
-
-impl fmt::Display for Xor {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Xor")
     }
 }
 

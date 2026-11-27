@@ -28,6 +28,7 @@ zero matrix of the degree of the rate of change, written by
 
 use base::boundary::{Boundary, Poly};
 use base::differentiable::Differentiable;
+use derive_more::Display;
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 use std::fmt;
@@ -77,7 +78,8 @@ impl Differentiable for Real0 {
 
 /// Writes the only value of the sort [`Real0`], reading nothing: the
 /// rate of change of a value that does not change.
-#[derive(Clone, Copy, PartialEq, Debug, Eq, Default)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Default, Display)]
+#[display("Zero")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.zero")
@@ -92,12 +94,6 @@ impl Boundary<Real0> for Zero {
 
     fn cod(&self) -> Poly<Real0> {
         base::mono![Real0].into()
-    }
-}
-
-impl fmt::Display for Zero {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Zero")
     }
 }
 

@@ -55,7 +55,7 @@ use crate::zero::Real0;
 use base::boundary::{Boundary, Poly};
 use base::differentiable::Differentiable;
 use base::mono;
-use derive_more::From;
+use derive_more::{Display, From};
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 use std::fmt;
@@ -153,7 +153,8 @@ use crate::Words;
 /// in a tensor of type `T`.
 ///
 /// SMT-LIB2: a literal `#b…` or `(_ bvN width)`.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Display)]
+#[display("{tensor}")]
 pub struct Num<T> {
     tensor: T,
     width: usize,
@@ -189,7 +190,8 @@ impl<T> Num<T> {
 /// `Concat([u, v], [m, n])`; the result has `u + v` bits.
 ///
 /// SMT-LIB2: `(concat x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Concat")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
@@ -209,7 +211,8 @@ pub struct Concat {
 /// `j ≤ i < width`, and the result has `i - j + 1` bits.
 ///
 /// SMT-LIB2: `((_ extract i j) x)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Extract[{i}:{j}]")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
@@ -225,7 +228,8 @@ pub struct Extract {
 /// `Repeat(i, width, [m, n])`; the result has `i·width` bits.
 ///
 /// SMT-LIB2: `((_ repeat i) x)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Repeat({i})")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
@@ -239,7 +243,8 @@ pub struct Repeat {
 /// Pointwise bitwise negation `!x`, as `Not(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvnot x)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Not")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
@@ -252,7 +257,8 @@ pub struct Not {
 /// Pointwise bitwise conjunction `x & y`, as `And(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvand x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("And")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
@@ -265,7 +271,8 @@ pub struct And {
 /// Pointwise bitwise disjunction `x | y`, as `Or(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvor x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Or")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
@@ -278,7 +285,8 @@ pub struct Or {
 /// Pointwise bitwise exclusive disjunction `x ^ y`, as `Xor(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvxor x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Xor")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
@@ -291,7 +299,8 @@ pub struct Xor {
 /// Pointwise bitwise negated conjunction `!(x & y)`, as `Nand(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvnand x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Nand")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
@@ -304,7 +313,8 @@ pub struct Nand {
 /// Pointwise bitwise negated disjunction `!(x | y)`, as `Nor(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvnor x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Nor")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
@@ -318,7 +328,8 @@ pub struct Nor {
 /// `Xnor(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvxnor x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Xnor")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
@@ -332,7 +343,8 @@ pub struct Xnor {
 /// `Neg(width, [m, n])`; the minimum signed word is its own negation.
 ///
 /// SMT-LIB2: `(bvneg x)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Neg")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
@@ -346,7 +358,8 @@ pub struct Neg {
 /// words `x` and `y`, by the boolean matrix `c`, read first, as `Ite(width, [m, n])`.
 ///
 /// SMT-LIB2: `(ite c x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Ite")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
@@ -359,7 +372,8 @@ pub struct Ite {
 /// Pointwise addition `x + y`, modulo `2^width`, as `Add(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvadd x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Add")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
@@ -372,7 +386,8 @@ pub struct Add {
 /// Pointwise subtraction `x - y`, modulo `2^width`, as `Sub(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvsub x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Sub")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
@@ -385,7 +400,8 @@ pub struct Sub {
 /// Pointwise multiplication `x * y`, modulo `2^width`, as `Mul(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvmul x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Mul")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
@@ -398,7 +414,8 @@ pub struct Mul {
 /// Pointwise left shift `x << y`, filling with zeros, as `Shl(width, [m, n])`.
 ///
 /// SMT-LIB2: `(bvshl x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Shl")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
@@ -412,7 +429,8 @@ pub struct Shl {
 /// `RotateLeft(i, width, [m, n])`.
 ///
 /// SMT-LIB2: `((_ rotate_left i) x)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("RotateLeft({i})")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
@@ -427,7 +445,8 @@ pub struct RotateLeft {
 /// `RotateRight(i, width, [m, n])`.
 ///
 /// SMT-LIB2: `((_ rotate_right i) x)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("RotateRight({i})")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
@@ -441,7 +460,8 @@ pub struct RotateRight {
 /// Pointwise equality `x = y` of `width`-bit words, as `Eq(width, [m, n])`.
 ///
 /// SMT-LIB2: `(= x y)`, of the Core theory.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Eq")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
@@ -454,7 +474,8 @@ pub struct Eq {
 /// Pointwise disequality `x ≠ y` of `width`-bit words, as `Ne(width, [m, n])`.
 ///
 /// SMT-LIB2: `(distinct x y)`, of the Core theory.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Ne")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word")
@@ -468,7 +489,7 @@ pub struct Ne {
 /// `FixedSizeBitVectors`, with their boundary in [`Words`]. Those of
 /// [`signed`] and [`unsigned`] are named after their SMT-LIB2 operation,
 /// as `SDiv` for [`signed::Div`] and `UDiv` for [`unsigned::Div`].
-#[derive(Clone, Copy, Debug, From)]
+#[derive(Clone, Copy, Debug, From, Display)]
 pub enum BV<T> {
     Num(Num<T>),
     Concat(Concat),
@@ -510,53 +531,6 @@ pub enum BV<T> {
     ULe(unsigned::Le),
     UGt(unsigned::Gt),
     UGe(unsigned::Ge),
-}
-
-impl<T: fmt::Display> fmt::Display for BV<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            BV::Num(op) => op.fmt(f),
-            BV::Concat(op) => op.fmt(f),
-            BV::Extract(op) => op.fmt(f),
-            BV::Repeat(op) => op.fmt(f),
-            BV::Not(op) => op.fmt(f),
-            BV::And(op) => op.fmt(f),
-            BV::Or(op) => op.fmt(f),
-            BV::Xor(op) => op.fmt(f),
-            BV::Nand(op) => op.fmt(f),
-            BV::Nor(op) => op.fmt(f),
-            BV::Xnor(op) => op.fmt(f),
-            BV::Neg(op) => op.fmt(f),
-            BV::Ite(op) => op.fmt(f),
-            BV::BroadcastIte(op) => op.fmt(f),
-            BV::Add(op) => op.fmt(f),
-            BV::Sub(op) => op.fmt(f),
-            BV::Mul(op) => op.fmt(f),
-            BV::Shl(op) => op.fmt(f),
-            BV::RotateLeft(op) => op.fmt(f),
-            BV::RotateRight(op) => op.fmt(f),
-            BV::Eq(op) => op.fmt(f),
-            BV::Ne(op) => op.fmt(f),
-            BV::SDiv(op) => op.fmt(f),
-            BV::Abs(op) => op.fmt(f),
-            BV::SRem(op) => op.fmt(f),
-            BV::SMod(op) => op.fmt(f),
-            BV::AShr(op) => op.fmt(f),
-            BV::SignExtend(op) => op.fmt(f),
-            BV::SLt(op) => op.fmt(f),
-            BV::SLe(op) => op.fmt(f),
-            BV::SGt(op) => op.fmt(f),
-            BV::SGe(op) => op.fmt(f),
-            BV::UDiv(op) => op.fmt(f),
-            BV::URem(op) => op.fmt(f),
-            BV::LShr(op) => op.fmt(f),
-            BV::ZeroExtend(op) => op.fmt(f),
-            BV::ULt(op) => op.fmt(f),
-            BV::ULe(op) => op.fmt(f),
-            BV::UGt(op) => op.fmt(f),
-            BV::UGe(op) => op.fmt(f),
-        }
-    }
 }
 
 impl<T: Matrix> Boundary<Words> for BV<T> {
@@ -857,78 +831,6 @@ impl Boundary<Words> for Ne {
     }
 }
 
-impl<T: fmt::Display> fmt::Display for Num<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.tensor)
-    }
-}
-
-impl fmt::Display for Concat {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Concat")
-    }
-}
-
-impl fmt::Display for Extract {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Extract[{}:{}]", self.i, self.j)
-    }
-}
-
-impl fmt::Display for Repeat {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Repeat({})", self.i)
-    }
-}
-
-impl fmt::Display for Not {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Not")
-    }
-}
-
-impl fmt::Display for And {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "And")
-    }
-}
-
-impl fmt::Display for Or {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Or")
-    }
-}
-
-impl fmt::Display for Xor {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Xor")
-    }
-}
-
-impl fmt::Display for Nand {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Nand")
-    }
-}
-
-impl fmt::Display for Nor {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Nor")
-    }
-}
-
-impl fmt::Display for Xnor {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Xnor")
-    }
-}
-
-impl fmt::Display for Neg {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Neg")
-    }
-}
-
 impl Boundary<Words> for Ite {
     fn dom(&self) -> Poly<Words> {
         mono![
@@ -944,60 +846,6 @@ impl Boundary<Words> for Ite {
     }
 }
 
-impl fmt::Display for Ite {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Ite")
-    }
-}
-
-impl fmt::Display for Add {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Add")
-    }
-}
-
-impl fmt::Display for Sub {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Sub")
-    }
-}
-
-impl fmt::Display for Mul {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Mul")
-    }
-}
-
-impl fmt::Display for Shl {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Shl")
-    }
-}
-
-impl fmt::Display for RotateLeft {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "RotateLeft({})", self.i)
-    }
-}
-
-impl fmt::Display for RotateRight {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "RotateRight({})", self.i)
-    }
-}
-
-impl fmt::Display for Eq {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Eq")
-    }
-}
-
-impl fmt::Display for Ne {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Ne")
-    }
-}
-
 /// Operations on words read in two's complement, whose meaning depends on
 /// signedness; the others are in the parent module.
 pub mod signed {
@@ -1005,16 +853,17 @@ pub mod signed {
     use crate::bool::Bool;
     use base::boundary::{Boundary, Poly};
     use base::mono;
+    use derive_more::Display;
     #[cfg(feature = "pyo3")]
     use pyo3::prelude::*;
-    use std::fmt;
 
     /// Pointwise division `x / y`, rounding towards zero, as `Div(width, [m, n])`;
     /// the minimum word divided by `-1` is itself, and `x / 0` is `1` if `x`
     /// is negative and `-1` otherwise.
     ///
     /// SMT-LIB2: `(bvsdiv x y)`.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("SDiv")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.signed")
@@ -1027,7 +876,8 @@ pub mod signed {
     /// Pointwise absolute value of `width`-bit words read in two's complement, as
     /// `Abs(width, [m, n])`: `Ite(x < 0, -x, x)`, so the minimum word is its own
     /// absolute value.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("Abs")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.signed")
@@ -1041,7 +891,8 @@ pub mod signed {
     /// `x % 0 = x`.
     ///
     /// SMT-LIB2: `(bvsrem x y)`.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("SRem")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.signed")
@@ -1055,7 +906,8 @@ pub mod signed {
     /// `x mod 0 = x`.
     ///
     /// SMT-LIB2: `(bvsmod x y)`.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("SMod")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.signed")
@@ -1069,7 +921,8 @@ pub mod signed {
     /// as `Shr(width, [m, n])`.
     ///
     /// SMT-LIB2: `(bvashr x y)`.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("AShr")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.signed")
@@ -1083,7 +936,8 @@ pub mod signed {
     /// as `Extend(i, width, [m, n])`.
     ///
     /// SMT-LIB2: `((_ sign_extend i) x)`.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("SignExtend({i})")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.signed")
@@ -1097,7 +951,8 @@ pub mod signed {
     /// Pointwise signed comparison `x < y`, as `Lt(width, [m, n])`.
     ///
     /// SMT-LIB2: `(bvslt x y)`.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("SLt")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.signed")
@@ -1110,7 +965,8 @@ pub mod signed {
     /// Pointwise signed comparison `x ≤ y`, as `Le(width, [m, n])`.
     ///
     /// SMT-LIB2: `(bvsle x y)`.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("SLe")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.signed")
@@ -1123,7 +979,8 @@ pub mod signed {
     /// Pointwise signed comparison `x > y`, as `Gt(width, [m, n])`.
     ///
     /// SMT-LIB2: `(bvsgt x y)`.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("SGt")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.signed")
@@ -1136,7 +993,8 @@ pub mod signed {
     /// Pointwise signed comparison `x ≥ y`, as `Ge(width, [m, n])`.
     ///
     /// SMT-LIB2: `(bvsge x y)`.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("SGe")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.signed")
@@ -1236,12 +1094,6 @@ pub mod signed {
         }
     }
 
-    impl fmt::Display for Div {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "SDiv")
-        }
-    }
-
     impl Boundary<Words> for Abs {
         fn dom(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into()].into()
@@ -1249,60 +1101,6 @@ pub mod signed {
 
         fn cod(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into()].into()
-        }
-    }
-
-    impl fmt::Display for Abs {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "Abs")
-        }
-    }
-
-    impl fmt::Display for Rem {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "SRem")
-        }
-    }
-
-    impl fmt::Display for Mod {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "SMod")
-        }
-    }
-
-    impl fmt::Display for Shr {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "AShr")
-        }
-    }
-
-    impl fmt::Display for Extend {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "SignExtend({})", self.i)
-        }
-    }
-
-    impl fmt::Display for Lt {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "SLt")
-        }
-    }
-
-    impl fmt::Display for Le {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "SLe")
-        }
-    }
-
-    impl fmt::Display for Gt {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "SGt")
-        }
-    }
-
-    impl fmt::Display for Ge {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "SGe")
         }
     }
 
@@ -1910,15 +1708,16 @@ pub mod unsigned {
     use crate::bool::Bool;
     use base::boundary::{Boundary, Poly};
     use base::mono;
+    use derive_more::Display;
     #[cfg(feature = "pyo3")]
     use pyo3::prelude::*;
-    use std::fmt;
 
     /// Pointwise division `x / y`, rounding down, as `Div(width, [m, n])`; `x / 0`
     /// is the word of all ones.
     ///
     /// SMT-LIB2: `(bvudiv x y)`.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("UDiv")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.unsigned")
@@ -1931,7 +1730,8 @@ pub mod unsigned {
     /// Pointwise remainder `x % y`, as `Rem(width, [m, n])`; `x % 0 = x`.
     ///
     /// SMT-LIB2: `(bvurem x y)`.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("URem")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.unsigned")
@@ -1945,7 +1745,8 @@ pub mod unsigned {
     /// `Shr(width, [m, n])`.
     ///
     /// SMT-LIB2: `(bvlshr x y)`.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("LShr")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.unsigned")
@@ -1959,7 +1760,8 @@ pub mod unsigned {
     /// `Extend(i, width, [m, n])`.
     ///
     /// SMT-LIB2: `((_ zero_extend i) x)`.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("ZeroExtend({i})")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.unsigned")
@@ -1973,7 +1775,8 @@ pub mod unsigned {
     /// Pointwise unsigned comparison `x < y`, as `Lt(width, [m, n])`.
     ///
     /// SMT-LIB2: `(bvult x y)`.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("ULt")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.unsigned")
@@ -1986,7 +1789,8 @@ pub mod unsigned {
     /// Pointwise unsigned comparison `x ≤ y`, as `Le(width, [m, n])`.
     ///
     /// SMT-LIB2: `(bvule x y)`.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("ULe")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.unsigned")
@@ -1999,7 +1803,8 @@ pub mod unsigned {
     /// Pointwise unsigned comparison `x > y`, as `Gt(width, [m, n])`.
     ///
     /// SMT-LIB2: `(bvugt x y)`.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("UGt")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.unsigned")
@@ -2012,7 +1817,8 @@ pub mod unsigned {
     /// Pointwise unsigned comparison `x ≥ y`, as `Ge(width, [m, n])`.
     ///
     /// SMT-LIB2: `(bvuge x y)`.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("UGe")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.unsigned")
@@ -2099,54 +1905,6 @@ pub mod unsigned {
 
         fn cod(&self) -> Poly<Words> {
             mono![Bool::new_unchecked(self.shape).into()].into()
-        }
-    }
-
-    impl fmt::Display for Div {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "UDiv")
-        }
-    }
-
-    impl fmt::Display for Rem {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "URem")
-        }
-    }
-
-    impl fmt::Display for Shr {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "LShr")
-        }
-    }
-
-    impl fmt::Display for Extend {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "ZeroExtend({})", self.i)
-        }
-    }
-
-    impl fmt::Display for Lt {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "ULt")
-        }
-    }
-
-    impl fmt::Display for Le {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "ULe")
-        }
-    }
-
-    impl fmt::Display for Gt {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "UGt")
-        }
-    }
-
-    impl fmt::Display for Ge {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "UGe")
         }
     }
 
@@ -3920,7 +3678,8 @@ pub mod broadcast {
     /// pointwise [`super::Ite`] by `c` broadcast to `[m, n]`.
     ///
     /// SMT-LIB2: `(ite c x y)`, by the only entry of `c`.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("Ite")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.word.broadcast")
@@ -3942,12 +3701,6 @@ pub mod broadcast {
 
         fn cod(&self) -> Poly<Words> {
             mono![Word::new_unchecked(self.width, self.shape).into()].into()
-        }
-    }
-
-    impl fmt::Display for Ite {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "Ite")
         }
     }
 

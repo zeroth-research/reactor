@@ -41,7 +41,7 @@ use crate::zero::Real0;
 use base::boundary::{Boundary, Poly};
 use base::differentiable::Differentiable;
 use base::mono;
-use derive_more::From;
+use derive_more::{Display, From};
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 use std::fmt;
@@ -119,7 +119,8 @@ impl Differentiable for Int {
 use crate::Ints;
 
 /// A constant integer matrix literal, held in a tensor of type `T`.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Display)]
+#[display("{tensor}")]
 pub struct Num<T> {
     tensor: T,
 }
@@ -149,7 +150,8 @@ impl<T> Num<T> {
 /// The pointwise product `x ↦ C ⊙ x` of `[m, n]` matrices with a constant
 /// `C` of shape `[m, n]`, held in a tensor of type `T`: linear in `x`, unlike
 /// [`Mul`], which multiplies two variables.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Display)]
+#[display("Scale({tensor})")]
 pub struct Scale<T> {
     tensor: T,
 }
@@ -190,7 +192,8 @@ impl<T> Scale<T> {
 }
 
 /// Pointwise addition `x + y` of `[m, n]` matrices.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Add")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
@@ -200,7 +203,8 @@ pub struct Add {
 }
 
 /// Pointwise subtraction `x - y` of `[m, n]` matrices.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Sub")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
@@ -211,7 +215,8 @@ pub struct Sub {
 
 /// Pointwise multiplication `x ⊙ y` of `[m, n]` matrices: the Hadamard
 /// product, not the matrix product [`MatMul`].
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Mul")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
@@ -226,7 +231,8 @@ pub struct Mul {
 /// rounds towards zero. As in SMT-LIB2, `x div 0` is unspecified.
 ///
 /// SMT-LIB2: `(div x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Div")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
@@ -240,7 +246,8 @@ pub struct Div {
 /// unlike Rust's `%`. As in SMT-LIB2, `x mod 0` is unspecified.
 ///
 /// SMT-LIB2: `(mod x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Mod")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
@@ -251,7 +258,8 @@ pub struct Mod {
 
 /// The linear map `x ↦ A·x`, where `A` is a constant. `A` determines the
 /// rows of `x` but not its columns, which the map holds.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Display)]
+#[display("Linear({a})")]
 pub struct Linear<T> {
     a: T,
     cols: usize,
@@ -297,7 +305,8 @@ impl<T> Linear<T> {
 }
 
 /// The affine map `x ↦ A·x + B`, where `A` and `B` are constants.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Display)]
+#[display("Affine({a}, {b})")]
 pub struct Affine<T> {
     a: T,
     b: T,
@@ -353,7 +362,8 @@ impl<T> Affine<T> {
 /// Pointwise negation `x ↦ -x` of `[m, n]` matrices.
 ///
 /// SMT-LIB2: `(- x)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Neg")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
@@ -365,7 +375,8 @@ pub struct Neg {
 /// Pointwise absolute value `x ↦ |x|` of `[m, n]` matrices.
 ///
 /// SMT-LIB2: `(abs x)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Abs")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
@@ -376,7 +387,8 @@ pub struct Abs {
 
 /// The rectified-linear map `x ↦ max(x, 0)`, applied pointwise to
 /// `[m, n]` matrices.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("ReLU")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
@@ -387,7 +399,8 @@ pub struct ReLU {
 
 /// The index of a maximal entry of an `[m, n]` integer matrix, counting its
 /// entries row by row, written as a `[1, 1]` matrix of the same sort.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Argmax")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
@@ -397,7 +410,8 @@ pub struct Argmax {
 }
 
 /// Pointwise minimum `min(x, y)` of `[m, n]` matrices.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Min")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
@@ -407,7 +421,8 @@ pub struct Min {
 }
 
 /// Pointwise maximum `max(x, y)` of `[m, n]` matrices.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Max")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
@@ -417,7 +432,8 @@ pub struct Max {
 }
 
 /// Transposition `xᵀ` of `[m, n]` matrices.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Transpose")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
@@ -428,7 +444,8 @@ pub struct Transpose {
 
 /// The matrix product `x·y` of an `[m, n]` matrix `x` and an `[n, k]`
 /// matrix `y`, with the shapes given as `MatMul([[m, n], [n, k]])`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("MatMul")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
@@ -446,7 +463,8 @@ pub struct MatMul {
 /// boolean matrix.
 ///
 /// SMT-LIB2: `(< x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Lt")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
@@ -459,7 +477,8 @@ pub struct Lt {
 /// by the boolean matrix `c`, read first.
 ///
 /// SMT-LIB2: `(ite c x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Ite")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
@@ -472,7 +491,8 @@ pub struct Ite {
 /// boolean matrix.
 ///
 /// SMT-LIB2: `(<= x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Le")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
@@ -485,7 +505,8 @@ pub struct Le {
 /// boolean matrix.
 ///
 /// SMT-LIB2: `(> x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Gt")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
@@ -498,7 +519,8 @@ pub struct Gt {
 /// boolean matrix.
 ///
 /// SMT-LIB2: `(>= x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Ge")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
@@ -511,7 +533,8 @@ pub struct Ge {
 /// boolean matrix.
 ///
 /// SMT-LIB2: `(= x y)`, of the Core theory.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Eq")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
@@ -524,7 +547,8 @@ pub struct Eq {
 /// boolean matrix.
 ///
 /// SMT-LIB2: `(distinct x y)`, of the Core theory.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Ne")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
@@ -540,7 +564,7 @@ pub struct Ne {
 /// and `MatMul`, which multiply or divide two variables. It also generates
 /// the casts between them: `From` up to `NIA`, and `TryFrom` down from it.
 #[subenum(LIA)]
-#[derive(Clone, Copy, Debug, From)]
+#[derive(Clone, Copy, Debug, From, Display)]
 pub enum NIA<T> {
     #[subenum(LIA)]
     Num(Num<T>),
@@ -588,66 +612,6 @@ pub enum NIA<T> {
     Eq(Eq),
     #[subenum(LIA)]
     Ne(Ne),
-}
-
-impl<T: fmt::Display> fmt::Display for NIA<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            NIA::Num(op) => op.fmt(f),
-            NIA::Scale(op) => op.fmt(f),
-            NIA::Add(op) => op.fmt(f),
-            NIA::Sub(op) => op.fmt(f),
-            NIA::Mul(op) => op.fmt(f),
-            NIA::Div(op) => op.fmt(f),
-            NIA::Mod(op) => op.fmt(f),
-            NIA::Linear(op) => op.fmt(f),
-            NIA::Affine(op) => op.fmt(f),
-            NIA::ReLU(op) => op.fmt(f),
-            NIA::Abs(op) => op.fmt(f),
-            NIA::Neg(op) => op.fmt(f),
-            NIA::Argmax(op) => op.fmt(f),
-            NIA::Min(op) => op.fmt(f),
-            NIA::Max(op) => op.fmt(f),
-            NIA::Transpose(op) => op.fmt(f),
-            NIA::MatMul(op) => op.fmt(f),
-            NIA::Lt(op) => op.fmt(f),
-            NIA::Ite(op) => op.fmt(f),
-            NIA::BroadcastIte(op) => op.fmt(f),
-            NIA::Le(op) => op.fmt(f),
-            NIA::Gt(op) => op.fmt(f),
-            NIA::Ge(op) => op.fmt(f),
-            NIA::Eq(op) => op.fmt(f),
-            NIA::Ne(op) => op.fmt(f),
-        }
-    }
-}
-
-impl<T: fmt::Display> fmt::Display for LIA<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LIA::Num(op) => op.fmt(f),
-            LIA::Scale(op) => op.fmt(f),
-            LIA::Add(op) => op.fmt(f),
-            LIA::Sub(op) => op.fmt(f),
-            LIA::Linear(op) => op.fmt(f),
-            LIA::Affine(op) => op.fmt(f),
-            LIA::ReLU(op) => op.fmt(f),
-            LIA::Abs(op) => op.fmt(f),
-            LIA::Neg(op) => op.fmt(f),
-            LIA::Argmax(op) => op.fmt(f),
-            LIA::Min(op) => op.fmt(f),
-            LIA::Max(op) => op.fmt(f),
-            LIA::Transpose(op) => op.fmt(f),
-            LIA::Lt(op) => op.fmt(f),
-            LIA::Ite(op) => op.fmt(f),
-            LIA::BroadcastIte(op) => op.fmt(f),
-            LIA::Le(op) => op.fmt(f),
-            LIA::Gt(op) => op.fmt(f),
-            LIA::Ge(op) => op.fmt(f),
-            LIA::Eq(op) => op.fmt(f),
-            LIA::Ne(op) => op.fmt(f),
-        }
-    }
 }
 
 impl<T: Matrix> Boundary<Ints> for NIA<T> {
@@ -999,78 +963,6 @@ impl Boundary<Ints> for Ne {
     }
 }
 
-impl<T: fmt::Display> fmt::Display for Scale<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Scale({})", self.tensor)
-    }
-}
-
-impl<T: fmt::Display> fmt::Display for Num<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.tensor)
-    }
-}
-
-impl<T: fmt::Display> fmt::Display for Linear<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Linear({})", self.a)
-    }
-}
-
-impl<T: fmt::Display> fmt::Display for Affine<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Affine({}, {})", self.a, self.b)
-    }
-}
-
-impl fmt::Display for Add {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Add")
-    }
-}
-
-impl fmt::Display for Sub {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Sub")
-    }
-}
-
-impl fmt::Display for Mul {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Mul")
-    }
-}
-
-impl fmt::Display for Div {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Div")
-    }
-}
-
-impl fmt::Display for Mod {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Mod")
-    }
-}
-
-impl fmt::Display for Neg {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Neg")
-    }
-}
-
-impl fmt::Display for Abs {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Abs")
-    }
-}
-
-impl fmt::Display for ReLU {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ReLU")
-    }
-}
-
 impl Boundary<Int> for Argmax {
     fn dom(&self) -> Poly<Int> {
         mono![Int::new_unchecked(self.shape)].into()
@@ -1078,42 +970,6 @@ impl Boundary<Int> for Argmax {
 
     fn cod(&self) -> Poly<Int> {
         mono![Int::new_unchecked([1, 1])].into()
-    }
-}
-
-impl fmt::Display for Argmax {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Argmax")
-    }
-}
-
-impl fmt::Display for Min {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Min")
-    }
-}
-
-impl fmt::Display for Max {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Max")
-    }
-}
-
-impl fmt::Display for Transpose {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Transpose")
-    }
-}
-
-impl fmt::Display for MatMul {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "MatMul")
-    }
-}
-
-impl fmt::Display for Lt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Lt")
     }
 }
 
@@ -1129,42 +985,6 @@ impl Boundary<Ints> for Ite {
 
     fn cod(&self) -> Poly<Ints> {
         mono![Int::new_unchecked(self.shape).into()].into()
-    }
-}
-
-impl fmt::Display for Ite {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Ite")
-    }
-}
-
-impl fmt::Display for Le {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Le")
-    }
-}
-
-impl fmt::Display for Gt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Gt")
-    }
-}
-
-impl fmt::Display for Ge {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Ge")
-    }
-}
-
-impl fmt::Display for Eq {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Eq")
-    }
-}
-
-impl fmt::Display for Ne {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Ne")
     }
 }
 
@@ -2266,7 +2086,8 @@ pub mod broadcast {
     /// pointwise [`super::Ite`] by `c` broadcast to `[m, n]`.
     ///
     /// SMT-LIB2: `(ite c x y)`, by the only entry of `c`.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("Ite")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int.broadcast")
@@ -2287,12 +2108,6 @@ pub mod broadcast {
 
         fn cod(&self) -> Poly<Ints> {
             mono![Int::new_unchecked(self.shape).into()].into()
-        }
-    }
-
-    impl fmt::Display for Ite {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "Ite")
         }
     }
 

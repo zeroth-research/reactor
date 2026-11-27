@@ -22,7 +22,7 @@ use crate::zero::Real0;
 use base::boundary::{Boundary, Poly};
 use base::differentiable::Differentiable;
 use base::mono;
-use derive_more::From;
+use derive_more::{Display, From};
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 use std::fmt;
@@ -93,7 +93,8 @@ impl Differentiable for Bool {
 }
 
 /// A constant boolean matrix literal, held in a tensor of type `T`.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Display)]
+#[display("{tensor}")]
 pub struct Truth<T> {
     tensor: T,
 }
@@ -128,7 +129,8 @@ impl<T> Truth<T> {
 }
 
 /// Pointwise conjunction `x ∧ y` of `[m, n]` matrices.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("And")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.bool")
@@ -138,7 +140,8 @@ pub struct And {
 }
 
 /// Pointwise disjunction `x ∨ y` of `[m, n]` matrices.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Or")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.bool")
@@ -148,7 +151,8 @@ pub struct Or {
 }
 
 /// Pointwise exclusive disjunction `x ⊕ y` of `[m, n]` matrices.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Xor")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.bool")
@@ -158,7 +162,8 @@ pub struct Xor {
 }
 
 /// Pointwise negation `¬x` of `[m, n]` matrices.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Not")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.bool")
@@ -171,7 +176,8 @@ pub struct Not {
 /// exclusive disjunction.
 ///
 /// SMT-LIB2: `(= x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Eq")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.bool")
@@ -184,7 +190,8 @@ pub struct Eq {
 /// disjunction.
 ///
 /// SMT-LIB2: `(distinct x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Ne")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.bool")
@@ -197,7 +204,8 @@ pub struct Ne {
 /// `x` and `y`, by the boolean matrix `c`, read first.
 ///
 /// SMT-LIB2: `(ite c x y)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Ite")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.bool")
@@ -208,7 +216,7 @@ pub struct Ite {
 
 /// The operations of propositional logic, the boolean operations of
 /// SMT-LIB2's `Core` theory, with their boundary in [`Bool`].
-#[derive(Clone, Copy, Debug, From)]
+#[derive(Clone, Copy, Debug, From, Display)]
 pub enum Prop<T> {
     Truth(Truth<T>),
     And(And),
@@ -221,24 +229,6 @@ pub enum Prop<T> {
     BroadcastIte(broadcast::Ite),
     ReduceAnd(reduce::And),
     ReduceOr(reduce::Or),
-}
-
-impl<T: fmt::Display> fmt::Display for Prop<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Prop::Truth(op) => op.fmt(f),
-            Prop::And(op) => op.fmt(f),
-            Prop::Or(op) => op.fmt(f),
-            Prop::Xor(op) => op.fmt(f),
-            Prop::Not(op) => op.fmt(f),
-            Prop::Eq(op) => op.fmt(f),
-            Prop::Ne(op) => op.fmt(f),
-            Prop::Ite(op) => op.fmt(f),
-            Prop::BroadcastIte(op) => op.fmt(f),
-            Prop::ReduceAnd(op) => op.fmt(f),
-            Prop::ReduceOr(op) => op.fmt(f),
-        }
-    }
 }
 
 impl<T: Matrix> Boundary<Bool> for Prop<T> {
@@ -345,48 +335,6 @@ impl Boundary<Bool> for Ne {
     }
 }
 
-impl<T: fmt::Display> fmt::Display for Truth<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.tensor)
-    }
-}
-
-impl fmt::Display for And {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "And")
-    }
-}
-
-impl fmt::Display for Or {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Or")
-    }
-}
-
-impl fmt::Display for Xor {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Xor")
-    }
-}
-
-impl fmt::Display for Not {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Not")
-    }
-}
-
-impl fmt::Display for Eq {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Eq")
-    }
-}
-
-impl fmt::Display for Ne {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Ne")
-    }
-}
-
 impl Boundary<Bool> for Ite {
     fn dom(&self) -> Poly<Bool> {
         mono![Bool::new_unchecked(self.shape); 3].into()
@@ -394,12 +342,6 @@ impl Boundary<Bool> for Ite {
 
     fn cod(&self) -> Poly<Bool> {
         mono![Bool::new_unchecked(self.shape)].into()
-    }
-}
-
-impl fmt::Display for Ite {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Ite")
     }
 }
 
@@ -813,7 +755,8 @@ pub mod broadcast {
     /// pointwise [`super::Ite`] by `c` broadcast to `[m, n]`.
     ///
     /// SMT-LIB2: `(ite c x y)`, by the only entry of `c`.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("Ite")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.bool.broadcast")
@@ -834,12 +777,6 @@ pub mod broadcast {
 
         fn cod(&self) -> Poly<Bool> {
             mono![Bool::new_unchecked(self.shape)].into()
-        }
-    }
-
-    impl fmt::Display for Ite {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "Ite")
         }
     }
 
@@ -941,7 +878,8 @@ pub mod reduce {
     /// matrix, and in each row along 1, writing an `[m, 1]` matrix.
     ///
     /// SMT-LIB2: `(and x₁ … xₖ)` of the entries reduced.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("And")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.bool.reduce")
@@ -956,7 +894,8 @@ pub mod reduce {
     /// matrix, and in each row along 1, writing an `[m, 1]` matrix.
     ///
     /// SMT-LIB2: `(or x₁ … xₖ)` of the entries reduced.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("Or")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.bool.reduce")
@@ -987,12 +926,6 @@ pub mod reduce {
 
         fn cod(&self) -> Poly<Bool> {
             mono![Bool::new_unchecked(reduced(self.shape, self.axis))].into()
-        }
-    }
-
-    impl fmt::Display for And {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "And")
         }
     }
 
@@ -1066,12 +999,6 @@ pub mod reduce {
 
         fn cod(&self) -> Poly<Bool> {
             mono![Bool::new_unchecked(reduced(self.shape, self.axis))].into()
-        }
-    }
-
-    impl fmt::Display for Or {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "Or")
         }
     }
 

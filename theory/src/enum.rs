@@ -34,7 +34,7 @@ use crate::zero::Real0;
 use base::boundary::{Boundary, Poly};
 use base::differentiable::Differentiable;
 use base::mono;
-use derive_more::From;
+use derive_more::{Display, From};
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 use std::fmt;
@@ -268,7 +268,8 @@ impl Differentiable for &Enum {
 }
 
 /// A symbolic constant of an enumeration: one of its values.
-#[derive(Clone, PartialEq, Debug, Eq, Hash)]
+#[derive(Clone, PartialEq, Debug, Eq, Hash, Display)]
+#[display("{value}")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.enum")
@@ -302,7 +303,8 @@ impl Sym {
 ///
 /// SMT-LIB2: the function from the datatype of `dom` to that of `cod` mapping
 /// each constructor to the one of its name.
-#[derive(Clone, PartialEq, Debug, Eq, Hash)]
+#[derive(Clone, PartialEq, Debug, Eq, Hash, Display)]
+#[display("Into")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.enum")
@@ -328,7 +330,8 @@ impl Into {
 /// Equality `x = y` of two values of an enumeration.
 ///
 /// SMT-LIB2: `(= x y)`.
-#[derive(Clone, PartialEq, Debug, Eq, Hash)]
+#[derive(Clone, PartialEq, Debug, Eq, Hash, Display)]
+#[display("Eq")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.enum")
@@ -340,7 +343,8 @@ pub struct Eq {
 /// Disequality `x ≠ y` of two values of an enumeration.
 ///
 /// SMT-LIB2: `(distinct x y)`.
-#[derive(Clone, PartialEq, Debug, Eq, Hash)]
+#[derive(Clone, PartialEq, Debug, Eq, Hash, Display)]
+#[display("Ne")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.enum")
@@ -353,7 +357,8 @@ pub struct Ne {
 /// enumeration, by the boolean `c`, of the shape `[1, 1]`, read first.
 ///
 /// SMT-LIB2: `(ite c x y)`.
-#[derive(Clone, PartialEq, Debug, Eq, Hash)]
+#[derive(Clone, PartialEq, Debug, Eq, Hash, Display)]
+#[display("Ite")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.enum")
@@ -415,7 +420,7 @@ impl Ite {
 }
 
 /// The operations on enumerations, with their boundary in [`Any`].
-#[derive(Clone, PartialEq, Debug, Eq, Hash, From)]
+#[derive(Clone, PartialEq, Debug, Eq, Hash, From, Display)]
 pub enum Op {
     Sym(Sym),
     Into(Into),
@@ -497,49 +502,6 @@ impl Boundary<Any> for Op {
             Op::Eq(op) => op.cod(),
             Op::Ne(op) => op.cod(),
             Op::Ite(op) => op.cod(),
-        }
-    }
-}
-
-/// Writes the symbolic constant itself.
-impl fmt::Display for Sym {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.value)
-    }
-}
-
-impl fmt::Display for Into {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Into")
-    }
-}
-
-impl fmt::Display for Eq {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Eq")
-    }
-}
-
-impl fmt::Display for Ne {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Ne")
-    }
-}
-
-impl fmt::Display for Ite {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Ite")
-    }
-}
-
-impl fmt::Display for Op {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Op::Sym(op) => op.fmt(f),
-            Op::Into(op) => op.fmt(f),
-            Op::Eq(op) => op.fmt(f),
-            Op::Ne(op) => op.fmt(f),
-            Op::Ite(op) => op.fmt(f),
         }
     }
 }

@@ -39,7 +39,7 @@ use crate::Matrix;
 use base::boundary::{Boundary, Poly};
 use base::differentiable::Differentiable;
 use base::mono;
-use derive_more::From;
+use derive_more::{Display, From};
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 use std::fmt;
@@ -144,7 +144,8 @@ use crate::Reals;
 /// A constant real matrix literal, held in a tensor of type `T`, of a
 /// degree: a constant rate of change, such as the `1` of `ẋ = 1`, is of
 /// degree 1.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Display)]
+#[display("{tensor}")]
 pub struct Num<T> {
     tensor: T,
     degree: u8,
@@ -180,7 +181,8 @@ impl<T> Num<T> {
 /// [`Mul`], which multiplies two variables.
 ///
 /// `C` is a plain real, so the product keeps the degree of `x`.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Display)]
+#[display("Scale({tensor})")]
 pub struct Scale<T> {
     tensor: T,
     degree: u8,
@@ -230,7 +232,8 @@ impl<T> Scale<T> {
 
 /// Pointwise addition `x + y` of `[m, n]` matrices, of the same degree,
 /// which the sum keeps.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Add")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
@@ -242,7 +245,8 @@ pub struct Add {
 
 /// Pointwise subtraction `x - y` of `[m, n]` matrices, of the same degree,
 /// which the difference keeps.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Sub")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
@@ -256,7 +260,8 @@ pub struct Sub {
 /// product, not the matrix product [`MatMul`]. The degrees of the factors
 /// add up: the product of a rate of change by a plain real is a rate of
 /// change, and that of two rates of change is of degree 2.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Mul")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
@@ -280,7 +285,8 @@ pub struct Mul {
 /// rate of change by a plain real is a rate of change, while dividing by a
 /// rate of change of a higher degree than the dividend is not defined, as
 /// degrees are not negative.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Div")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
@@ -298,7 +304,8 @@ pub struct Div {
 /// The linear map `x ↦ A·x`, where `A` is a plain real constant, so the map
 /// keeps the degree of `x`. `A` determines the rows of `x` but not its
 /// columns, which the map holds.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Display)]
+#[display("Linear({a})")]
 pub struct Linear<T> {
     a: T,
     cols: usize,
@@ -356,7 +363,8 @@ impl<T> Linear<T> {
 
 /// The affine map `x ↦ A·x + B`, where `A` and `B` are constants: `A` a
 /// plain real, and `B` of the degree of `x`, which the map keeps.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Display)]
+#[display("Affine({a}, {b})")]
 pub struct Affine<T> {
     a: T,
     b: T,
@@ -420,7 +428,8 @@ impl<T> Affine<T> {
 
 /// The zero `[m, n]` matrix of a degree, reading nothing: of degree 1, the
 /// rate of change of a real matrix that does not change.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Zero")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
@@ -434,7 +443,8 @@ pub struct Zero {
 /// the negation keeps.
 ///
 /// SMT-LIB2: `(- x)`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Neg")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
@@ -448,7 +458,8 @@ pub struct Neg {
 /// `Reals` has no `abs`, unlike `Ints`; it is `(ite (>= x 0) x (- x))`.
 ///
 /// Of a degree, which the absolute value keeps.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Abs")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
@@ -462,7 +473,8 @@ pub struct Abs {
 /// `[m, n]` matrices.
 ///
 /// Of a degree, which the map keeps.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("ReLU")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
@@ -476,7 +488,8 @@ pub struct ReLU {
 /// entries row by row, written as a `[1, 1]` matrix of the same sort.
 ///
 /// Of an operand of any degree: the index it writes is of degree 0.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Argmax")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
@@ -489,7 +502,8 @@ pub struct Argmax {
 /// Pointwise minimum `min(x, y)` of `[m, n]` matrices.
 ///
 /// Of operands of the same degree, which the minimum keeps.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Min")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
@@ -502,7 +516,8 @@ pub struct Min {
 /// Pointwise maximum `max(x, y)` of `[m, n]` matrices.
 ///
 /// Of operands of the same degree, which the maximum keeps.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Max")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
@@ -515,7 +530,8 @@ pub struct Max {
 /// Transposition `xᵀ` of `[m, n]` matrices.
 ///
 /// Of a degree, which the transposition keeps.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Transpose")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
@@ -527,7 +543,8 @@ pub struct Transpose {
 
 /// The matrix product `x·y` of an `[m, n]` matrix `x` and an `[n, k]`
 /// matrix `y`, with the shapes given as `MatMul([[m, n], [n, k]])`.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("MatMul")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
@@ -550,7 +567,8 @@ pub struct MatMul {
 /// SMT-LIB2: `(< x y)`.
 ///
 /// Of operands of the same degree.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Lt")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
@@ -566,7 +584,8 @@ pub struct Lt {
 /// SMT-LIB2: `(ite c x y)`.
 ///
 /// Of branches of the same degree, which the choice keeps.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Ite")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
@@ -582,7 +601,8 @@ pub struct Ite {
 /// SMT-LIB2: `(<= x y)`.
 ///
 /// Of operands of the same degree.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Le")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
@@ -598,7 +618,8 @@ pub struct Le {
 /// SMT-LIB2: `(> x y)`.
 ///
 /// Of operands of the same degree.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Gt")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
@@ -614,7 +635,8 @@ pub struct Gt {
 /// SMT-LIB2: `(>= x y)`.
 ///
 /// Of operands of the same degree.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Ge")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
@@ -630,7 +652,8 @@ pub struct Ge {
 /// SMT-LIB2: `(= x y)`, of the Core theory.
 ///
 /// Of operands of the same degree.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Eq")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
@@ -646,7 +669,8 @@ pub struct Eq {
 /// SMT-LIB2: `(distinct x y)`, of the Core theory.
 ///
 /// Of operands of the same degree.
-#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Ne")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real")
@@ -663,7 +687,7 @@ pub struct Ne {
 /// `MatMul`, which multiply or divide two variables. It also generates the
 /// casts between them: `From` up to `NRA`, and `TryFrom` down from it.
 #[subenum(LRA)]
-#[derive(Clone, Copy, Debug, From)]
+#[derive(Clone, Copy, Debug, From, Display)]
 pub enum NRA<T> {
     #[subenum(LRA)]
     Num(Num<T>),
@@ -712,67 +736,6 @@ pub enum NRA<T> {
     Eq(Eq),
     #[subenum(LRA)]
     Ne(Ne),
-}
-
-impl<T: fmt::Display> fmt::Display for NRA<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            NRA::Num(op) => op.fmt(f),
-            NRA::Scale(op) => op.fmt(f),
-            NRA::Add(op) => op.fmt(f),
-            NRA::Sub(op) => op.fmt(f),
-            NRA::Mul(op) => op.fmt(f),
-            NRA::Div(op) => op.fmt(f),
-            NRA::Linear(op) => op.fmt(f),
-            NRA::Affine(op) => op.fmt(f),
-            NRA::ReLU(op) => op.fmt(f),
-            NRA::Abs(op) => op.fmt(f),
-            NRA::Neg(op) => op.fmt(f),
-            NRA::Zero(op) => op.fmt(f),
-            NRA::Argmax(op) => op.fmt(f),
-            NRA::Min(op) => op.fmt(f),
-            NRA::Max(op) => op.fmt(f),
-            NRA::Transpose(op) => op.fmt(f),
-            NRA::MatMul(op) => op.fmt(f),
-            NRA::Lt(op) => op.fmt(f),
-            NRA::Ite(op) => op.fmt(f),
-            NRA::BroadcastIte(op) => op.fmt(f),
-            NRA::Le(op) => op.fmt(f),
-            NRA::Gt(op) => op.fmt(f),
-            NRA::Ge(op) => op.fmt(f),
-            NRA::Eq(op) => op.fmt(f),
-            NRA::Ne(op) => op.fmt(f),
-        }
-    }
-}
-
-impl<T: fmt::Display> fmt::Display for LRA<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LRA::Num(op) => op.fmt(f),
-            LRA::Scale(op) => op.fmt(f),
-            LRA::Add(op) => op.fmt(f),
-            LRA::Sub(op) => op.fmt(f),
-            LRA::Linear(op) => op.fmt(f),
-            LRA::Affine(op) => op.fmt(f),
-            LRA::ReLU(op) => op.fmt(f),
-            LRA::Abs(op) => op.fmt(f),
-            LRA::Neg(op) => op.fmt(f),
-            LRA::Zero(op) => op.fmt(f),
-            LRA::Argmax(op) => op.fmt(f),
-            LRA::Min(op) => op.fmt(f),
-            LRA::Max(op) => op.fmt(f),
-            LRA::Transpose(op) => op.fmt(f),
-            LRA::Lt(op) => op.fmt(f),
-            LRA::Ite(op) => op.fmt(f),
-            LRA::BroadcastIte(op) => op.fmt(f),
-            LRA::Le(op) => op.fmt(f),
-            LRA::Gt(op) => op.fmt(f),
-            LRA::Ge(op) => op.fmt(f),
-            LRA::Eq(op) => op.fmt(f),
-            LRA::Ne(op) => op.fmt(f),
-        }
-    }
 }
 
 impl<T: Matrix> Boundary<Reals> for NRA<T> {
@@ -1150,78 +1113,6 @@ impl Boundary<Reals> for Ne {
     }
 }
 
-impl<T: fmt::Display> fmt::Display for Scale<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Scale({})", self.tensor)
-    }
-}
-
-impl<T: fmt::Display> fmt::Display for Num<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.tensor)
-    }
-}
-
-impl<T: fmt::Display> fmt::Display for Linear<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Linear({})", self.a)
-    }
-}
-
-impl<T: fmt::Display> fmt::Display for Affine<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Affine({}, {})", self.a, self.b)
-    }
-}
-
-impl fmt::Display for Add {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Add")
-    }
-}
-
-impl fmt::Display for Sub {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Sub")
-    }
-}
-
-impl fmt::Display for Mul {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Mul")
-    }
-}
-
-impl fmt::Display for Div {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Div")
-    }
-}
-
-impl fmt::Display for Zero {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Zero")
-    }
-}
-
-impl fmt::Display for Neg {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Neg")
-    }
-}
-
-impl fmt::Display for Abs {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Abs")
-    }
-}
-
-impl fmt::Display for ReLU {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ReLU")
-    }
-}
-
 impl Boundary<Real> for Argmax {
     fn dom(&self) -> Poly<Real> {
         mono![Real::with_degree(self.shape, self.degree)].into()
@@ -1229,42 +1120,6 @@ impl Boundary<Real> for Argmax {
 
     fn cod(&self) -> Poly<Real> {
         mono![Real::new_unchecked([1, 1])].into()
-    }
-}
-
-impl fmt::Display for Argmax {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Argmax")
-    }
-}
-
-impl fmt::Display for Min {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Min")
-    }
-}
-
-impl fmt::Display for Max {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Max")
-    }
-}
-
-impl fmt::Display for Transpose {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Transpose")
-    }
-}
-
-impl fmt::Display for MatMul {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "MatMul")
-    }
-}
-
-impl fmt::Display for Lt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Lt")
     }
 }
 
@@ -1280,42 +1135,6 @@ impl Boundary<Reals> for Ite {
 
     fn cod(&self) -> Poly<Reals> {
         mono![Real::with_degree(self.shape, self.degree).into()].into()
-    }
-}
-
-impl fmt::Display for Ite {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Ite")
-    }
-}
-
-impl fmt::Display for Le {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Le")
-    }
-}
-
-impl fmt::Display for Gt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Gt")
-    }
-}
-
-impl fmt::Display for Ge {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Ge")
-    }
-}
-
-impl fmt::Display for Eq {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Eq")
-    }
-}
-
-impl fmt::Display for Ne {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Ne")
     }
 }
 
@@ -2469,7 +2288,8 @@ pub mod broadcast {
     /// SMT-LIB2: `(ite c x y)`, by the only entry of `c`.
     ///
     /// Of branches of the same degree, which the choice keeps.
-    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("Ite")]
     #[cfg_attr(
         feature = "pyo3",
         pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.real.broadcast")
@@ -2491,12 +2311,6 @@ pub mod broadcast {
 
         fn cod(&self) -> Poly<Reals> {
             mono![Real::with_degree(self.shape, self.degree).into()].into()
-        }
-    }
-
-    impl fmt::Display for Ite {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            write!(f, "Ite")
         }
     }
 

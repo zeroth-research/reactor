@@ -102,7 +102,7 @@ pub use matrix::Matrix;
 use self::{bool::Bool, r#enum::Enum, event::Event, int::Int, real::Real, word::Word};
 use base::boundary::{Boundary, Poly};
 use base::differentiable::Differentiable;
-use derive_more::From;
+use derive_more::{Display, From};
 #[cfg(feature = "pyo3")]
 use pyo3::{exceptions::PyTypeError, prelude::*};
 use std::fmt;
@@ -118,7 +118,7 @@ use zero::Real0;
     Nums(derive(Copy)),
     Words(derive(Copy))
 )]
-#[derive(Clone, PartialEq, Debug, Eq, From)]
+#[derive(Clone, PartialEq, Debug, Eq, From, Display)]
 pub enum Any {
     #[subenum(Reals, Nums)]
     Real(Real),
@@ -152,33 +152,6 @@ impl Differentiable for Any {
         }
     }
 }
-
-impl fmt::Display for Any {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Any::Real(r) => r.fmt(f),
-            Any::Int(i) => i.fmt(f),
-            Any::Bool(b) => b.fmt(f),
-            Any::Word(w) => w.fmt(f),
-            Any::Enum(e) => e.fmt(f),
-            Any::Event(e) => e.fmt(f),
-            Any::Zero(z) => z.fmt(f),
-        }
-    }
-}
-
-/// Each subset displays its sorts as [`Any`] does.
-macro_rules! display_subset {
-    ($($subset:ident),*) => {$(
-        impl fmt::Display for $subset {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                Any::from(*self).fmt(f)
-            }
-        }
-    )*};
-}
-
-display_subset!(Bools, Reals, Ints, Nums, Words);
 
 /// All the sorts of words are discrete, so their tangent is trivial: the singleton
 /// sort [`Real0`].
@@ -291,7 +264,7 @@ impl<'py> IntoPyObject<'py> for Any {
     Prop(derive(Copy)),
     BV(derive(Copy))
 )]
-#[derive(Clone, Debug, From)]
+#[derive(Clone, Debug, From, Display)]
 pub enum Op<T> {
     #[subenum(NRA)]
     Real(real::NRA<T>),
@@ -326,7 +299,8 @@ pub enum LIA<T> {
 
 /// Writes an arbitrary value of the given sort, of any theory, reading
 /// nothing: the nondeterministic choice of a value.
-#[derive(Clone, PartialEq, Debug, Eq)]
+#[derive(Clone, PartialEq, Debug, Eq, Display)]
+#[display("Havoc")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor")
@@ -336,7 +310,8 @@ pub struct Havoc {
 }
 
 /// Writes the value it reads, of the given sort, of any theory: the identity.
-#[derive(Clone, PartialEq, Debug, Eq)]
+#[derive(Clone, PartialEq, Debug, Eq, Display)]
+#[display("Skip")]
 #[cfg_attr(
     feature = "pyo3",
     pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor")
@@ -442,18 +417,6 @@ impl Boundary<Any> for Skip {
 
     fn cod(&self) -> Poly<Any> {
         base::mono![self.sort.clone()].into()
-    }
-}
-
-impl fmt::Display for Havoc {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Havoc")
-    }
-}
-
-impl fmt::Display for Skip {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Skip")
     }
 }
 
@@ -574,22 +537,6 @@ impl<T: Matrix> Differential<Any> for Op<T> {
             ),
             Any::Zero(_) => Op::Zero(zero::Zero),
             _ => panic!("only the tangent sorts, reals and Real0, have a zero: {range}"),
-        }
-    }
-}
-
-impl<T: fmt::Display> fmt::Display for Op<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Op::Real(op) => op.fmt(f),
-            Op::Int(op) => op.fmt(f),
-            Op::Bool(op) => op.fmt(f),
-            Op::Word(op) => op.fmt(f),
-            Op::Enum(op) => op.fmt(f),
-            Op::Event(op) => op.fmt(f),
-            Op::Havoc(op) => op.fmt(f),
-            Op::Skip(op) => op.fmt(f),
-            Op::Zero(op) => op.fmt(f),
         }
     }
 }
