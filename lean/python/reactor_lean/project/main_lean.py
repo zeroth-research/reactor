@@ -26,21 +26,18 @@ def check_runnable(ctx: LeanContext) -> None:
         )
 
 
-def _elem_parser(sort) -> "tuple[str, str, str]":
-    """`(bind, parser, push)` for reading one element of `sort` -- a
-    `Bool`, an `Int` or a `Word`, since `check_runnable` refused a `Real`
-    -- from a token.
-
-    The emitted line is `let v <bind> <parser> tokens[...]!`, so `bind` is
-    `:=` for a pure parser and `←` for one in IO; `push` is the expression
-    stored into the array.
+def _elem_parser(sort) -> "tuple[str, str]":
+    """`(parser, push)` for reading one element of `sort` -- a `Bool`, an
+    `Int` or a `Word`, since `check_runnable` refused a `Real` -- from a
+    token: the emitted line is `let v ← <parser> tokens[...]!`, and `push`
+    the expression stored into the array.
     """
     if isinstance(sort, Bool):
-        return "←", "parseBoolOrFail", "v"
+        return "parseBoolOrFail", "v"
     if isinstance(sort, Int):
-        return "←", "parseIntOrFail", "v"
+        return "parseIntOrFail", "v"
     assert isinstance(sort, Word), sort
-    return "←", "parseIntOrFail", f"(BitVec.ofInt {sort.width} v)"
+    return "parseIntOrFail", f"(BitVec.ofInt {sort.width} v)"
 
 
 def _elem_shower(sort) -> str:
@@ -118,10 +115,10 @@ def generate_main_lean(ctx: LeanContext) -> str:
         # Every wire is a matrix here, so parse m*n tokens into an array of
         # the wire's own element type -- reading them all as Int made the
         # body disagree with the ascribed return type for every other sort.
-        bind, parser, push = _elem_parser(w.dtype)
+        parser, push = _elem_parser(w.dtype)
         lines.append(f"  let mut arr{i} : Array {elem} := #[]")
         lines.append(f"  for k in List.range {m * n} do")
-        lines.append(f"    let v {bind} {parser} tokens[{offset} + k]!")
+        lines.append(f"    let v ← {parser} tokens[{offset} + k]!")
         lines.append(f"    arr{i} := arr{i}.push {push}")
         entry = f"arr{i}[i.val * {n} + j.val]!"
         lines.append(f"  let {var} : Matrix (Fin {m}) (Fin {n}) {elem} := {mat_mk(entry, 'i', 'j')}")

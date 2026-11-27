@@ -81,6 +81,7 @@ READ = [
     "(= s3 -3)",
     "(= s3 #b0101)",
     "(= s3 (_ bv5 4))",
+    "(= (ite s1 s3 #b0000) 5)",
     "(ite s1 s0 e0)",
     "(ite s1 s2 1.0)",
     "(ite s1 s3 #b0000)",
@@ -140,6 +141,9 @@ def test_a_bit_vector_comparison_is_read_as_a_bool():
     f = read_smtlib(_scope(), "(= s3 5)")
     assert family(f.sort) == "Bool"
     assert _ops("(= s3 5)") == ["word.Const", "word.Eq"]
+    # At the width of any bit-vector, not a variable's alone, as in the
+    # Python syntax.
+    assert _ops("(= (ite s1 s3 #b0000) 5)")[-2:] == ["word.Const", "word.Eq"]
 
 
 @pytest.mark.parametrize("src", ["(s3[0][0] & 1) == 0", "~s3[0][0] == 0", "-s3[0][0] == 0"])

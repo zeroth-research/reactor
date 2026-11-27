@@ -25,7 +25,7 @@ from reactor_lean.project.lake_cache import (
 from reactor_lean.project.lakefile import (
     FIXED_REQUIRES,
     REACTLIB_ENV,
-    REACTLIB_PACKAGES,
+    REACTLIB_PACKAGE,
     REACTLIB_REV,
     REACTLIB_URL,
     Require,
@@ -65,9 +65,8 @@ def test_every_project_template_is_rendered():
 # ══════════════════════════════════════════════════════════════════════
 
 def _checkout(root: Path) -> Path:
-    for p in REACTLIB_PACKAGES:
-        (root / p).mkdir(parents=True)
-        (root / p / "lakefile.toml").write_text("")
+    (root / REACTLIB_PACKAGE).mkdir(parents=True)
+    (root / REACTLIB_PACKAGE / "lakefile.toml").write_text("")
     return root
 
 
@@ -78,23 +77,22 @@ def _require(lakefile: str, name: str) -> str:
     return block[1].split("\n\n", 1)[0].rstrip("\n")
 
 
-def test_the_lakefile_requires_each_package_from_its_directory_of_the_repo(
+def test_the_lakefile_requires_reactlib_from_its_directory_of_the_repo(
         monkeypatch):
     monkeypatch.delenv(REACTLIB_ENV, raising=False)
     lakefile = generate_lakefile("P", project_requires())
-    for p in REACTLIB_PACKAGES:
-        req = _require(lakefile, p)
-        assert f'git = "{REACTLIB_URL}"' in req
-        assert f'subDir = "{p}"' in req
-        assert "path =" not in req
+    req = _require(lakefile, REACTLIB_PACKAGE)
+    assert f'git = "{REACTLIB_URL}"' in req
+    assert f'subDir = "{REACTLIB_PACKAGE}"' in req
+    assert "path =" not in req
 
 
 def test_reactlib_set_requires_the_checkout_by_path(monkeypatch, tmp_path):
     root = _checkout(tmp_path / "rl")
     monkeypatch.setenv(REACTLIB_ENV, str(root))
     lakefile = generate_lakefile("P", project_requires())
-    for p in REACTLIB_PACKAGES:
-        assert _require(lakefile, p) == f'path = "{root.resolve() / p}"'
+    assert (_require(lakefile, REACTLIB_PACKAGE)
+            == f'path = "{root.resolve() / REACTLIB_PACKAGE}"')
     assert REACTLIB_URL not in lakefile
 
 
@@ -179,21 +177,20 @@ def test_the_manifest_holds_the_cached_packages_and_the_projects_paths(
     git = [e["name"] for e in m["packages"] if e["type"] == "git"]
     assert git == ["cslib", "mathlib"]
     dirs = {e["name"]: e["dir"] for e in m["packages"] if e["type"] == "path"}
-    assert dirs == {p: str(root.resolve() / p) for p in REACTLIB_PACKAGES}
+    assert dirs == {REACTLIB_PACKAGE: str(root.resolve() / REACTLIB_PACKAGE)}
 
 
 def test_a_git_require_the_cache_does_not_hold_is_refused(monkeypatch,
                                                           tmp_path):
-    """Without `$REACTLIB`, ReactLib's packages are git requires, which a
+    """Without `$REACTLIB`, ReactLib is a git require, which a
     cache made against a checkout does not hold."""
     cache = _cache(tmp_path / "c")
     monkeypatch.delenv(REACTLIB_ENV, raising=False)
     with pytest.raises(Refused, match="does not hold ReactLib"):
         cached_manifest(cache, project_requires(), name="P", project=tmp_path)
-    held = _cache(tmp_path / "held", *(_git(p, REACTLIB_REV)
-                                       for p in REACTLIB_PACKAGES))
+    held = _cache(tmp_path / "held", _git(REACTLIB_PACKAGE, REACTLIB_REV))
     m = cached_manifest(held, project_requires(), name="P", project=tmp_path)
-    assert {e["name"] for e in m["packages"]} >= set(REACTLIB_PACKAGES)
+    assert REACTLIB_PACKAGE in {e["name"] for e in m["packages"]}
 
 
 def test_a_package_cached_at_another_revision_is_refused(tmp_path):

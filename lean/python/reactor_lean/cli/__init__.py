@@ -175,9 +175,15 @@ def standalone(cert_file: str, ctx: LeanContext,
 
     No project: the predicates are the ones supplied. The encodings import
     the certificate by its Lake module name, so a path that gives it none
-    (`my-cert.lean`) is refused before anything is written.
+    (`my-cert.lean`, `MyCert` with no `.lean`) is refused before anything
+    is written.
     """
     out = Path(cert_file)
+    if out.suffix != ".lean":
+        raise SystemExit(
+            f"error: --cert-file: {out} is no `.lean` file, and Lake reads "
+            "the module the encodings beside it import only from one"
+        )
     layout = Layout(base=out.stem, prefix=lake_module_prefix(out.parent),
                     flat=True, directory=out.parent)
     module_name = layout.lean_module("")

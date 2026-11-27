@@ -59,11 +59,11 @@ ENCODINGS: tuple[Encoding, ...] = (
     # again there.
     Encoding("", "Functional encoding", "Relational.Mat", (),
              ModuleToLean4.to_lean_functional, cert_file=False),
-    Encoding("Rel", "Matrix-domain relational encoding", "Relational.Basic", ("",),
+    Encoding("Rel", "Matrix-domain relational encoding", "Relational.Mat", ("",),
              ModuleToLean4.to_lean_mat_rel),
-    Encoding("Scalar", "Scalar encoding", "Relational.Basic", ("",),
+    Encoding("Scalar", "Scalar encoding", "Relational.Mat", ("",),
              ModuleToLean4.to_lean_scalar),
-    Encoding("ScalarRel", "Scalar-relational encoding", "Relational.Basic",
+    Encoding("ScalarRel", "Scalar-relational encoding", "Relational.Mat",
              ("Scalar",), ModuleToLean4.to_lean_rel),
 )
 

@@ -13,8 +13,9 @@ theory, integer and real arithmetic, `to_real`,
   prints flat again;
 * an Int written where a Real is wanted is a Real: a numeral is read as
   one, and anything else is cast (`cast.ToReal`);
-* `(= v 5)` and `(distinct 5 v)`, with `v` a bit-vector variable, read the
-  numeral at `v`'s width, which plain SMT-LIB does not.
+* `(= v 5)` and `(distinct 5 v)`, with `v` a bit-vector -- a variable,
+  an element of one, an `ite` of them -- read the numeral at `v`'s width,
+  which plain SMT-LIB does not.
 
 `(distinct a b c)` is every pair distinct. What this parser does not read
 -- `/`, `abs`, `xor`, the bit-vector operations, which a predicate has no
@@ -54,8 +55,8 @@ def _theory(sort) -> "tuple[object, tuple[int, ...]]":
 class Lit:
     """A numeral or a decimal not yet given a sort: what it becomes depends
     on what it meets. `neg` is `(- n)`, kept as a negation of
-    the literal; `bare` is a lone token, which is what a bit-vector
-    variable's width reaches."""
+    the literal; `bare` is a lone token, which is what a bit-vector's
+    width reaches."""
 
     value: "int | Fraction"
     decimal: bool
@@ -86,10 +87,6 @@ class Scope:
             return None
         shape = wire_shape(wire)
         return wire if shape.is_scalar else Matrix(wire, shape.m, shape.n)
-
-    def holds(self, wire) -> bool:
-        """Whether `wire` is one of the variables, not a term over them."""
-        return any(wire == w for w in self.names.values())
 
 
 # `-1` and `-0.5` are read as numbers, though SMT-LIB has them as symbols.
@@ -354,11 +351,11 @@ class Elaborator:
         return self.b.apply(op, [wa, wb], Bool(SCALAR))
 
     def at_bitvec_width(self, a, b):
-        """A bare numeral against a bit-vector variable, at its width."""
+        """A bare numeral against a bit-vector, at its width."""
         for x, y in ((a, b), (b, a)):
             if (isinstance(y, Lit) and y.bare and not y.decimal
                     and not isinstance(x, (Lit, Matrix))
-                    and isinstance(x.dtype, Word) and self.scope.holds(x)):
+                    and isinstance(x.dtype, Word)):
                 lit = self.b.bitvec(x.dtype.width, int(y.value))
                 return (x, lit) if x is a else (lit, x)
         return a, b

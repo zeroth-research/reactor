@@ -47,6 +47,20 @@ def test_a_file_that_looks_itself_up_loads(tmp_path):
                for m in list(sys.modules.values()))
 
 
+@pytest.mark.parametrize("src, why", [
+    ("def module():\n    pass\n", "returned `NoneType`, not a `Module`"),
+    ((FIXTURES / "counter.py").read_text() + "\nmodule = module()\n",
+     "is a `Module`, not a function returning the module"),
+])
+def test_a_callable_that_makes_no_module_is_refused(tmp_path, src, why):
+    """What is wrong with the file, not an error of its own code: a
+    `module()` that forgets its `return`, a `module` that is no callable."""
+    path = tmp_path / "m.py"
+    path.write_text(src)
+    with pytest.raises(parse.InputError, match=why):
+        parse.load(path)
+
+
 def test_a_named_environment_is_refused(tmp_path):
     """Only a `Module` has variables a name can be given to; an
     environment has them once `reactor.Env` made it one."""

@@ -89,6 +89,7 @@ def _as_module(result) -> "tuple[Any, Mapping[str, Any] | None]":
     one is refused: its variables are made by `Env`, so a name given
     beside the environment cannot be one of them.
     """
+    import gymnasium
     from reactor import Env
 
     if isinstance(result, Named):
@@ -101,6 +102,11 @@ def _as_module(result) -> "tuple[Any, Mapping[str, Any] | None]":
         return result.module, result.names
     if isinstance(result, Module):
         return result, None
+    if not isinstance(result, gymnasium.Env):
+        raise InputError(
+            f"the module file's callable returned `{type(result).__name__}`, "
+            "not a `Module`, a `Named` one or a Gymnasium environment"
+        )
     return Env(result), None
 
 
@@ -124,6 +130,12 @@ def _call(path: Path, module_def: str):
                 "function returning `Module` or a sub-class of `Module` with "
                 "constructor without arguments."
             )
-        return getattr(module, module_def)()
+        made = getattr(module, module_def)
+        if not callable(made):
+            raise InputError(
+                f"`{module_def}` in {path} is a `{type(made).__name__}`, not "
+                "a function returning the module"
+            )
+        return made()
     finally:
         del sys.modules[spec.name]

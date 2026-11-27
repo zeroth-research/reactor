@@ -226,12 +226,12 @@ def parse_predicate(wires: ModuleWires, src: str) -> Formula:
             f"`{src.strip()}` is predicate syntax, and not a predicate of "
             f"this module: {e}"
         ) from e
-    if isinstance(result, bool):    # `True` is Python's constant, not a name
+    # A constant -- `True`, `10 - 3` -- is Python's value, not a name.
+    if isinstance(result, (bool, int, float)):
         result = lift(x, result)
-    if isinstance(result, _Term) and not isinstance(result._v, (Lit, Matrix)):
-        return b.formula(result._v, x.scope.names)
-    # No Python, or a value no predicate is -- `5`, a whole matrix
-    # variable: SMT-LIB reads the rest.
+    if isinstance(result, _Term) and not isinstance(result._v, Matrix):
+        return b.formula(x.settle(result._v, None), x.scope.names)
+    # No Python, or a whole matrix variable: SMT-LIB reads the rest.
     return read_smtlib(x.scope, src)
 
 

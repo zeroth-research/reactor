@@ -314,7 +314,7 @@ OPS: tuple[Op, ...] = (
         "Get",
         ("bool", "int", "real", "word"),
         mat=Inline("codegen.terms._get_expr"),
-        scalar=Inline("codegen.terms._get_expr, or the entry's flat slot"),
+        scalar=Inline("codegen.terms.translate_terms_scalar, as the entry's flat slot"),
     ),
     Op(
         "Transpose",

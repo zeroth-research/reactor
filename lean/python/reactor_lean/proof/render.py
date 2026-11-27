@@ -68,9 +68,9 @@ def render_certificate(q: "Predicates") -> LeanCertificate:
         """`term` as Lean over `over`, with its role on any refusal.
 
         The printer walks a term and knows nothing of where it came from;
-        `--extl-assume (= s0 0)` parses and then fails on a name an
-        assumption does not bind, and "Unknown free variable `s0`" alone
-        does not say which predicate asked for it.
+        `--extl-assume "(= (X @intf.0) 0)"` parses, as `(= s0 0)`, and then
+        fails on a name an assumption does not bind, and "Unknown free
+        variable `s0`" alone does not say which predicate asked for it.
         """
         if term is None:
             return None

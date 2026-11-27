@@ -49,6 +49,43 @@ def test_an_op_with_no_lean_form_writes_nothing(tmp_path):
     assert not out.exists()
 
 
+def test_a_module_with_continuous_dynamics_writes_nothing(tmp_path):
+    """A `delay` block that is not all `Zero` is a rate of change, which
+    no encoding has: the module left without it is another system."""
+    path = tmp_path / "flow.py"
+    path.write_text(
+        "import torch\n"
+        "from reactor import Module, Real, Term, Var, X, d, tensor\n"
+        "def module():\n"
+        "    x = Var(Real([1, 1]))\n"
+        "    init = [Term(tensor.real.Const(torch.tensor([[0.0]])), [X(x)])]\n"
+        "    update = [Term(tensor.real.Neg([1, 1]), [X(x)], [x])]\n"
+        "    flow = [Term(tensor.real.Const(torch.tensor([[1.0]]), 1), [d(x)])]\n"
+        "    return Module.hybrid([x], init, update, flow)\n"
+    )
+    out = tmp_path / "out"
+    assert "no encoding here has continuous time" in _refused(
+        reactor(str(path), "-o", str(out)))
+    assert not out.exists()
+
+
+def test_a_real_that_is_no_number_writes_nothing(tmp_path):
+    path = tmp_path / "inf.py"
+    path.write_text(
+        "import torch\n"
+        "from reactor import Module, Real, Term, Var, X, tensor\n"
+        "def module():\n"
+        "    x = Var(Real([1, 1]))\n"
+        "    init = [Term(tensor.real.Const(torch.tensor([[float('-inf')]])), [X(x)])]\n"
+        "    update = [Term(tensor.Skip(Real([1, 1])), [X(x)], [x])]\n"
+        "    return Module.sequential([x], init, update)\n"
+    )
+    out = tmp_path / "out"
+    assert "a Real constant holds -inf" in _refused(
+        reactor(str(path), "-o", str(out)))
+    assert not out.exists()
+
+
 _REAL_STATE = """\
 import torch
 from reactor import Module, Real, Term, Var, X, tensor
@@ -91,17 +128,23 @@ def test_a_cert_file_sibling_that_cannot_be_written(tmp_path):
     assert err.startswith("error: --cert-file: ")
 
 
-@pytest.mark.parametrize("path", ["my-cert.lean", "2cert.lean",
-                                  "my-certs/Cert.lean"])
+@pytest.mark.parametrize("path, why", [
+    ("my-cert.lean", "which is no Lean module name"),
+    ("2cert.lean", "which is no Lean module name"),
+    ("my-certs/Cert.lean", "which is no Lean module name"),
+    ("Cert", "is no `.lean` file"),
+    ("Cert.txt", "is no `.lean` file"),
+])
 def test_a_cert_file_that_gives_no_lean_module_name_writes_nothing(tmp_path,
-                                                                    path):
+                                                                    path, why):
     """The encodings beside the certificate import it by its module name,
-    which a file or directory name that is no Lean name does not give:
-    `import out.my-cert` does not parse."""
+    which a file or directory name that is no Lean name does not give
+    (`import out.my-cert` does not parse), and Lake finds a module only in
+    a `.lean` file."""
     (tmp_path / "lakefile.toml").write_text("")
     out = tmp_path / "out"
     err = _refused(reactor(COUNTER, "--cert-file", str(out / path)))
-    assert "which is no Lean module name" in err
+    assert why in err
     assert not out.exists()
 
 

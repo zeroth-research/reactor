@@ -68,6 +68,9 @@ def _shape(formula, wires: ModuleWires):
         ("m_countdown", "False", "false"),
         ("m_countdown", "s0[0][0] > 0 or True", "(or (> s0 0) true)"),
         ("m_countdown", "-s0[0][0] * 2 < 1", "(< (* (- s0) 2) 1)"),
+        # A number the syntax computes is the constant it is.
+        ("m_countdown", "10 - 3", "7"),
+        ("m_countdown", "2.5 * 2", "5.0"),
     ],
 )
 def test_the_python_syntax_builds_the_smtlib_it_means(mod, python, smtlib):
@@ -97,7 +100,7 @@ def test_python_outside_the_syntax_is_not_read(src):
         dsl.evaluate(src, ns)
 
 
-def test_a_bare_numeral_still_falls_through_to_smtlib():
+def test_a_bare_numeral_is_an_int_constant():
     f = parse_predicate(_wires("m_countdown"), "0")
     op = f.terms[-1].itype
     assert (theory_of(op), itype_name(op)) == ("int", "Const")

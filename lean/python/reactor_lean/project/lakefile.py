@@ -26,7 +26,7 @@ REACTLIB_URL = "https://github.com/zeroth-research/ReactLib"
 # A commit rather than a branch, so a project cannot drift from the
 # generator that wrote it.
 REACTLIB_REV = "01cb44e77112a6b5a0e6e793723885d42c303a50"
-REACTLIB_PACKAGES = ("ReactLib",)
+REACTLIB_PACKAGE = "ReactLib"
 # A ReactLib checkout to require by path instead of from git, to work on
 # the libraries and the generator together.
 REACTLIB_ENV = "REACTLIB"
@@ -58,53 +58,44 @@ def reactlib_checkout() -> Path | None:
     if not value:
         return None
     root = Path(value).expanduser().resolve()
-    missing = [f"{p}/lakefile.toml" for p in REACTLIB_PACKAGES
-               if not (root / p / "lakefile.toml").is_file()]
-    if missing:
+    if not (root / REACTLIB_PACKAGE / "lakefile.toml").is_file():
         raise Refused(
             f"${REACTLIB_ENV}: {root} is not a ReactLib checkout: "
-            f"it has no {', '.join(missing)}",
+            f"it has no {REACTLIB_PACKAGE}/lakefile.toml",
         )
     return root
 
 
-_REACTLIB_COMMENTS = {
-    "ReactLib": (
-        "ReactLib's `ReactLib` package: `Relational.*`, what the encodings and "
-        "the certificate are stated in, and `Spec.*`, the LTL of its proof "
-        "rules.\n"
-        f"Set ${REACTLIB_ENV} to a ReactLib checkout to require it by path."
-    ),
-}
+_REACTLIB_COMMENT = (
+    "ReactLib's `ReactLib` package: `Relational.*`, what the encodings and "
+    "the certificate are stated in, and `Spec.*`, the LTL of its proof "
+    "rules.\n"
+    f"Set ${REACTLIB_ENV} to a ReactLib checkout to require it by path."
+)
 
 
-# What every project requires besides ReactLib's packages: Cslib, which
+# What every project requires besides ReactLib: Cslib, which
 # brings Mathlib at the revision it pins.
 FIXED_REQUIRES = (
     Require("cslib", scope="leanprover", rev=CSLIB_REV),
 )
 
 
-def reactlib_requires() -> tuple[Require, ...]:
-    """The requires on ReactLib's packages: by path from
-    `$REACTLIB` when it is set, from git at `REACTLIB_REV`
-    otherwise."""
+def reactlib_require() -> Require:
+    """The require on ReactLib: by path from `$REACTLIB` when it is set,
+    from git at `REACTLIB_REV` otherwise."""
     checkout = reactlib_checkout()
     if checkout is not None:
-        return tuple(Require(p, path=str(checkout / p),
-                             comment=_REACTLIB_COMMENTS[p])
-                     for p in REACTLIB_PACKAGES)
-    return tuple(
-        Require(p, git=REACTLIB_URL, rev=REACTLIB_REV, sub_dir=p,
-                comment=_REACTLIB_COMMENTS[p])
-        for p in REACTLIB_PACKAGES
-    )
+        return Require(REACTLIB_PACKAGE, path=str(checkout / REACTLIB_PACKAGE),
+                       comment=_REACTLIB_COMMENT)
+    return Require(REACTLIB_PACKAGE, git=REACTLIB_URL, rev=REACTLIB_REV,
+                   sub_dir=REACTLIB_PACKAGE, comment=_REACTLIB_COMMENT)
 
 
 def project_requires() -> tuple[Require, ...]:
     """Everything the project's lakefile requires, in its order: the fixed
     packages, then ReactLib's."""
-    return FIXED_REQUIRES + reactlib_requires()
+    return (*FIXED_REQUIRES, reactlib_require())
 
 
 def generate_lakefile(project_name: str, requires: tuple[Require, ...],

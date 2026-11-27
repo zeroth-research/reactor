@@ -112,7 +112,8 @@ def lean_gaps(ctx) -> list[str]:
     are. A module that generates has nothing to report here: the gap is an
     operator with no matrix form (:func:`lowering.ops.gap_of`), or an
     affine op that is no affine map, and the functional encoding every
-    project has is made of matrix forms alone.
+    project has is made of matrix forms alone. So is a `delay` block that
+    gives a variable a rate of change: every encoding here is of rounds.
     """
     out, seen = [], set()
     for block in ("init", "update"):
@@ -133,6 +134,15 @@ def lean_gaps(ctx) -> list[str]:
                 f"the `{block}` block writes wire #{term.write[0].id} with "
                 f"`{op}`, and {why}"
             )
+    # The `delay` block is the variables' rate of change: all `Zero` in a
+    # module of rounds alone, which is what every encoding here is.
+    for term in ctx.atom.delay:
+        if itype_name(term.itype) != "Zero":
+            out.append(
+                f"the `delay` block gives wire #{term.write[0].id} a rate of "
+                "change, and no encoding here has continuous time"
+            )
+            break
     return out
 
 

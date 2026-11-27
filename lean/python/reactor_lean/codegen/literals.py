@@ -3,6 +3,7 @@ module's terms define (`ConstantRegistry`)."""
 
 from __future__ import annotations
 
+import math
 
 import torch
 
@@ -67,7 +68,11 @@ def lean_int(value) -> str:
 
 
 def lean_real(value) -> str:
-    """A Real literal, exact: `(2 : Real)` or `((p : Real) / q)`."""
+    """A Real literal, exact: `(2 : Real)` or `((p : Real) / q)`. Refused
+    for an infinity or a NaN, which Lean's reals do not have."""
+    if not math.isfinite(value):
+        raise Refused(f"a Real constant holds {float(value)}, and Lean's "
+                      "reals have no infinities and no NaN")
     q = decimal_fraction(value)
     if q.denominator == 1:
         return f"({q.numerator} : Real)"
