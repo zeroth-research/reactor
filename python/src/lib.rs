@@ -15,6 +15,7 @@ mod atom;
 mod module;
 mod term;
 mod var;
+mod verilog;
 mod wire;
 
 use crate::atom::Atom;
@@ -41,6 +42,7 @@ fn reactor(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_function(wrap_pyfunction!(var::x, m)?)?;
     m.add_function(wrap_pyfunction!(var::d, m)?)?;
+    m.add_submodule(&crate::verilog::module(_py)?)?;
 
     Ok(())
 }

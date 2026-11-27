@@ -23,3 +23,4 @@ from .sort import *
 from .expr import expr
 
 _sys.modules[__name__ + ".z3"] = z3
+_sys.modules[__name__ + ".verilog"] = verilog

@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 dataflow = { path = "../dataflow" }
 reactive = { path = "../reactive" }
 theory = { path = "../theory", features = ["torch"] }
+verilog = { path = "../verilog" }
 pyo3 = { version = "0.24" }
 tch = { features = ["python-extension"], version = "0.22" }
 pyo3-tch = { version = "0.22" }

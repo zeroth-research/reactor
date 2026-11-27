@@ -752,6 +752,7 @@ dependencies = [
  "reactive",
  "tch",
  "theory",
+ "verilog",
 ]
 
 [[package]]
