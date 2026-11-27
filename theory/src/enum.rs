@@ -562,13 +562,13 @@ impl Into {
     /// The sorts it reads: the sort alone when it reads one, else their list.
     #[getter(dom)]
     fn py_dom<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[getter(cod)]
     fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 }
 
@@ -595,13 +595,13 @@ impl Eq {
     /// The sorts it reads: the sort alone when it reads one, else their list.
     #[getter(dom)]
     fn py_dom<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[getter(cod)]
     fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 }
 
@@ -625,13 +625,13 @@ impl Ne {
     /// The sorts it reads: the sort alone when it reads one, else their list.
     #[getter(dom)]
     fn py_dom<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[getter(cod)]
     fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 }
 
@@ -655,13 +655,13 @@ impl Ite {
     /// The sorts it reads: the sort alone when it reads one, else their list.
     #[getter(dom)]
     fn py_dom<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[getter(cod)]
     fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 }
 

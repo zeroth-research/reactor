@@ -401,7 +401,7 @@ where
 /// Panics unless `poly` is a single product of sorts, as the boundaries of
 /// the operations are.
 #[cfg(feature = "pyo3")]
-pub(crate) fn py_sorts<'py, S: Into<Any>>(
+pub(crate) fn py_boundary<'py, S: Into<Any>>(
     py: Python<'py>,
     poly: Poly<S>,
 ) -> PyResult<Bound<'py, PyAny>> {
@@ -498,12 +498,7 @@ impl Havoc {
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        py_sorts(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn sort(&self) -> Any {
-        self.sort.clone()
+        py_boundary(py, Boundary::cod(self))
     }
 }
 
@@ -531,19 +526,14 @@ impl Skip {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        py_sorts(py, Boundary::dom(self))
+        py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        py_sorts(py, Boundary::cod(self))
-    }
-
-    #[cfg_attr(feature = "pyo3", getter)]
-    pub fn sort(&self) -> Any {
-        self.sort.clone()
+        py_boundary(py, Boundary::cod(self))
     }
 }
 

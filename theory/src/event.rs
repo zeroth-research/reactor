@@ -38,7 +38,7 @@ In SMT-LIB2, an event is a `Bool`, and [`Xor`] is `xor`.
 use crate::Events;
 use crate::bool::Bool;
 use crate::zero::Real0;
-use base::boundary::{Boundary, Poly};
+use base::boundary::{Boundary, Mono, Poly};
 use base::differentiable::Differentiable;
 use base::mono;
 #[cfg(feature = "pyo3")]
@@ -153,7 +153,7 @@ impl Xor {
 
 impl Boundary<Events> for Xor {
     fn dom(&self) -> Poly<Events> {
-        mono![self.dom[0], self.dom[1]].into()
+        Mono::from_iter(self.dom.iter().cloned()).into()
     }
 
     fn cod(&self) -> Poly<Events> {
@@ -187,12 +187,12 @@ impl Xor {
     /// The sorts it reads: the sort alone when it reads one, else their list.
     #[getter(dom)]
     fn py_dom<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[getter(cod)]
     fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 }

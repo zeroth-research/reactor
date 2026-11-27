@@ -68,14 +68,14 @@ impl Linear {
     #[getter]
     fn dom<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
         let op: crate::real::Linear<tch::Tensor> = slf.extract()?;
-        crate::py_sorts(slf.py(), base::boundary::Boundary::dom(&op))
+        crate::py_boundary(slf.py(), base::boundary::Boundary::dom(&op))
     }
 
     /// The sort it writes.
     #[getter]
     fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
         let op: crate::real::Linear<tch::Tensor> = slf.extract()?;
-        crate::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
+        crate::py_boundary(slf.py(), base::boundary::Boundary::cod(&op))
     }
 }
 
@@ -173,14 +173,14 @@ impl Affine {
     #[getter]
     fn dom<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
         let op: crate::real::Affine<tch::Tensor> = slf.extract()?;
-        crate::py_sorts(slf.py(), base::boundary::Boundary::dom(&op))
+        crate::py_boundary(slf.py(), base::boundary::Boundary::dom(&op))
     }
 
     /// The sort it writes.
     #[getter]
     fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
         let op: crate::real::Affine<tch::Tensor> = slf.extract()?;
-        crate::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
+        crate::py_boundary(slf.py(), base::boundary::Boundary::cod(&op))
     }
 }
 
@@ -254,7 +254,7 @@ impl Num {
     #[getter]
     fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
         let op: crate::real::Num<tch::Tensor> = slf.extract()?;
-        crate::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
+        crate::py_boundary(slf.py(), base::boundary::Boundary::cod(&op))
     }
 }
 
@@ -338,14 +338,14 @@ impl Scale {
     #[getter]
     fn dom<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
         let op: crate::real::Scale<tch::Tensor> = slf.extract()?;
-        crate::py_sorts(slf.py(), base::boundary::Boundary::dom(&op))
+        crate::py_boundary(slf.py(), base::boundary::Boundary::dom(&op))
     }
 
     /// The sort it writes.
     #[getter]
     fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
         let op: crate::real::Scale<tch::Tensor> = slf.extract()?;
-        crate::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
+        crate::py_boundary(slf.py(), base::boundary::Boundary::cod(&op))
     }
 }
 

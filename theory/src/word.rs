@@ -1409,7 +1409,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::dom(self))
+            crate::py_boundary(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -1419,7 +1419,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::cod(self))
+            crate::py_boundary(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1480,7 +1480,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::dom(self))
+            crate::py_boundary(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -1490,7 +1490,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::cod(self))
+            crate::py_boundary(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1551,7 +1551,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::dom(self))
+            crate::py_boundary(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -1561,7 +1561,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::cod(self))
+            crate::py_boundary(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1622,7 +1622,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::dom(self))
+            crate::py_boundary(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -1632,7 +1632,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::cod(self))
+            crate::py_boundary(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1693,7 +1693,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::dom(self))
+            crate::py_boundary(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -1703,7 +1703,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::cod(self))
+            crate::py_boundary(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1780,7 +1780,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::dom(self))
+            crate::py_boundary(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -1790,7 +1790,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::cod(self))
+            crate::py_boundary(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1847,7 +1847,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::dom(self))
+            crate::py_boundary(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -1857,7 +1857,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::cod(self))
+            crate::py_boundary(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1909,7 +1909,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::dom(self))
+            crate::py_boundary(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -1919,7 +1919,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::cod(self))
+            crate::py_boundary(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1971,7 +1971,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::dom(self))
+            crate::py_boundary(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -1981,7 +1981,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::cod(self))
+            crate::py_boundary(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2033,7 +2033,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::dom(self))
+            crate::py_boundary(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -2043,7 +2043,7 @@ pub mod signed {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::cod(self))
+            crate::py_boundary(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2353,7 +2353,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::dom(self))
+            crate::py_boundary(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -2363,7 +2363,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::cod(self))
+            crate::py_boundary(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2424,7 +2424,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::dom(self))
+            crate::py_boundary(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -2434,7 +2434,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::cod(self))
+            crate::py_boundary(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2495,7 +2495,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::dom(self))
+            crate::py_boundary(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -2505,7 +2505,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::cod(self))
+            crate::py_boundary(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2582,7 +2582,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::dom(self))
+            crate::py_boundary(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -2592,7 +2592,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::cod(self))
+            crate::py_boundary(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2649,7 +2649,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::dom(self))
+            crate::py_boundary(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -2659,7 +2659,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::cod(self))
+            crate::py_boundary(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2711,7 +2711,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::dom(self))
+            crate::py_boundary(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -2721,7 +2721,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::cod(self))
+            crate::py_boundary(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2773,7 +2773,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::dom(self))
+            crate::py_boundary(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -2783,7 +2783,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::cod(self))
+            crate::py_boundary(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2835,7 +2835,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::dom(self))
+            crate::py_boundary(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -2845,7 +2845,7 @@ pub mod unsigned {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::cod(self))
+            crate::py_boundary(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -3048,14 +3048,14 @@ impl Concat {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 
     /// The widths `[u, v]` of the words read, high bits first.
@@ -3113,14 +3113,14 @@ impl Extract {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3207,14 +3207,14 @@ impl Repeat {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3277,14 +3277,14 @@ impl Not {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3342,14 +3342,14 @@ impl And {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3407,14 +3407,14 @@ impl Or {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3472,14 +3472,14 @@ impl Xor {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3537,14 +3537,14 @@ impl Nand {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3602,14 +3602,14 @@ impl Nor {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3667,14 +3667,14 @@ impl Xnor {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3732,14 +3732,14 @@ impl Neg {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3808,14 +3808,14 @@ impl Ite {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3873,14 +3873,14 @@ impl Add {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3938,14 +3938,14 @@ impl Sub {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -4003,14 +4003,14 @@ impl Mul {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -4068,14 +4068,14 @@ impl Shl {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -4135,14 +4135,14 @@ impl RotateLeft {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -4207,14 +4207,14 @@ impl RotateRight {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -4268,14 +4268,14 @@ impl Eq {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -4324,14 +4324,14 @@ impl Ne {
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
     fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::dom(self))
+        crate::py_boundary(py, Boundary::dom(self))
     }
 
     /// The sort it writes.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
     fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_sorts(py, Boundary::cod(self))
+        crate::py_boundary(py, Boundary::cod(self))
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -4445,7 +4445,7 @@ pub mod broadcast {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::dom(self))
+            crate::py_boundary(py, Boundary::dom(self))
         }
 
         /// The sort it writes.
@@ -4455,7 +4455,7 @@ pub mod broadcast {
             &self,
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_sorts(py, Boundary::cod(self))
+            crate::py_boundary(py, Boundary::cod(self))
         }
 
         #[cfg_attr(feature = "pyo3", getter)]

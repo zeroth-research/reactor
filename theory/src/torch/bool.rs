@@ -51,7 +51,7 @@ impl Truth {
     #[getter]
     fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
         let op: crate::bool::Truth<tch::Tensor> = slf.extract()?;
-        crate::py_sorts(slf.py(), base::boundary::Boundary::cod(&op))
+        crate::py_boundary(slf.py(), base::boundary::Boundary::cod(&op))
     }
 }
 

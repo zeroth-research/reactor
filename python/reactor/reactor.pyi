@@ -56,9 +56,6 @@ class Havoc:
     @property
     def cod(self) -> Sort: ...
 
-    @property
-    def sort(self) -> Sort: ...
-
 
 class Skip:
     """The identity of the sort `dom`, whose codomain `cod`, when given, must be it."""
@@ -70,9 +67,6 @@ class Skip:
 
     @property
     def cod(self) -> Sort: ...
-
-    @property
-    def sort(self) -> Sort: ...
 
 
 class Wire:
