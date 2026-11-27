@@ -13,6 +13,8 @@ information to compute its [`Boundary`]:
 - [`Ite`] — the pointwise choice `if c then x else y`, by a boolean matrix `c`.
 - [`broadcast::Ite`] — the choice of the whole matrices, by a scalar boolean
   `c` of the shape `[1, 1]`.
+- [`reduce::And`], [`reduce::Or`] — the conjunction and disjunction of the
+  entries of a matrix along an axis: all and any.
 */
 
 use crate::Matrix;
@@ -217,6 +219,8 @@ pub enum Prop<T> {
     Ne(Ne),
     Ite(Ite),
     BroadcastIte(broadcast::Ite),
+    ReduceAnd(reduce::And),
+    ReduceOr(reduce::Or),
 }
 
 impl<T> Clone for Prop<T>
@@ -234,6 +238,8 @@ where
             Prop::Ne(op) => Prop::Ne(*op),
             Prop::Ite(op) => Prop::Ite(*op),
             Prop::BroadcastIte(op) => Prop::BroadcastIte(*op),
+            Prop::ReduceAnd(op) => Prop::ReduceAnd(*op),
+            Prop::ReduceOr(op) => Prop::ReduceOr(*op),
         }
     }
 }
@@ -250,6 +256,8 @@ impl<T: fmt::Display> fmt::Display for Prop<T> {
             Prop::Ne(op) => op.fmt(f),
             Prop::Ite(op) => op.fmt(f),
             Prop::BroadcastIte(op) => op.fmt(f),
+            Prop::ReduceAnd(op) => op.fmt(f),
+            Prop::ReduceOr(op) => op.fmt(f),
         }
     }
 }
@@ -266,6 +274,8 @@ impl<T: Matrix> Boundary<Bool> for Prop<T> {
             Prop::Ne(op) => op.dom(),
             Prop::Ite(op) => op.dom(),
             Prop::BroadcastIte(op) => op.dom(),
+            Prop::ReduceAnd(op) => op.dom(),
+            Prop::ReduceOr(op) => op.dom(),
         }
     }
 
@@ -280,6 +290,8 @@ impl<T: Matrix> Boundary<Bool> for Prop<T> {
             Prop::Ne(op) => op.cod(),
             Prop::Ite(op) => op.cod(),
             Prop::BroadcastIte(op) => op.cod(),
+            Prop::ReduceAnd(op) => op.cod(),
+            Prop::ReduceOr(op) => op.cod(),
         }
     }
 }
@@ -449,6 +461,12 @@ where
         }
         if let Ok(op) = ob.extract::<broadcast::Ite>() {
             return Ok(Prop::BroadcastIte(op));
+        }
+        if let Ok(op) = ob.extract::<reduce::And>() {
+            return Ok(Prop::ReduceAnd(op));
+        }
+        if let Ok(op) = ob.extract::<reduce::Or>() {
+            return Ok(Prop::ReduceOr(op));
         }
         if let Ok(op) = ob.extract::<Truth<T>>() {
             return Ok(Prop::Truth(op));
@@ -943,6 +961,236 @@ pub mod broadcast {
             crate::py_boundary(py, Boundary::cod(self))
         }
 
+        #[cfg_attr(feature = "pyo3", getter)]
+        pub fn shape(&self) -> [usize; 2] {
+            self.shape
+        }
+    }
+}
+
+/// The operations of the theory that reduce a matrix along an axis to a
+/// single row or column, by an associative and commutative operation on its
+/// entries; the pointwise ones are in the parent module.
+///
+/// The `axis` is that of the entries reduced, as in NumPy: along `0`, the
+/// rows of an `[m, n]` matrix reduce to one, of the shape `[1, n]`, and
+/// along `1` its columns to one, of the shape `[m, 1]`. The result keeps both
+/// dimensions, so that it remains a matrix.
+pub mod reduce {
+    use super::*;
+
+    /// The shape of an `[m, n]` matrix reduced along `axis`, which must be 0
+    /// or 1.
+    fn reduced(shape: [usize; 2], axis: usize) -> [usize; 2] {
+        let mut shape = shape;
+        shape[axis] = 1;
+        shape
+    }
+
+    /// Fails unless `axis` is an axis of a matrix: 0 or 1.
+    fn check_axis(axis: usize) -> Result<(), crate::Error> {
+        if axis > 1 {
+            return Err(crate::Error(format!(
+                "expected the axis 0 or 1 of a matrix, got {axis}"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Conjunction of the entries of an `[m, n]` boolean matrix along `axis`:
+    /// whether all of them hold, in each column along 0, writing a `[1, n]`
+    /// matrix, and in each row along 1, writing an `[m, 1]` matrix.
+    ///
+    /// SMT-LIB2: `(and x₁ … xₖ)` of the entries reduced.
+    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.bool.reduce")
+    )]
+    pub struct And {
+        shape: [usize; 2],
+        axis: usize,
+    }
+
+    /// Disjunction of the entries of an `[m, n]` boolean matrix along `axis`:
+    /// whether any of them holds, in each column along 0, writing a `[1, n]`
+    /// matrix, and in each row along 1, writing an `[m, 1]` matrix.
+    ///
+    /// SMT-LIB2: `(or x₁ … xₖ)` of the entries reduced.
+    #[derive(Clone, Copy, PartialEq, Debug, Eq)]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.bool.reduce")
+    )]
+    pub struct Or {
+        shape: [usize; 2],
+        axis: usize,
+    }
+
+    impl And {
+        /// The reduction along `axis` of the boolean matrix of `dom`;
+        /// fails unless `axis` is 0 or 1. Its codomain does not
+        /// determine it, as it loses the size of the axis.
+        pub fn with_dom(axis: usize, dom: [Bool; 1]) -> Result<Self, crate::Error> {
+            check_axis(axis)?;
+            let [s] = dom;
+            Ok(And {
+                shape: s.shape(),
+                axis,
+            })
+        }
+    }
+
+    impl Boundary<Bool> for And {
+        fn dom(&self) -> Poly<Bool> {
+            mono![Bool::new_unchecked(self.shape)].into()
+        }
+
+        fn cod(&self) -> Poly<Bool> {
+            mono![Bool::new_unchecked(reduced(self.shape, self.axis))].into()
+        }
+    }
+
+    impl fmt::Display for And {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "And")
+        }
+    }
+
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+    impl And {
+        /// Python builds it from its axis, which its boundary does not
+        /// determine, and its domain `dom`; its codomain `cod`, when
+        /// given, must be the one it writes.
+        #[cfg(feature = "pyo3")]
+        #[new]
+        #[pyo3(signature = (axis, dom, cod = None))]
+        fn py_new(axis: usize, dom: Bool, cod: Option<Bool>) -> Result<Self, crate::Error> {
+            crate::check_cod(Self::with_dom(axis, [dom]), cod)
+        }
+
+        /// The parameters that its boundary does not determine, then its
+        /// domain, when it reads anything, and its codomain.
+        #[cfg(feature = "pyo3")]
+        #[classattr]
+        fn __match_args__() -> (&'static str, &'static str, &'static str) {
+            ("axis", "dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else
+        /// their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::py_boundary(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::py_boundary(py, Boundary::cod(self))
+        }
+
+        /// The axis along which it reduces: 0 for the rows, 1 for the
+        /// columns.
+        #[cfg_attr(feature = "pyo3", getter)]
+        pub fn axis(&self) -> usize {
+            self.axis
+        }
+
+        /// The shape of the matrix it reads.
+        #[cfg_attr(feature = "pyo3", getter)]
+        pub fn shape(&self) -> [usize; 2] {
+            self.shape
+        }
+    }
+
+    impl Or {
+        /// The reduction along `axis` of the boolean matrix of `dom`;
+        /// fails unless `axis` is 0 or 1. Its codomain does not
+        /// determine it, as it loses the size of the axis.
+        pub fn with_dom(axis: usize, dom: [Bool; 1]) -> Result<Self, crate::Error> {
+            check_axis(axis)?;
+            let [s] = dom;
+            Ok(Or {
+                shape: s.shape(),
+                axis,
+            })
+        }
+    }
+
+    impl Boundary<Bool> for Or {
+        fn dom(&self) -> Poly<Bool> {
+            mono![Bool::new_unchecked(self.shape)].into()
+        }
+
+        fn cod(&self) -> Poly<Bool> {
+            mono![Bool::new_unchecked(reduced(self.shape, self.axis))].into()
+        }
+    }
+
+    impl fmt::Display for Or {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "Or")
+        }
+    }
+
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+    impl Or {
+        /// Python builds it from its axis, which its boundary does not
+        /// determine, and its domain `dom`; its codomain `cod`, when
+        /// given, must be the one it writes.
+        #[cfg(feature = "pyo3")]
+        #[new]
+        #[pyo3(signature = (axis, dom, cod = None))]
+        fn py_new(axis: usize, dom: Bool, cod: Option<Bool>) -> Result<Self, crate::Error> {
+            crate::check_cod(Self::with_dom(axis, [dom]), cod)
+        }
+
+        /// The parameters that its boundary does not determine, then its
+        /// domain, when it reads anything, and its codomain.
+        #[cfg(feature = "pyo3")]
+        #[classattr]
+        fn __match_args__() -> (&'static str, &'static str, &'static str) {
+            ("axis", "dom", "cod")
+        }
+
+        /// The sorts it reads: the sort alone when it reads one, else
+        /// their list.
+        #[cfg(feature = "pyo3")]
+        #[getter(dom)]
+        fn py_dom<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::py_boundary(py, Boundary::dom(self))
+        }
+
+        /// The sort it writes.
+        #[cfg(feature = "pyo3")]
+        #[getter(cod)]
+        fn py_cod<'py>(
+            &self,
+            py: pyo3::Python<'py>,
+        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
+            crate::py_boundary(py, Boundary::cod(self))
+        }
+
+        /// The axis along which it reduces: 0 for the rows, 1 for the
+        /// columns.
+        #[cfg_attr(feature = "pyo3", getter)]
+        pub fn axis(&self) -> usize {
+            self.axis
+        }
+
+        /// The shape of the matrix it reads.
         #[cfg_attr(feature = "pyo3", getter)]
         pub fn shape(&self) -> [usize; 2] {
             self.shape

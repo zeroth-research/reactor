@@ -9,8 +9,9 @@ the structural operations `Havoc` and `Skip`, which belong to no theory; and the
 namespaces of the sorts and the other operations, mirroring the `theory` crate: `zero`
 holds the singleton sort `Real0`, shared by all theories, and the operation `Zero`
 writing its only value; `real`, `int`, `bool` and `word` (with `word.signed` and
-`word.unsigned`, and each with `.broadcast`, the choice of whole matrices by a scalar
-condition), and `enum` and `event`, hold the sort of each theory (`real.Real([rows,
+`word.unsigned`, each with `.broadcast`, the choice of whole matrices by a scalar
+condition, and `bool` with `.reduce`, the conjunction and disjunction of the entries along
+an axis), and `enum` and `event`, hold the sort of each theory (`real.Real([rows,
 cols])`, `word.Word(width, [rows, cols])`, `enum.Enum(values)`, and `event.Event()`, a
 new event, each its own sort) and its
 operations, each built from the parameters its sorts do not determine, then its domain,

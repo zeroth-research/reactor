@@ -107,6 +107,11 @@ CASES = [
     (rr.bool.Eq([B, B]), [BX, BY]),
     (rr.bool.Ne([B, B]), [BX, BY]),
     (rr.bool.Ite([B, B, B]), [BX, BX, BY]),
+    (rr.bool.reduce.And(0, B), [BX]),
+    (rr.bool.reduce.And(1, B), [BX]),
+    (rr.bool.reduce.Or(0, B), [BY]),
+    (rr.bool.reduce.Or(1, B), [BY]),
+    (rr.bool.reduce.And(1, Bool([2, 3])), [torch.tensor([[True, True, True], [True, False, True]])]),
     # words: comparisons
     (word.Eq([W, W]), [WX, WY]),
     (word.Ne([W, W]), [WX, WY]),

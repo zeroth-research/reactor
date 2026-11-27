@@ -143,6 +143,13 @@ fn reactor(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             bool.add("broadcast", &broadcast)?;
             namespaces.push(("bool.broadcast", broadcast));
         }
+        {
+            let reduce = PyModule::new(py, "reduce")?;
+            reduce.add_class::<theory::bool::reduce::And>()?;
+            reduce.add_class::<theory::bool::reduce::Or>()?;
+            bool.add("reduce", &reduce)?;
+            namespaces.push(("bool.reduce", reduce));
+        }
         m.add("bool", &bool)?;
         namespaces.push(("bool", bool));
     }

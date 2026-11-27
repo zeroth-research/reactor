@@ -396,6 +396,15 @@ def test_argmax_writes_flat_index_as_1x1():
     assert got.shape == (1, 1) and got.dtype == torch.int64 and got.item() == 1
 
 
+def test_reduce_and_or_are_all_and_any_along_the_axis():
+    x = torch.tensor([[True, False, True], [True, True, False]])
+    And, Or = rr.bool.reduce.And, rr.bool.reduce.Or
+    assert eval_itype(And(0, Bool([2, 3])), [x])[0].tolist() == [[True, False, False]]
+    assert eval_itype(And(1, Bool([2, 3])), [x])[0].tolist() == [[False], [False]]
+    assert eval_itype(Or(0, Bool([2, 3])), [x])[0].tolist() == [[True, True, True]]
+    assert eval_itype(Or(1, Bool([2, 3])), [x])[0].tolist() == [[True], [True]]
+
+
 def test_signed_abs_is_twos_complement():
     # 8-bit: 0xFB is -5, |-5| = 5; 0x80 is -128, its own absolute value
     got = eval_itype(word.signed.Abs(Word(8, [1, 3])), [_w(0xFB, 7, 0x80)])[0]

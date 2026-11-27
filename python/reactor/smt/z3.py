@@ -18,6 +18,7 @@ from .. import int as _ii
 from ..int import broadcast as _ib
 from .. import bool as _bl
 from ..bool import broadcast as _bb
+from ..bool import reduce as _br
 from .. import word as _ww
 from ..word import broadcast as _wb
 from ..word import signed as _ws
@@ -141,6 +142,11 @@ def interpret(itype):
             return _np.frompyfunc(lambda x: _z3.Not(x), 1, 1)
         case _bl.Xor():
             return _np.frompyfunc(lambda x, y: _z3.Xor(x, y), 2, 1)
+        case _br.And(axis):
+            # the conjunction folded along the axis, which it keeps, of length 1
+            return lambda x: _np.frompyfunc(_z3.And, 2, 1).reduce(x, axis=axis, keepdims=True)
+        case _br.Or(axis):
+            return lambda x: _np.frompyfunc(_z3.Or, 2, 1).reduce(x, axis=axis, keepdims=True)
 
         # control flow
         case (

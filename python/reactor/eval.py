@@ -42,6 +42,7 @@ from . import int as _ii
 from .int import broadcast as _ib
 from . import bool as _bl
 from .bool import broadcast as _bb
+from .bool import reduce as _br
 from . import word as _ww
 from .word import broadcast as _wb
 from .word import signed as _ws
@@ -253,6 +254,10 @@ def eval_itype(itype, read, out_sort=None):
             return [r[0].logical_xor(r[1])]
         case _bl.Not():
             return [r[0].logical_not()]
+        case _br.And(axis):
+            return [r[0].all(dim=axis, keepdim=True)]
+        case _br.Or(axis):
+            return [r[0].any(dim=axis, keepdim=True)]
 
         # --- words: arithmetic modulo 2^w ---
         case _ww.Add(_, Word(w)):

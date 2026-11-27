@@ -337,6 +337,32 @@ mod op {
     }
 
     #[test]
+    fn reduce_and_or_reduce_a_boolean_matrix_along_an_axis() {
+        let b = |shape| bool::Bool::new_unchecked(shape);
+        for (axis, cod) in [(0, [1, 3]), (1, [2, 1])] {
+            let and = bool::reduce::And::with_dom(axis, [b([2, 3])]).unwrap();
+            let or = bool::reduce::Or::with_dom(axis, [b([2, 3])]).unwrap();
+            for op in [boolean(and), boolean(or)] {
+                let dom: Poly<Any> = base::mono![b([2, 3]).into()].into();
+                let cod: Poly<Any> = base::mono![b(cod).into()].into();
+                assert_eq!(op.dom(), dom);
+                assert_eq!(op.cod(), cod);
+            }
+            assert_eq!(and.axis(), axis);
+            assert_eq!(and.to_string(), "And");
+            assert_eq!(or.to_string(), "Or");
+        }
+        // the reductions differ by their axis, and from the pointwise operations
+        assert_ne!(
+            bool::reduce::And::with_dom(0, [b([2, 2])]).unwrap(),
+            bool::reduce::And::with_dom(1, [b([2, 2])]).unwrap()
+        );
+        // a matrix has two axes
+        assert!(bool::reduce::And::with_dom(2, [b([2, 3])]).is_err());
+        assert!(bool::reduce::Or::with_dom(2, [b([2, 3])]).is_err());
+    }
+
+    #[test]
     fn zero_writes_the_singleton_sort() {
         let op = Op::Zero(theory::zero::Zero);
         assert_eq!(op.dom(), Poly::unit());

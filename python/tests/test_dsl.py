@@ -149,6 +149,27 @@ def test_ite_by_a_scalar_condition_chooses_between_matrices():
         assert torch.equal(_update(module, state)[reactor.X(m)], expected)
 
 
+P4 = torch.eye(4, dtype=torch.bool)
+Q4 = ~P4
+
+
+class ChooseBool(sugar.Module):
+    def update(self, m, c):
+        return ite(c.any(), expr(P4, sort=Bool), expr(Q4, sort=Bool))
+
+
+def test_ite_by_a_reduced_condition_chooses_between_boolean_matrices():
+    # the same choice of whole matrices, between boolean ones: the [1, 1] condition is
+    # whether any entry of the boolean matrix c holds, reduced along both axes
+    m, c = Var(Bool([4, 4])), Var(Bool([2, 3]))
+    module = ChooseBool(ctrl=(m,), extl=(c,))
+    some = torch.tensor([[False, False, False], [False, True, False]])
+    none = torch.zeros(2, 3, dtype=torch.bool)
+    for cv, expected in [(some, P4), (none, Q4)]:
+        state = {m: torch.zeros(4, 4, dtype=torch.bool), c: cv}
+        assert torch.equal(_update(module, state)[reactor.X(m)], expected)
+
+
 # --- config surface ---------------------------------------------------------
 
 

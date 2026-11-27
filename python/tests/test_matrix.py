@@ -90,6 +90,23 @@ def test_the_broadcast_choice_of_each_theory_reads_a_scalar_condition():
     assert not hasattr(reactor, "Ite")
 
 
+def test_the_reductions_of_booleans_take_their_axis_first():
+    for op in (rr.bool.reduce.And, rr.bool.reduce.Or):
+        assert type(op(0, Bool([2, 3]))).__module__ == "reactor.bool.reduce"
+        assert op(0, Bool([2, 3])).cod == Bool([1, 3])
+        assert op(1, Bool([2, 3])).cod == Bool([2, 1])
+        assert op(1, Bool([2, 3]), Bool([2, 1])) == op(1, Bool([2, 3]))
+        match op(1, Bool([2, 3])):
+            case op(axis, dom, cod):
+                assert (axis, dom, cod) == (1, Bool([2, 3]), Bool([2, 1]))
+        assert op(0, Bool([2, 3])) != op(1, Bool([2, 3]))
+        with pytest.raises(ValueError, match="axis"):
+            op(2, Bool([2, 3]))
+        with pytest.raises(ValueError, match="writes"):
+            op(0, Bool([2, 3]), Bool([2, 1]))
+    assert rr.bool.reduce.And(0, Bool([2, 2])) != rr.bool.reduce.Or(0, Bool([2, 2]))
+
+
 def test_the_codomain_is_optional_and_checked():
     x = T(Real([2, 3]))
     assert real.Add([x, x], x) == real.Add([x, x])

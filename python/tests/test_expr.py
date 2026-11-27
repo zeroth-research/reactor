@@ -209,6 +209,28 @@ def test_boolean_equality():
     assert _run(terms, {p.wire: t, q.wire: f})[e.wire].item() is True
 
 
+def test_all_and_any_reduce_a_boolean_matrix_along_an_axis():
+    p = _varexpr(Bool([2, 3]))
+    x = torch.tensor([[True, False, True], [True, True, True]])
+    with collecting() as terms:
+        a0, a1, a = p.all(0), p.all(1), p.all()
+        o0, o1, o = p.any(0), p.any(1), p.any()
+    assert all(isinstance(e, BExpr) for e in (a0, a1, a, o0, o1, o))
+    assert (a0.shape, a1.shape, a.shape) == ([1, 3], [2, 1], [1, 1])
+    assert (o0.shape, o1.shape, o.shape) == ([1, 3], [2, 1], [1, 1])
+    assert terms[0].itype == rr.bool.reduce.And(0, Bool([2, 3]))
+    assert terms[1].itype == rr.bool.reduce.And(1, Bool([2, 3]))
+    values = _run(terms, {p.wire: x})
+    assert values[a0.wire].tolist() == [[True, False, True]]
+    assert values[a1.wire].tolist() == [[False], [True]]
+    assert values[a.wire].tolist() == [[False]]
+    assert values[o0.wire].tolist() == [[True, True, True]]
+    assert values[o1.wire].tolist() == [[True], [True]]
+    assert values[o.wire].tolist() == [[True]]
+    with pytest.raises(ValueError, match="axis"):
+        p.all(2)
+
+
 def test_equality_coerces_a_raw_operand():
     x = _varexpr(INT)
     with collecting() as terms:

@@ -7,7 +7,7 @@ are split by *operation family* (the sort picks the class):
 
     IExpr  — Integer      Int            +  -  *  /  @   and comparisons (-> BExpr)
     RExpr  — Real         Real           +  -  *  /  @   and comparisons (-> BExpr)
-    BExpr  — Boolean       Bool           &  |  ~  ^
+    BExpr  — Boolean       Bool           &  |  ~  ^   and all(axis) / any(axis)
     SExpr  — Signed word   Word           arithmetic + bitwise + width, signed  // % and comparisons
     UExpr  — Unsigned word Word           arithmetic + bitwise + width, unsigned // % and comparisons
     NExpr  — Enumeration   Enum           == != (-> BExpr), its constants written as strings
@@ -65,6 +65,7 @@ from . import int as _ii
 from .int import broadcast as _ib
 from . import bool as _bl
 from .bool import broadcast as _bb
+from .bool import reduce as _br
 from . import word as _ww
 from .word import broadcast as _wb
 from .word import signed as _ws
@@ -479,6 +480,22 @@ class BExpr(Expr):
 
     def __invert__(self):
         return self._unary(_bl.Not(self.dtype))
+
+    def all(self, axis: int | None = None) -> "BExpr":
+        """Whether all my entries hold along `axis`, as in NumPy keeping both dimensions:
+        in each column along 0, a ``[1, n]`` matrix, and in each row along 1, an ``[m, 1]``
+        matrix; along both when `axis` is None, a ``[1, 1]`` matrix."""
+        if axis is None:
+            return self.all(0).all(1)
+        return self._unary(_br.And(axis, self.dtype))
+
+    def any(self, axis: int | None = None) -> "BExpr":
+        """Whether any of my entries holds along `axis`, as in NumPy keeping both
+        dimensions: in each column along 0, a ``[1, n]`` matrix, and in each row along 1,
+        an ``[m, 1]`` matrix; along both when `axis` is None, a ``[1, 1]`` matrix."""
+        if axis is None:
+            return self.any(0).any(1)
+        return self._unary(_br.Or(axis, self.dtype))
 
 
 # ---------------------------------------------------------------------------
