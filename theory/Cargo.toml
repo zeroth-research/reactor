@@ -16,7 +16,7 @@ derive_more = { version = "2.1.1", features = ["from", "display"] }
 # `pyo3` builds the Python bindings. Their `#[pymethods]` blocks are also the
 # Rust API, so they stay compiled without it, their pyo3 attributes behind
 # `cfg_attr`: `cfg_eval` expands those before `#[pymethods]` reads them.
-pyo3 = ["dep:pyo3", "dep:cfg_eval"]
+pyo3 = ["dep:pyo3", "dep:cfg_eval", "base/pyo3"]
 # `torch` adds the `tch::Tensor` backing of `matrix` (the `torch`
 # module), which links libtorch and needs the bindings.
 torch = ["pyo3", "dep:tch", "dep:pyo3-tch"]

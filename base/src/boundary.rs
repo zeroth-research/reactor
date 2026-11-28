@@ -312,6 +312,41 @@ impl<G> std::iter::Sum for Poly<G> {
 }
 
 /// Prints the base types joined by `⊗`, or `I` for the unit type.
+/// A product type is the Python tuple of its base types, in order: `x ⊗ y`
+/// is `(x, y)`, and the unit `I` the empty tuple `()`.
+#[cfg(feature = "pyo3")]
+impl<'py, G> pyo3::IntoPyObject<'py> for Mono<G>
+where
+    G: pyo3::IntoPyObject<'py>,
+{
+    type Target = pyo3::types::PyTuple;
+    type Output = pyo3::Bound<'py, pyo3::types::PyTuple>;
+    type Error = pyo3::PyErr;
+
+    fn into_pyobject(self, py: pyo3::Python<'py>) -> Result<Self::Output, Self::Error> {
+        pyo3::types::PyTuple::new(py, self.0)
+    }
+}
+
+/// A sum type is the Python tuple of its variants, in order, each the tuple
+/// of a product type, as a product type is: `(x ⊗ y) ⊕ z` is
+/// `((x, y), (z,))`, the unit `I` is `((),)`, and the empty type `0` the
+/// empty tuple `()`. Python's operators on tuples, which concatenate and
+/// repeat them, are not the operations of the types.
+#[cfg(feature = "pyo3")]
+impl<'py, G> pyo3::IntoPyObject<'py> for Poly<G>
+where
+    G: pyo3::IntoPyObject<'py>,
+{
+    type Target = pyo3::types::PyTuple;
+    type Output = pyo3::Bound<'py, pyo3::types::PyTuple>;
+    type Error = pyo3::PyErr;
+
+    fn into_pyobject(self, py: pyo3::Python<'py>) -> Result<Self::Output, Self::Error> {
+        pyo3::types::PyTuple::new(py, self.0)
+    }
+}
+
 impl<G: std::fmt::Display> std::fmt::Display for Mono<G> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.0.is_empty() {

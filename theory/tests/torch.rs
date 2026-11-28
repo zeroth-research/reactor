@@ -417,3 +417,33 @@ fn constants_are_built_from_matrices_only() {
         assert!(py.get_type::<Word>().call1((8, [2, 0])).is_err());
     });
 }
+
+#[test]
+fn boundaries_convert_to_python_tuples_of_tuples() {
+    use base::boundary::{Mono, Poly};
+    use pyo3::types::PyTuple;
+    prepare_python_with_torch();
+    Python::attach(|py| {
+        let (x, b) = (Real::new_unchecked([2, 3]), Bool::new_unchecked([1, 1]));
+        // `(x ⊗ b) ⊕ I`: the tuple of the tuples of its variants, in order
+        let p: Poly<theory::Any> = base::mono![x.into(), b.into()] + Mono::unit();
+        let o = p.into_pyobject(py).unwrap();
+        assert!(o.get_item(0).unwrap().is_instance_of::<PyTuple>());
+        let sorts: Vec<Vec<theory::Any>> = o.extract().unwrap();
+        let expected: Vec<Vec<theory::Any>> = vec![vec![x.into(), b.into()], vec![]];
+        assert_eq!(sorts, expected);
+        // a product alone is a tuple
+        let m: Mono<theory::Any> = base::mono![x.into()];
+        let t = m.into_pyobject(py).unwrap();
+        assert_eq!(t.len(), 1);
+        // the empty type is the empty tuple, and the unit the tuple of the empty tuple
+        let zero = Poly::<theory::Any>::zero().into_pyobject(py).unwrap();
+        assert!(zero.is_empty());
+        let unit: Vec<Vec<theory::Any>> = Poly::<theory::Any>::unit()
+            .into_pyobject(py)
+            .unwrap()
+            .extract()
+            .unwrap();
+        assert_eq!(unit, vec![Vec::<theory::Any>::new()]);
+    });
+}
