@@ -80,7 +80,7 @@ class TermBuilder:
     def _apply(self, op, *args, output_wire=None) -> Term:
         """The term of the operation `op` reading `args`, writing `output_wire`, or a wire
         of its codomain."""
-        return Term(op, [output_wire or Wire(op.cod)], [_wire(a) for a in args])
+        return Term(op, [output_wire] if output_wire else [Wire(s) for s in op.cod], [_wire(a) for a in args])
 
     def _unary(self, op, a) -> Term:
         """The term of the operation class `op`, built from the sort of `a`, its domain."""
@@ -121,7 +121,8 @@ class TermBuilder:
             bias = torch.zeros(out_features, 1, dtype=weight.dtype)
         linear = self._linear(weight, bias.reshape(out_features, 1), input_col_wire.dtype)
         # the column `[out_features, 1]` that the affine map writes
-        linear_out_wire = Wire(linear.cod)
+        (cod,) = linear.cod
+        linear_out_wire = Wire(cod)
         t_lin = Term(linear, [linear_out_wire], [input_col_wire])
 
         t_out = self.transpose(linear_out_wire)
@@ -240,7 +241,7 @@ class TermBuilder:
             op = _bl.Truth(tensor.to(torch.bool), cod)
         else:
             op = self._const(tensor, cod)
-        return Term.constant(op, [output_wire or Wire(op.cod)])
+        return Term.constant(op, [output_wire] if output_wire else [Wire(s) for s in op.cod])
 
     def _const(self, tensor, cod):
         """The constant `tensor`, of the numeric sort `cod`, or of the one it takes from the

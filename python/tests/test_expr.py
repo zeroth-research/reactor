@@ -404,16 +404,16 @@ def test_real_operations_take_the_degree_of_their_operands():
     dx = expr(Wire(T(Real([1, 1]))))
     with collecting() as terms:
         s = dx + 1  # the literal takes the degree of `dx`
-        assert tensor_of_term(terms[-2]) is not None and terms[-2].itype.cod == T(Real([1, 1]))
-        assert terms[-1].itype.dom == [T(Real([1, 1]))] * 2 and s.dtype == T(Real([1, 1]))
+        assert tensor_of_term(terms[-2]) is not None and terms[-2].itype.cod == (T(Real([1, 1])),)
+        assert terms[-1].itype.dom == (T(Real([1, 1])),) * 2 and s.dtype == T(Real([1, 1]))
         p = x * dx  # degrees add up
-        assert terms[-1].itype.dom == [Real([1, 1]), T(Real([1, 1]))] and p.dtype == T(Real([1, 1]))
+        assert terms[-1].itype.dom == (Real([1, 1]), T(Real([1, 1]))) and p.dtype == T(Real([1, 1]))
         q = dx / x  # degrees are taken off
-        assert terms[-1].itype.dom == [T(Real([1, 1])), Real([1, 1])] and q.dtype == T(Real([1, 1]))
+        assert terms[-1].itype.dom == (T(Real([1, 1])), Real([1, 1])) and q.dtype == T(Real([1, 1]))
         c = dx < 1  # compared at their degree
-        assert terms[-1].itype.dom == [T(Real([1, 1]))] * 2 and c.dtype == Bool([1, 1])
+        assert terms[-1].itype.dom == (T(Real([1, 1])),) * 2 and c.dtype == Bool([1, 1])
         h = abs(dx)
-        assert terms[-1].itype.dom == T(Real([1, 1])) and h.dtype == T(Real([1, 1]))
+        assert terms[-1].itype.dom == (T(Real([1, 1])),) and h.dtype == T(Real([1, 1]))
 
 
 def test_division_by_a_real_of_a_higher_degree_is_not_defined():
@@ -428,8 +428,8 @@ def test_neg_keeps_the_degree_of_reals():
     d1 = expr(Wire(T(Real([1, 1]))))
     with collecting() as terms:
         n, m = -x, -d1
-    assert terms[0].itype.dom == Real([1, 1]) and n.dtype == Real([1, 1])
-    assert terms[1].itype.dom == T(Real([1, 1])) and m.dtype == T(Real([1, 1]))
+    assert terms[0].itype.dom == (Real([1, 1]),) and n.dtype == Real([1, 1])
+    assert terms[1].itype.dom == (T(Real([1, 1])),) and m.dtype == T(Real([1, 1]))
 
 
 # theory errors are deprecated - the python API has become permissive

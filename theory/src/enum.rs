@@ -31,6 +31,8 @@ one datatype, each enumeration a constraint of membership.
 use crate::Any;
 use crate::bool::Bool;
 use crate::zero::Real0;
+#[cfg(feature = "pyo3")]
+use base::boundary::Mono;
 use base::boundary::{Boundary, Poly};
 use base::differentiable::Differentiable;
 use base::mono;
@@ -509,7 +511,8 @@ impl Boundary<Any> for Op {
 // The Python constructors of the operations: each is built from the
 // parameters its sorts do not determine, then its domain, when it reads
 // anything, a single sort bare and several as a list, and optionally its
-// codomain, which must agree; and matches by them the same way.
+// codomain, which must agree; and matches by them, its domain and codomain
+// as tuples, `(x,)` for one sort.
 
 #[cfg(feature = "pyo3")]
 #[pymethods]
@@ -532,10 +535,10 @@ impl Sym {
         &self.value
     }
 
-    /// The enumeration it writes.
+    /// The sorts it writes, as a tuple: its enumeration.
     #[getter(cod)]
-    fn py_cod(&self) -> Enum {
-        self.sort.clone()
+    fn py_cod(&self) -> Mono<Any> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -554,16 +557,16 @@ impl Into {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Any> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Any> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -587,16 +590,16 @@ impl Eq {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Any> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Any> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -617,16 +620,16 @@ impl Ne {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Any> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Any> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -647,16 +650,16 @@ impl Ite {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Any> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Any> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 

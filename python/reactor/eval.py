@@ -1,8 +1,8 @@
 """Torch interpreter for terms.
 
 Dispatch is by `match` on the operation's class, binding positionally its parameters,
-then its domain and codomain, a single sort bare and several as a list
-(`case word.Extract(i, j, Word(w)):`). Values are tensors: booleans as `torch.bool`,
+then its domain and codomain, each a tuple of sorts, `(x,)` for one
+(`case word.Extract(i, j, [Word(w)]):`). Values are tensors: booleans as `torch.bool`,
 reals as floating point, integers and words as `int64`. A word of width `w` is stored
 as its unsigned value in `[0, 2^w)`; the signed operations read it in two's complement,
 and every word result is reduced modulo `2^w`. Division by zero follows SMT-LIB2.
@@ -154,14 +154,14 @@ def eval_itype(itype, read, out_sort=None):
         # --- structural ---
         case Skip():
             return [r[0].clone()]
-        case Havoc(sort):
+        case Havoc([sort]):
             # an arbitrary value: zeros
             return [_zeros(sort)]
         case _zz.Zero():
             # the singleton sort is the rate of change of discrete values, which are
             # never integrated: nothing evaluates it
             raise RuntimeError("Zero writes the singleton sort, which is never evaluated")
-        case _rl.Zero(Real(shape)):
+        case _rl.Zero([Real(shape)]):
             # the zero matrix, of any degree: the zero rate of change
             return [torch.zeros(shape, dtype=torch.float32)]
 
@@ -260,25 +260,25 @@ def eval_itype(itype, read, out_sort=None):
             return [r[0].any(dim=axis, keepdim=True)]
 
         # --- words: arithmetic modulo 2^w ---
-        case _ww.Add(_, Word(w)):
+        case _ww.Add(_, [Word(w)]):
             return [_wrap(r[0] + r[1], w)]
-        case _ww.Sub(_, Word(w)):
+        case _ww.Sub(_, [Word(w)]):
             return [_wrap(r[0] - r[1], w)]
-        case _ww.Mul(_, Word(w)):
+        case _ww.Mul(_, [Word(w)]):
             return [_wrap(r[0] * r[1], w)]
-        case _ww.Neg(_, Word(w)):
+        case _ww.Neg(_, [Word(w)]):
             return [_wrap(-r[0], w)]
-        case _ws.Abs(_, Word(w)):
+        case _ws.Abs(_, [Word(w)]):
             return [_wrap(_signed(r[0], w).abs(), w)]
-        case _wu.Div(_, Word(w)):
+        case _wu.Div(_, [Word(w)]):
             return [_udiv(r[0], r[1], w)]
         case _wu.Rem():
             return [_urem(r[0], r[1])]
-        case _ws.Div(_, Word(w)):
+        case _ws.Div(_, [Word(w)]):
             return [_sdiv(r[0], r[1], w)]
-        case _ws.Rem(_, Word(w)):
+        case _ws.Rem(_, [Word(w)]):
             return [_srem(r[0], r[1], w)]
-        case _ws.Mod(_, Word(w)):
+        case _ws.Mod(_, [Word(w)]):
             return [_smod(r[0], r[1], w)]
 
         # --- words: bitwise ---
@@ -288,41 +288,41 @@ def eval_itype(itype, read, out_sort=None):
             return [r[0] | r[1]]
         case _ww.Xor():
             return [r[0] ^ r[1]]
-        case _ww.Not(_, Word(w)):
+        case _ww.Not(_, [Word(w)]):
             return [_wrap(~r[0], w)]
-        case _ww.Nand(_, Word(w)):
+        case _ww.Nand(_, [Word(w)]):
             return [_wrap(~(r[0] & r[1]), w)]
-        case _ww.Nor(_, Word(w)):
+        case _ww.Nor(_, [Word(w)]):
             return [_wrap(~(r[0] | r[1]), w)]
-        case _ww.Xnor(_, Word(w)):
+        case _ww.Xnor(_, [Word(w)]):
             return [_wrap(~(r[0] ^ r[1]), w)]
 
         # --- words: shifts, rotations and resizing ---
-        case _ww.Shl(_, Word(w)):
+        case _ww.Shl(_, [Word(w)]):
             return [_shl(r[0], r[1], w)]
-        case _wu.Shr(_, Word(w)):
+        case _wu.Shr(_, [Word(w)]):
             return [_lshr(r[0], r[1], w)]
-        case _ws.Shr(_, Word(w)):
+        case _ws.Shr(_, [Word(w)]):
             return [_ashr(r[0], r[1], w)]
-        case _ww.RotateLeft(i, _, Word(w)):
+        case _ww.RotateLeft(i, _, [Word(w)]):
             return [_rotl(r[0], i, w)]
-        case _ww.RotateRight(i, _, Word(w)):
+        case _ww.RotateRight(i, _, [Word(w)]):
             return [_rotl(r[0], w - i % w, w)]
         case _ww.Concat([Word(u), Word(v)]):
             return [(r[0] << v) | r[1]]
-        case _ww.Extract(i, j, _, Word(v)):
+        case _ww.Extract(i, j, _, [Word(v)]):
             return [(r[0] >> j) & ((1 << v) - 1)]
-        case _ww.Repeat(i, Word(w)):
+        case _ww.Repeat(i, [Word(w)]):
             return [_repeat(r[0], i, w)]
         case _wu.Extend():
             return [r[0].clone()]
-        case _ws.Extend(i, Word(w), Word(v)):
+        case _ws.Extend(i, [Word(w)], [Word(v)]):
             return [_wrap(_signed(r[0], w), v)]
 
         # --- enumerations: positions of the values, sorted ---
-        case _en.Sym(value, Enum(values)):
+        case _en.Sym(value, [Enum(values)]):
             return [torch.tensor([[values.index(value)]], dtype=torch.int64)]
-        case _en.Into(Enum(small), Enum(large)):
+        case _en.Into([Enum(small)], [Enum(large)]):
             # each position in the smaller enumeration, to that of its value in the larger
             return [torch.tensor([large.index(v) for v in small], dtype=torch.int64)[r[0]]]
         case _en.Eq():

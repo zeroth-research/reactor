@@ -2,6 +2,7 @@
 
 use crate::real;
 use crate::real::Real;
+use base::boundary::Mono;
 use pyo3::prelude::*;
 use pyo3_tch::PyTensor;
 
@@ -60,18 +61,18 @@ impl Linear {
         ("a", "dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[getter]
-    fn dom<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
+    fn dom(slf: &Bound<'_, Self>) -> PyResult<Mono<Real>> {
         let op: crate::real::Linear<super::Tensor> = slf.extract()?;
-        crate::py_boundary(slf.py(), base::boundary::Boundary::dom(&op))
+        Ok(Mono::try_from(base::boundary::Boundary::dom(&op)).unwrap())
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[getter]
-    fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
+    fn cod(slf: &Bound<'_, Self>) -> PyResult<Mono<Real>> {
         let op: crate::real::Linear<super::Tensor> = slf.extract()?;
-        crate::py_boundary(slf.py(), base::boundary::Boundary::cod(&op))
+        Ok(Mono::try_from(base::boundary::Boundary::cod(&op)).unwrap())
     }
 }
 
@@ -149,18 +150,18 @@ impl Affine {
         ("a", "b", "dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[getter]
-    fn dom<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
+    fn dom(slf: &Bound<'_, Self>) -> PyResult<Mono<Real>> {
         let op: crate::real::Affine<super::Tensor> = slf.extract()?;
-        crate::py_boundary(slf.py(), base::boundary::Boundary::dom(&op))
+        Ok(Mono::try_from(base::boundary::Boundary::dom(&op)).unwrap())
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[getter]
-    fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
+    fn cod(slf: &Bound<'_, Self>) -> PyResult<Mono<Real>> {
         let op: crate::real::Affine<super::Tensor> = slf.extract()?;
-        crate::py_boundary(slf.py(), base::boundary::Boundary::cod(&op))
+        Ok(Mono::try_from(base::boundary::Boundary::cod(&op)).unwrap())
     }
 }
 
@@ -226,11 +227,11 @@ impl Num {
         ("tensor", "cod")
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[getter]
-    fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
+    fn cod(slf: &Bound<'_, Self>) -> PyResult<Mono<Real>> {
         let op: crate::real::Num<super::Tensor> = slf.extract()?;
-        crate::py_boundary(slf.py(), base::boundary::Boundary::cod(&op))
+        Ok(Mono::try_from(base::boundary::Boundary::cod(&op)).unwrap())
     }
 }
 
@@ -293,18 +294,18 @@ impl Scale {
         ("tensor", "dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[getter]
-    fn dom<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
+    fn dom(slf: &Bound<'_, Self>) -> PyResult<Mono<Real>> {
         let op: crate::real::Scale<super::Tensor> = slf.extract()?;
-        crate::py_boundary(slf.py(), base::boundary::Boundary::dom(&op))
+        Ok(Mono::try_from(base::boundary::Boundary::dom(&op)).unwrap())
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[getter]
-    fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
+    fn cod(slf: &Bound<'_, Self>) -> PyResult<Mono<Real>> {
         let op: crate::real::Scale<super::Tensor> = slf.extract()?;
-        crate::py_boundary(slf.py(), base::boundary::Boundary::cod(&op))
+        Ok(Mono::try_from(base::boundary::Boundary::cod(&op)).unwrap())
     }
 }
 

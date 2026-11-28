@@ -190,7 +190,7 @@ def _dom(op, args):
     """The sorts that `op` reads, one per operand in `args`: none, when it reads nothing."""
     if not args:
         return []
-    return op.dom if isinstance(op.dom, list) else [op.dom]
+    return list(op.dom)
 
 
 IDS = [f"{type(op).__module__.removeprefix('reactor.')}.{type(op).__name__}" for op, _ in CASES]

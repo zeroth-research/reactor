@@ -241,17 +241,17 @@ class Expr:
     # and wrap that wire by its sort, with my signedness) ---
     def _nullary(self, op, *, value=None) -> "Expr":
         """The constant Term of `op`, reading nothing, of the value `value`."""
-        _emit(term := Term.constant(op, [Wire(op.cod)]))
+        _emit(term := Term.constant(op, [Wire(s) for s in op.cod]))
         return _wrap(term.write[0], value=value, signed=isinstance(self, SExpr))
 
     def _unary(self, op) -> "Expr":
         """The Term of `op` reading me."""
-        _emit(term := Term(op, [Wire(op.cod)], [self._wire]))
+        _emit(term := Term(op, [Wire(s) for s in op.cod], [self._wire]))
         return _wrap(term.write[0], signed=isinstance(self, SExpr))
 
     def _binary(self, op, o: "Expr") -> "Expr":
         """The Term of `op` reading me and `o`."""
-        _emit(term := Term(op, [Wire(op.cod)], [self._wire, o._wire]))
+        _emit(term := Term(op, [Wire(s) for s in op.cod], [self._wire, o._wire]))
         return _wrap(term.write[0], signed=isinstance(self, SExpr))
 
     @override
@@ -770,7 +770,7 @@ def _term_from_torch(value, sort):
         op = _ww.Num(value, cod)
     else:
         raise TypeError(f"expr() unsupported literal type {value.dtype} / {sort}")
-    return Term.constant(op, [Wire(op.cod)]), value
+    return Term.constant(op, [Wire(s) for s in op.cod]), value
 
 
 def _term_from_other(value, sort):
@@ -950,7 +950,7 @@ def ite(cond: "BExpr", iftrue, iffalse) -> Expr:
                 f"got {cond.shape}"
             )
     op = choice([cond.dtype, a.dtype, b.dtype])
-    _emit(term := Term(op, [Wire(op.cod)], [cond.wire, a.wire, b.wire]))
+    _emit(term := Term(op, [Wire(s) for s in op.cod], [cond.wire, a.wire, b.wire]))
     return _wrap(term.write[0], signed=isinstance(a, SExpr))
 
 

@@ -95,8 +95,8 @@ fn constants_are_built_from_tensors_of_their_theory_only() {
         // degree 0 for reals unless given; words need it, for their width
         let plain = real.call1((&floats,)).unwrap();
         assert_eq!(
-            plain.getattr("cod").unwrap().extract::<Real>().unwrap(),
-            Real::new_unchecked([2, 3])
+            plain.getattr("cod").unwrap().extract::<(Real,)>().unwrap(),
+            (Real::new_unchecked([2, 3]),)
         );
         assert!(int.call1((&ints,)).is_ok());
         assert!(boolean.call1((&bools,)).is_ok());
@@ -176,8 +176,8 @@ fn linear_maps_are_built_from_tensors_of_their_theory_and_shapes() {
         // given, and writes the codomain, if given, of the rows of `A`
         let plain = real.call1((&a, &b)).unwrap();
         assert_eq!(
-            plain.getattr("dom").unwrap().extract::<Real>().unwrap(),
-            Real::new_unchecked([2, 1])
+            plain.getattr("dom").unwrap().extract::<(Real,)>().unwrap(),
+            (Real::new_unchecked([2, 1]),)
         );
         assert!(
             real.call1((&a, &b, sort(py, Real::new_unchecked([2, 3]))))

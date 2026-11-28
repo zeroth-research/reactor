@@ -204,7 +204,7 @@ def test_literal_takes_the_width_of_its_operand():
     """)
     consts = [t for t in update if isinstance(t.itype, word.Num)]
     assert consts and all(t.write[0].dtype == Word(8, [1, 1]) for t in consts)
-    assert any(isinstance(t.itype, word.Add) and t.itype.cod == Word(8, [1, 1]) for t in update)
+    assert any(isinstance(t.itype, word.Add) and t.itype.cod == (Word(8, [1, 1]),) for t in update)
 
 
 def test_word_constants_add_modulo_their_width():
@@ -217,7 +217,7 @@ def test_word_constants_add_modulo_their_width():
     terms = list(update)
     consts = [t for t in terms if isinstance(t.itype, word.Num)]
     assert len(consts) == 2 and all(t.write[0].dtype == Word(8, [1, 1]) for t in consts)
-    assert any(isinstance(t.itype, word.Add) and t.itype.cod == Word(8, [1, 1]) for t in terms)
+    assert any(isinstance(t.itype, word.Add) and t.itype.cod == (Word(8, [1, 1]),) for t in terms)
     state = {}
     for t in terms:
         state.update(zip(t.write, eval_itype(t.itype, [state[w] for w in t.read], t.write[0].dtype)))

@@ -80,13 +80,13 @@ def interpret(itype):
         # structural
         case Skip():
             return lambda x: x
-        case Havoc(dtype):
+        case Havoc([dtype]):
             return lambda: fresh(dtype, "HAVOC")
         case _zz.Zero():
             # the singleton sort is the rate of change of discrete values, which are
             # never integrated: nothing encodes it
             raise RuntimeError("Zero writes the singleton sort, which is never encoded")
-        case _rl.Zero(Real(shape)):
+        case _rl.Zero([Real(shape)]):
             return lambda: _zeros(Real(shape))
 
         # constants
@@ -96,7 +96,7 @@ def interpret(itype):
             return lambda: _np.vectorize(_z3.RealVal, otypes=[object])(t.detach().numpy())
         case _ii.Num(t):
             return lambda: _np.vectorize(_z3.IntVal, otypes=[object])(t.detach().numpy())
-        case _ww.Num(t, Word(w)):
+        case _ww.Num(t, [Word(w)]):
             return lambda: _np.vectorize(lambda v: _z3.BitVecVal(int(v), w), otypes=[object])(t.detach().numpy())
 
         # arithmetic

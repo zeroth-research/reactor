@@ -38,6 +38,8 @@ sorts of the theory, rather than in [`Int`].
 use super::bool::Bool;
 use crate::Matrix;
 use crate::zero::Real0;
+#[cfg(feature = "pyo3")]
+use base::boundary::Mono;
 use base::boundary::{Boundary, Poly};
 use base::differentiable::Differentiable;
 use base::mono;
@@ -115,7 +117,7 @@ impl Differentiable for Int {
 /// The sorts of the theory, as in the signature of SMT-LIB2's `Ints`:
 /// int matrices, and the booleans of the Core theory, which comparisons
 /// write, together with [`Real0`]. It is the subset
-/// [`Ints`](crate::Ints) of the sorts of all theories.
+/// [`Ints`](Ints) of the sorts of all theories.
 use crate::Ints;
 
 /// A constant integer matrix literal, held in a tensor of type `T`.
@@ -1123,18 +1125,18 @@ impl Add {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -1172,18 +1174,18 @@ impl Sub {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -1221,18 +1223,18 @@ impl Mul {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -1270,18 +1272,18 @@ impl Div {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -1319,18 +1321,18 @@ impl Mod {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -1368,18 +1370,18 @@ impl Neg {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -1417,18 +1419,18 @@ impl Abs {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -1466,18 +1468,18 @@ impl ReLU {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -1509,18 +1511,18 @@ impl Argmax {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -1558,18 +1560,18 @@ impl Min {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -1607,18 +1609,18 @@ impl Max {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -1657,18 +1659,18 @@ impl Transpose {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -1708,18 +1710,18 @@ impl MatMul {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Int> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -1757,18 +1759,18 @@ impl Lt {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Ints> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Ints> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -1815,18 +1817,18 @@ impl Ite {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Ints> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Ints> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -1864,18 +1866,18 @@ impl Le {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Ints> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Ints> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -1913,18 +1915,18 @@ impl Gt {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Ints> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Ints> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -1962,18 +1964,18 @@ impl Ge {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Ints> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Ints> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -2011,18 +2013,18 @@ impl Eq {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Ints> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Ints> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -2060,18 +2062,18 @@ impl Ne {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Ints> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: pyo3::Python<'py>) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-        crate::py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Ints> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -2154,24 +2156,18 @@ pub mod broadcast {
             ("dom", "cod")
         }
 
-        /// The sorts it reads: the sort alone when it reads one, else their list.
+        /// The sorts it reads, as a tuple.
         #[cfg(feature = "pyo3")]
         #[getter(dom)]
-        fn py_dom<'py>(
-            &self,
-            py: pyo3::Python<'py>,
-        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_boundary(py, Boundary::dom(self))
+        fn py_dom(&self) -> Mono<Ints> {
+            Mono::try_from(Boundary::dom(self)).unwrap()
         }
 
-        /// The sort it writes.
+        /// The sorts it writes, as a tuple.
         #[cfg(feature = "pyo3")]
         #[getter(cod)]
-        fn py_cod<'py>(
-            &self,
-            py: pyo3::Python<'py>,
-        ) -> pyo3::PyResult<pyo3::Bound<'py, pyo3::PyAny>> {
-            crate::py_boundary(py, Boundary::cod(self))
+        fn py_cod(&self) -> Mono<Ints> {
+            Mono::try_from(Boundary::cod(self)).unwrap()
         }
     }
 }

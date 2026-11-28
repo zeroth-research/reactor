@@ -1,6 +1,7 @@
 //! The Python class of the constants of propositional logic.
 
 use crate::bool::Bool;
+use base::boundary::Mono;
 use pyo3::prelude::*;
 use pyo3_tch::PyTensor;
 
@@ -48,11 +49,11 @@ impl Truth {
         ("tensor", "cod")
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[getter]
-    fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
+    fn cod(slf: &Bound<'_, Self>) -> PyResult<Mono<Bool>> {
         let op: crate::bool::Truth<super::Tensor> = slf.extract()?;
-        crate::py_boundary(slf.py(), base::boundary::Boundary::cod(&op))
+        Ok(Mono::try_from(base::boundary::Boundary::cod(&op)).unwrap())
     }
 }
 

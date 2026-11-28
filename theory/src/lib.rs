@@ -100,6 +100,8 @@ pub mod zero;
 pub use matrix::Matrix;
 
 use self::{bool::Bool, r#enum::Enum, event::Event, int::Int, real::Real, word::Word};
+#[cfg(feature = "pyo3")]
+use base::boundary::Mono;
 use base::boundary::{Boundary, Poly};
 use base::differentiable::Differentiable;
 use derive_more::{Display, From};
@@ -199,10 +201,22 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Any {
 
 /// Extracts a sort of the theories of each subset from an instance of its
 /// class, as a sort of [`Any`] that the subset holds: the Python constructor
-/// of `Ite`, of the matrix theories, and of `event::Xor` read them.
+/// of `Ite`, of the matrix theories, and of `event::Xor` read them. Converts
+/// it back into its class, as [`Any`] does: the getters `dom` and `cod` of the
+/// operations give the sorts of the subset of their theory.
 #[cfg(feature = "pyo3")]
-macro_rules! extract_subset {
+macro_rules! py_subset {
     ($($subset:ident),*) => {$(
+        impl<'py> IntoPyObject<'py> for $subset {
+            type Target = PyAny;
+            type Output = Bound<'py, PyAny>;
+            type Error = PyErr;
+
+            fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+                Any::from(self).into_pyobject(py)
+            }
+        }
+
         impl<'a, 'py> FromPyObject<'a, 'py> for $subset {
             type Error = PyErr;
 
@@ -220,7 +234,7 @@ macro_rules! extract_subset {
 }
 
 #[cfg(feature = "pyo3")]
-extract_subset!(Bools, Reals, Ints, Words);
+py_subset!(Bools, Reals, Ints, Words);
 
 /// Converts a sort into an instance of its class.
 #[cfg(feature = "pyo3")]
@@ -374,32 +388,6 @@ where
     Ok(op)
 }
 
-/// The sorts of the domain or codomain `poly` of an operation, as Python
-/// presents them: the sort alone when there is one, else their list.
-///
-/// Panics unless `poly` is a single product of sorts, as the boundaries of
-/// the operations are.
-#[cfg(feature = "pyo3")]
-pub(crate) fn py_boundary<'py, S: Into<Any>>(
-    py: Python<'py>,
-    poly: Poly<S>,
-) -> PyResult<Bound<'py, PyAny>> {
-    let mut monos = poly.into_iter();
-    let (Some(mono), None) = (monos.next(), monos.next()) else {
-        panic!("the boundary of an operation is a single product of sorts");
-    };
-    let mut sorts: Vec<Any> = mono.into_iter().map(Into::into).collect();
-    if sorts.len() == 1 {
-        sorts.pop().unwrap().into_pyobject(py)
-    } else {
-        let sorts = sorts
-            .into_iter()
-            .map(|s| s.into_pyobject(py))
-            .collect::<PyResult<Vec<_>>>()?;
-        Ok(sorts.into_pyobject(py)?.into_any())
-    }
-}
-
 impl Boundary<Any> for Havoc {
     fn dom(&self) -> Poly<Any> {
         Poly::unit()
@@ -461,11 +449,11 @@ impl Havoc {
         ("cod",)
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Any> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 
@@ -489,18 +477,18 @@ impl Skip {
         ("dom", "cod")
     }
 
-    /// The sorts it reads: the sort alone when it reads one, else their list.
+    /// The sorts it reads, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(dom)]
-    fn py_dom<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        py_boundary(py, Boundary::dom(self))
+    fn py_dom(&self) -> Mono<Any> {
+        Mono::try_from(Boundary::dom(self)).unwrap()
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[cfg(feature = "pyo3")]
     #[getter(cod)]
-    fn py_cod<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        py_boundary(py, Boundary::cod(self))
+    fn py_cod(&self) -> Mono<Any> {
+        Mono::try_from(Boundary::cod(self)).unwrap()
     }
 }
 

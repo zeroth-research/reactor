@@ -1,6 +1,8 @@
 //! The Python class of the constants of fixed-size bit-vectors.
 
+use crate::Words;
 use crate::word::Word;
+use base::boundary::Mono;
 use pyo3::prelude::*;
 use pyo3_tch::PyTensor;
 
@@ -46,11 +48,11 @@ impl Num {
         ("tensor", "cod")
     }
 
-    /// The sort it writes.
+    /// The sorts it writes, as a tuple.
     #[getter]
-    fn cod<'py>(slf: &Bound<'py, Self>) -> PyResult<Bound<'py, PyAny>> {
+    fn cod(slf: &Bound<'_, Self>) -> PyResult<Mono<Words>> {
         let op: crate::word::Num<super::Tensor> = slf.extract()?;
-        crate::py_boundary(slf.py(), base::boundary::Boundary::cod(&op))
+        Ok(Mono::try_from(base::boundary::Boundary::cod(&op)).unwrap())
     }
 }
 
@@ -78,8 +80,7 @@ impl<'py> IntoPyObject<'py> for crate::word::BV<super::Tensor> {
 
         match self {
             BV::Num(op) => {
-                let crate::Words::Word(cod) = super::sole(base::boundary::Boundary::cod(&op))
-                else {
+                let Words::Word(cod) = super::sole(base::boundary::Boundary::cod(&op)) else {
                     unreachable!("a numeral writes a word")
                 };
                 Num(op.tensor().clone(), cod.width())

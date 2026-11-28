@@ -94,10 +94,10 @@ def test_each_sort_is_in_the_namespace_of_its_theory():
 def test_a_constant_is_built_from_its_value_and_codomain():
     e = Enum({"idle", "busy"})
     op = Sym("idle", e)
-    assert (op.value, op.cod, str(op)) == ("idle", e, "idle")
+    assert (op.value, op.cod, str(op)) == ("idle", (e,), "idle")
     assert not hasattr(op, "dom")
     match op:
-        case Sym(value, Enum(values)):
+        case Sym(value, [Enum(values)]):
             assert (value, values) == ("idle", ["busy", "idle"])
     with pytest.raises(ValueError):
         Sym("done", e)
@@ -106,9 +106,9 @@ def test_a_constant_is_built_from_its_value_and_codomain():
 def test_into_needs_a_codomain_holding_the_values_of_its_domain():
     small, large = Enum({"a", "b"}), Enum({"a", "b", "c"})
     op = Into(small, large)
-    assert (op.dom, op.cod) == (small, large)
+    assert (op.dom, op.cod) == ((small,), (large,))
     match op:
-        case Into(d, c):
+        case Into([d], [c]):
             assert (d, c) == (small, large)
     with pytest.raises(ValueError):
         Into(large, small)
@@ -118,7 +118,7 @@ def test_the_comparisons_of_enumerations_write_a_boolean():
     e = Enum({"idle", "busy"})
     for cls in [enum_.Eq, enum_.Ne]:
         op = cls([e, e])
-        assert (op.dom, op.cod) == ([e, e], COND)
+        assert (op.dom, op.cod) == ((e, e), (COND,))
         assert cls([e, e], COND) == op
         with pytest.raises(ValueError):
             cls([e, e], Bool([2, 2]))
@@ -129,9 +129,9 @@ def test_the_comparisons_of_enumerations_write_a_boolean():
 def test_the_choice_of_enumerations_reads_a_scalar_condition():
     e = Enum({"idle", "busy"})
     op = enum_.Ite([COND, e, e])
-    assert (op.dom, op.cod) == ([COND, e, e], e)
+    assert (op.dom, op.cod) == ((COND, e, e), (e,))
     match op:
-        case enum_.Ite([Bool(shape), x, y], c):
+        case enum_.Ite([Bool(shape), x, y], [c]):
             assert (list(shape), x, y, c) == ([1, 1], e, e, e)
     with pytest.raises(ValueError):
         enum_.Ite([Bool([2, 2]), e, e])
@@ -147,14 +147,14 @@ def test_the_exclusive_or_of_an_event_is_typed_by_its_domain():
     ]
     for dom, cod, dom_of_other in cases:
         op = Xor(dom)
-        assert (op.dom, op.cod) == (dom, cod)
+        assert (op.dom, op.cod) == (tuple(dom), (cod,))
         # the codomain, given, must be the one it writes: not another event
         assert Xor(dom, cod) == op
         with pytest.raises(ValueError):
             Xor(dom, other)
         match op:
-            case Xor(d, c):
-                assert (d, c) == (dom, cod)
+            case Xor(d, [c]):
+                assert (d, c) == (tuple(dom), cod)
         # each is of its event
         assert op != Xor(dom_of_other)
     # each typing is its own operation
