@@ -398,3 +398,15 @@ fn as_slice_borrows_in_order() {
     };
     assert_eq!(*g, 'x');
 }
+
+#[test]
+fn a_sum_of_one_variant_is_that_product() {
+    assert_eq!(Mono::try_from(poly(&["xy"])), Ok(mono("xy")));
+    // the unit is the sum of the empty product
+    assert_eq!(Mono::try_from(Poly::<char>::unit()), Ok(Mono::unit()));
+    // any other sum is given back
+    assert_eq!(Mono::try_from(poly(&["x", "y"])), Err(poly(&["x", "y"])));
+    assert_eq!(Mono::try_from(Poly::<char>::zero()), Err(Poly::zero()));
+    // and the conversions round-trip
+    assert_eq!(Mono::try_from(Poly::from(mono("xyz"))), Ok(mono("xyz")));
+}

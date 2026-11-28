@@ -143,6 +143,24 @@ impl<G> From<Mono<G>> for Poly<G> {
     }
 }
 
+/// A sum type of a single variant is that product type. Any other sum type,
+/// of several variants or of none, the empty type `0`, is the error.
+///
+/// The error gives the sum type back, as `TryFrom<Vec<T>>` for arrays gives
+/// back the vector: the conversion owns its input, which would otherwise be
+/// lost, and there is only one way to fail. It is no [`std::error::Error`].
+impl<G> TryFrom<Poly<G>> for Mono<G> {
+    type Error = Poly<G>;
+
+    fn try_from(mut p: Poly<G>) -> Result<Self, Self::Error> {
+        if p.0.len() == 1 {
+            Ok(p.0.pop().expect("one variant"))
+        } else {
+            Err(p)
+        }
+    }
+}
+
 /// Product types, taken as alternatives in order, form their sum type. No
 /// alternatives give the empty type `0`.
 impl<G> FromIterator<Mono<G>> for Poly<G> {
