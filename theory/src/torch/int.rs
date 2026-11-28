@@ -46,7 +46,7 @@ impl Linear {
                 ));
             }
         };
-        let dom = super::sole(base::boundary::Boundary::dom(&op));
+        let dom = super::sole(op.dom());
         Ok(Linear(op.a().clone(), dom))
     }
 
@@ -66,14 +66,14 @@ impl Linear {
     #[getter]
     fn dom(slf: &Bound<'_, Self>) -> PyResult<Mono<Int>> {
         let op: crate::int::Linear<super::Tensor> = slf.extract()?;
-        Ok(Mono::try_from(base::boundary::Boundary::dom(&op)).unwrap())
+        Ok(op.dom())
     }
 
     /// The sorts it writes, as a tuple.
     #[getter]
     fn cod(slf: &Bound<'_, Self>) -> PyResult<Mono<Int>> {
         let op: crate::int::Linear<super::Tensor> = slf.extract()?;
-        Ok(Mono::try_from(base::boundary::Boundary::cod(&op)).unwrap())
+        Ok(op.cod())
     }
 }
 
@@ -151,14 +151,14 @@ impl Affine {
     #[getter]
     fn dom(slf: &Bound<'_, Self>) -> PyResult<Mono<Int>> {
         let op: crate::int::Affine<super::Tensor> = slf.extract()?;
-        Ok(Mono::try_from(base::boundary::Boundary::dom(&op)).unwrap())
+        Ok(op.dom())
     }
 
     /// The sorts it writes, as a tuple.
     #[getter]
     fn cod(slf: &Bound<'_, Self>) -> PyResult<Mono<Int>> {
         let op: crate::int::Affine<super::Tensor> = slf.extract()?;
-        Ok(Mono::try_from(base::boundary::Boundary::cod(&op)).unwrap())
+        Ok(op.cod())
     }
 }
 
@@ -226,7 +226,7 @@ impl Num {
     #[getter]
     fn cod(slf: &Bound<'_, Self>) -> PyResult<Mono<Int>> {
         let op: crate::int::Num<super::Tensor> = slf.extract()?;
-        Ok(Mono::try_from(base::boundary::Boundary::cod(&op)).unwrap())
+        Ok(op.cod())
     }
 }
 
@@ -292,14 +292,14 @@ impl Scale {
     #[getter]
     fn dom(slf: &Bound<'_, Self>) -> PyResult<Mono<Int>> {
         let op: crate::int::Scale<super::Tensor> = slf.extract()?;
-        Ok(Mono::try_from(base::boundary::Boundary::dom(&op)).unwrap())
+        Ok(op.dom())
     }
 
     /// The sorts it writes, as a tuple.
     #[getter]
     fn cod(slf: &Bound<'_, Self>) -> PyResult<Mono<Int>> {
         let op: crate::int::Scale<super::Tensor> = slf.extract()?;
-        Ok(Mono::try_from(base::boundary::Boundary::cod(&op)).unwrap())
+        Ok(op.cod())
     }
 }
 
@@ -337,12 +337,9 @@ impl<'py> IntoPyObject<'py> for crate::int::NIA<super::Tensor> {
             NIA::Mul(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Div(op) => op.into_pyobject(py).map(Bound::into_any),
             NIA::Mod(op) => op.into_pyobject(py).map(Bound::into_any),
-            NIA::Linear(op) => Linear(
-                op.a().clone(),
-                super::sole(base::boundary::Boundary::dom(&op)),
-            )
-            .into_pyobject(py)
-            .map(Bound::into_any),
+            NIA::Linear(op) => Linear(op.a().clone(), super::sole(op.dom()))
+                .into_pyobject(py)
+                .map(Bound::into_any),
             NIA::Affine(op) => Affine(op.a().clone(), op.b().clone())
                 .into_pyobject(py)
                 .map(Bound::into_any),

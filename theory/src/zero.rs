@@ -26,7 +26,6 @@ zero matrix of the degree of the rate of change, written by
 [`real::Zero`](crate::real::Zero).
 */
 
-#[cfg(feature = "pyo3")]
 use base::boundary::Mono;
 use base::boundary::{Boundary, Poly};
 use base::differentiable::Differentiable;
@@ -95,7 +94,7 @@ impl Boundary<Real0> for Zero {
     }
 
     fn cod(&self) -> Poly<Real0> {
-        base::mono![Real0].into()
+        Zero::cod(self).into()
     }
 }
 
@@ -119,9 +118,8 @@ impl Zero {
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Real0> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Real0> {
+        base::mono![Real0]
     }
 }

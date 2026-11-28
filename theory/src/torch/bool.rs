@@ -53,7 +53,7 @@ impl Truth {
     #[getter]
     fn cod(slf: &Bound<'_, Self>) -> PyResult<Mono<Bool>> {
         let op: crate::bool::Truth<super::Tensor> = slf.extract()?;
-        Ok(Mono::try_from(base::boundary::Boundary::cod(&op)).unwrap())
+        Ok(op.cod())
     }
 }
 

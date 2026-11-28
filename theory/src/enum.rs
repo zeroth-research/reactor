@@ -31,7 +31,6 @@ one datatype, each enumeration a constraint of membership.
 use crate::Any;
 use crate::bool::Bool;
 use crate::zero::Real0;
-#[cfg(feature = "pyo3")]
 use base::boundary::Mono;
 use base::boundary::{Boundary, Poly};
 use base::differentiable::Differentiable;
@@ -437,73 +436,68 @@ impl Boundary<Any> for Sym {
     }
 
     fn cod(&self) -> Poly<Any> {
-        mono![self.sort.clone().into()].into()
+        Sym::cod(self).into()
     }
 }
 
 impl Boundary<Any> for Into {
     fn dom(&self) -> Poly<Any> {
-        mono![self.dom.clone().into()].into()
+        Into::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Any> {
-        mono![self.cod.clone().into()].into()
+        Into::cod(self).into()
     }
 }
 
 impl Boundary<Any> for Eq {
     fn dom(&self) -> Poly<Any> {
-        mono![self.sort.clone().into(); 2].into()
+        Eq::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Any> {
-        mono![Bool::new_unchecked([1, 1]).into()].into()
+        Eq::cod(self).into()
     }
 }
 
 impl Boundary<Any> for Ne {
     fn dom(&self) -> Poly<Any> {
-        mono![self.sort.clone().into(); 2].into()
+        Ne::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Any> {
-        mono![Bool::new_unchecked([1, 1]).into()].into()
+        Ne::cod(self).into()
     }
 }
 
 impl Boundary<Any> for Ite {
     fn dom(&self) -> Poly<Any> {
-        mono![
-            Bool::new_unchecked([1, 1]).into(),
-            self.sort.clone().into(),
-            self.sort.clone().into()
-        ]
-        .into()
+        Ite::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Any> {
-        mono![self.sort.clone().into()].into()
+        Ite::cod(self).into()
     }
 }
 
 impl Boundary<Any> for Op {
     fn dom(&self) -> Poly<Any> {
         match self {
-            Op::Sym(op) => op.dom(),
-            Op::Into(op) => op.dom(),
-            Op::Eq(op) => op.dom(),
-            Op::Ne(op) => op.dom(),
-            Op::Ite(op) => op.dom(),
+            Op::Sym(op) => Boundary::dom(op),
+            Op::Into(op) => Boundary::dom(op),
+            Op::Eq(op) => Boundary::dom(op),
+            Op::Ne(op) => Boundary::dom(op),
+            Op::Ite(op) => Boundary::dom(op),
         }
     }
 
     fn cod(&self) -> Poly<Any> {
         match self {
-            Op::Sym(op) => op.cod(),
-            Op::Into(op) => op.cod(),
-            Op::Eq(op) => op.cod(),
-            Op::Ne(op) => op.cod(),
-            Op::Ite(op) => op.cod(),
+            Op::Sym(op) => Boundary::cod(op),
+            Op::Into(op) => Boundary::cod(op),
+            Op::Eq(op) => Boundary::cod(op),
+            Op::Ne(op) => Boundary::cod(op),
+            Op::Ite(op) => Boundary::cod(op),
         }
     }
 }
@@ -514,152 +508,162 @@ impl Boundary<Any> for Op {
 // codomain, which must agree; and matches by them, its domain and codomain
 // as tuples, `(x,)` for one sort.
 
-#[cfg(feature = "pyo3")]
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Sym {
     /// Python builds it from its value, and its codomain `cod`, the
     /// enumeration holding it.
+    #[cfg(feature = "pyo3")]
     #[new]
     fn py_new(value: &str, cod: Enum) -> Result<Self, crate::Error> {
         Self::with_cod(value, [cod])
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("value", "cod")
     }
 
     /// The symbolic constant.
+    #[cfg(feature = "pyo3")]
     #[getter]
     fn value(&self) -> &str {
         &self.value
     }
 
     /// The sorts it writes, as a tuple: its enumeration.
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Any> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Any> {
+        mono![self.sort.clone().into()]
     }
 }
 
-#[cfg(feature = "pyo3")]
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Into {
     /// Python builds it from its domain `dom` and its codomain `cod`, which
     /// its domain does not determine: an enumeration holding all its values.
+    #[cfg(feature = "pyo3")]
     #[new]
     fn py_new(dom: Enum, cod: Enum) -> Result<Self, crate::Error> {
         Self::new(dom, cod)
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("dom", "cod")
     }
 
     /// The sorts it reads, as a tuple.
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Any> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Any> {
+        mono![self.dom.clone().into()]
     }
 
     /// The sorts it writes, as a tuple.
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Any> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Any> {
+        mono![self.cod.clone().into()]
     }
 }
 
 // The constructors of the comparisons, each reading two values of an
 // enumeration.
 
-#[cfg(feature = "pyo3")]
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Eq {
     /// Python builds it from its domain `dom`, two values of the same
     /// enumeration; its codomain `cod`, when given, must be the one it
     /// writes.
+    #[cfg(feature = "pyo3")]
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Enum; 2], cod: Option<Any>) -> Result<Self, crate::Error> {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("dom", "cod")
     }
 
     /// The sorts it reads, as a tuple.
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Any> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Any> {
+        mono![self.sort.clone().into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Any> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Any> {
+        mono![Bool::new_unchecked([1, 1]).into()]
     }
 }
 
-#[cfg(feature = "pyo3")]
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Ne {
     /// Python builds it from its domain `dom`, two values of the same
     /// enumeration; its codomain `cod`, when given, must be the one it
     /// writes.
+    #[cfg(feature = "pyo3")]
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Enum; 2], cod: Option<Any>) -> Result<Self, crate::Error> {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("dom", "cod")
     }
 
     /// The sorts it reads, as a tuple.
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Any> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Any> {
+        mono![self.sort.clone().into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Any> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Any> {
+        mono![Bool::new_unchecked([1, 1]).into()]
     }
 }
 
-#[cfg(feature = "pyo3")]
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Ite {
     /// Python builds it from its domain `dom`, the condition, a boolean of
     /// the shape `[1, 1]`, and two branches of the same enumeration; its
     /// codomain `cod`, when given, must be the one it writes.
+    #[cfg(feature = "pyo3")]
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Any; 3], cod: Option<Any>) -> Result<Self, crate::Error> {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("dom", "cod")
     }
 
     /// The sorts it reads, as a tuple.
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Any> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Any> {
+        mono![
+            Bool::new_unchecked([1, 1]).into(),
+            self.sort.clone().into(),
+            self.sort.clone().into()
+        ]
     }
 
     /// The sorts it writes, as a tuple.
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Any> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Any> {
+        mono![self.sort.clone().into()]
     }
 }
 

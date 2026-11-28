@@ -45,7 +45,7 @@ impl Linear {
                 ));
             }
         };
-        let dom = super::sole(base::boundary::Boundary::dom(&op));
+        let dom = super::sole(op.dom());
         Ok(Linear(op.a().clone(), dom))
     }
 
@@ -65,14 +65,14 @@ impl Linear {
     #[getter]
     fn dom(slf: &Bound<'_, Self>) -> PyResult<Mono<Real>> {
         let op: crate::real::Linear<super::Tensor> = slf.extract()?;
-        Ok(Mono::try_from(base::boundary::Boundary::dom(&op)).unwrap())
+        Ok(op.dom())
     }
 
     /// The sorts it writes, as a tuple.
     #[getter]
     fn cod(slf: &Bound<'_, Self>) -> PyResult<Mono<Real>> {
         let op: crate::real::Linear<super::Tensor> = slf.extract()?;
-        Ok(Mono::try_from(base::boundary::Boundary::cod(&op)).unwrap())
+        Ok(op.cod())
     }
 }
 
@@ -129,7 +129,7 @@ impl Affine {
         Ok(Affine(
             op.a().clone(),
             op.b().clone(),
-            super::sole(base::boundary::Boundary::cod(&op)).degree(),
+            super::sole(op.cod()).degree(),
         ))
     }
 
@@ -154,14 +154,14 @@ impl Affine {
     #[getter]
     fn dom(slf: &Bound<'_, Self>) -> PyResult<Mono<Real>> {
         let op: crate::real::Affine<super::Tensor> = slf.extract()?;
-        Ok(Mono::try_from(base::boundary::Boundary::dom(&op)).unwrap())
+        Ok(op.dom())
     }
 
     /// The sorts it writes, as a tuple.
     #[getter]
     fn cod(slf: &Bound<'_, Self>) -> PyResult<Mono<Real>> {
         let op: crate::real::Affine<super::Tensor> = slf.extract()?;
-        Ok(Mono::try_from(base::boundary::Boundary::cod(&op)).unwrap())
+        Ok(op.cod())
     }
 }
 
@@ -231,7 +231,7 @@ impl Num {
     #[getter]
     fn cod(slf: &Bound<'_, Self>) -> PyResult<Mono<Real>> {
         let op: crate::real::Num<super::Tensor> = slf.extract()?;
-        Ok(Mono::try_from(base::boundary::Boundary::cod(&op)).unwrap())
+        Ok(op.cod())
     }
 }
 
@@ -298,14 +298,14 @@ impl Scale {
     #[getter]
     fn dom(slf: &Bound<'_, Self>) -> PyResult<Mono<Real>> {
         let op: crate::real::Scale<super::Tensor> = slf.extract()?;
-        Ok(Mono::try_from(base::boundary::Boundary::dom(&op)).unwrap())
+        Ok(op.dom())
     }
 
     /// The sorts it writes, as a tuple.
     #[getter]
     fn cod(slf: &Bound<'_, Self>) -> PyResult<Mono<Real>> {
         let op: crate::real::Scale<super::Tensor> = slf.extract()?;
-        Ok(Mono::try_from(base::boundary::Boundary::cod(&op)).unwrap())
+        Ok(op.cod())
     }
 }
 
@@ -332,32 +332,23 @@ impl<'py> IntoPyObject<'py> for crate::real::NRA<super::Tensor> {
         use crate::real::NRA;
 
         match self {
-            NRA::Num(op) => Num(
-                op.tensor().clone(),
-                super::sole(base::boundary::Boundary::cod(&op)).degree(),
-            )
-            .into_pyobject(py)
-            .map(Bound::into_any),
-            NRA::Scale(op) => Scale(
-                op.tensor().clone(),
-                super::sole(base::boundary::Boundary::dom(&op)).degree(),
-            )
-            .into_pyobject(py)
-            .map(Bound::into_any),
+            NRA::Num(op) => Num(op.tensor().clone(), super::sole(op.cod()).degree())
+                .into_pyobject(py)
+                .map(Bound::into_any),
+            NRA::Scale(op) => Scale(op.tensor().clone(), super::sole(op.dom()).degree())
+                .into_pyobject(py)
+                .map(Bound::into_any),
             NRA::Add(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Sub(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Mul(op) => op.into_pyobject(py).map(Bound::into_any),
             NRA::Div(op) => op.into_pyobject(py).map(Bound::into_any),
-            NRA::Linear(op) => Linear(
-                op.a().clone(),
-                super::sole(base::boundary::Boundary::dom(&op)),
-            )
-            .into_pyobject(py)
-            .map(Bound::into_any),
+            NRA::Linear(op) => Linear(op.a().clone(), super::sole(op.dom()))
+                .into_pyobject(py)
+                .map(Bound::into_any),
             NRA::Affine(op) => Affine(
                 op.a().clone(),
                 op.b().clone(),
-                super::sole(base::boundary::Boundary::cod(&op)).degree(),
+                super::sole(op.cod()).degree(),
             )
             .into_pyobject(py)
             .map(Bound::into_any),

@@ -38,7 +38,6 @@ sorts of the theory, rather than in [`Int`].
 use super::bool::Bool;
 use crate::Matrix;
 use crate::zero::Real0;
-#[cfg(feature = "pyo3")]
 use base::boundary::Mono;
 use base::boundary::{Boundary, Poly};
 use base::differentiable::Differentiable;
@@ -140,6 +139,11 @@ impl<T: Matrix> Num<T> {
         }
         Ok(Num { tensor })
     }
+
+    /// The sorts it writes.
+    pub(crate) fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.tensor.shape())]
+    }
 }
 
 impl<T> Num<T> {
@@ -183,6 +187,16 @@ impl<T: Matrix> Scale<T> {
             ));
         }
         Ok(Scale { tensor })
+    }
+
+    /// The sorts it reads.
+    pub(crate) fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.tensor.shape())]
+    }
+
+    /// The sorts it writes.
+    pub(crate) fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.tensor.shape())]
     }
 }
 
@@ -297,6 +311,18 @@ impl<T: Matrix> Linear<T> {
         }
         Ok(Linear { a, cols: k })
     }
+
+    /// The sorts it reads.
+    pub(crate) fn dom(&self) -> Mono<Int> {
+        let [_, n] = self.a.shape();
+        mono![Int::new_unchecked([n, self.cols])]
+    }
+
+    /// The sorts it writes.
+    pub(crate) fn cod(&self) -> Mono<Int> {
+        let [m, _] = self.a.shape();
+        mono![Int::new_unchecked([m, self.cols])]
+    }
 }
 
 impl<T> Linear<T> {
@@ -346,6 +372,18 @@ impl<T: Matrix> Affine<T> {
             ));
         }
         Ok(op)
+    }
+
+    /// The sorts it reads.
+    pub(crate) fn dom(&self) -> Mono<Int> {
+        let [_, n] = self.a.shape();
+        let [_, k] = self.b.shape();
+        mono![Int::new_unchecked([n, k])]
+    }
+
+    /// The sorts it writes.
+    pub(crate) fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.b.shape())]
     }
 }
 
@@ -619,114 +657,114 @@ pub enum NIA<T> {
 impl<T: Matrix> Boundary<Ints> for NIA<T> {
     fn dom(&self) -> Poly<Ints> {
         match self {
-            NIA::Num(op) => op.dom().map(Ints::from),
-            NIA::Scale(op) => op.dom().map(Ints::from),
-            NIA::Add(op) => op.dom().map(Ints::from),
-            NIA::Sub(op) => op.dom().map(Ints::from),
-            NIA::Mul(op) => op.dom().map(Ints::from),
-            NIA::Div(op) => op.dom().map(Ints::from),
-            NIA::Mod(op) => op.dom().map(Ints::from),
-            NIA::Linear(op) => op.dom().map(Ints::from),
-            NIA::Affine(op) => op.dom().map(Ints::from),
-            NIA::ReLU(op) => op.dom().map(Ints::from),
-            NIA::Abs(op) => op.dom().map(Ints::from),
-            NIA::Neg(op) => op.dom().map(Ints::from),
-            NIA::Argmax(op) => op.dom().map(Ints::from),
-            NIA::Min(op) => op.dom().map(Ints::from),
-            NIA::Max(op) => op.dom().map(Ints::from),
-            NIA::Transpose(op) => op.dom().map(Ints::from),
-            NIA::MatMul(op) => op.dom().map(Ints::from),
-            NIA::Lt(op) => op.dom(),
-            NIA::Ite(op) => op.dom(),
-            NIA::BroadcastIte(op) => op.dom(),
-            NIA::Le(op) => op.dom(),
-            NIA::Gt(op) => op.dom(),
-            NIA::Ge(op) => op.dom(),
-            NIA::Eq(op) => op.dom(),
-            NIA::Ne(op) => op.dom(),
+            NIA::Num(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Scale(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Add(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Sub(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Mul(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Div(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Mod(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Linear(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Affine(op) => Boundary::dom(op).map(Ints::from),
+            NIA::ReLU(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Abs(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Neg(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Argmax(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Min(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Max(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Transpose(op) => Boundary::dom(op).map(Ints::from),
+            NIA::MatMul(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Lt(op) => Boundary::dom(op),
+            NIA::Ite(op) => Boundary::dom(op),
+            NIA::BroadcastIte(op) => Boundary::dom(op),
+            NIA::Le(op) => Boundary::dom(op),
+            NIA::Gt(op) => Boundary::dom(op),
+            NIA::Ge(op) => Boundary::dom(op),
+            NIA::Eq(op) => Boundary::dom(op),
+            NIA::Ne(op) => Boundary::dom(op),
         }
     }
 
     fn cod(&self) -> Poly<Ints> {
         match self {
-            NIA::Num(op) => op.cod().map(Ints::from),
-            NIA::Scale(op) => op.cod().map(Ints::from),
-            NIA::Add(op) => op.cod().map(Ints::from),
-            NIA::Sub(op) => op.cod().map(Ints::from),
-            NIA::Mul(op) => op.cod().map(Ints::from),
-            NIA::Div(op) => op.cod().map(Ints::from),
-            NIA::Mod(op) => op.cod().map(Ints::from),
-            NIA::Linear(op) => op.cod().map(Ints::from),
-            NIA::Affine(op) => op.cod().map(Ints::from),
-            NIA::ReLU(op) => op.cod().map(Ints::from),
-            NIA::Abs(op) => op.cod().map(Ints::from),
-            NIA::Neg(op) => op.cod().map(Ints::from),
-            NIA::Argmax(op) => op.cod().map(Ints::from),
-            NIA::Min(op) => op.cod().map(Ints::from),
-            NIA::Max(op) => op.cod().map(Ints::from),
-            NIA::Transpose(op) => op.cod().map(Ints::from),
-            NIA::MatMul(op) => op.cod().map(Ints::from),
-            NIA::Lt(op) => op.cod(),
-            NIA::Ite(op) => op.cod(),
-            NIA::BroadcastIte(op) => op.cod(),
-            NIA::Le(op) => op.cod(),
-            NIA::Gt(op) => op.cod(),
-            NIA::Ge(op) => op.cod(),
-            NIA::Eq(op) => op.cod(),
-            NIA::Ne(op) => op.cod(),
+            NIA::Num(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Scale(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Add(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Sub(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Mul(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Div(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Mod(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Linear(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Affine(op) => Boundary::cod(op).map(Ints::from),
+            NIA::ReLU(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Abs(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Neg(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Argmax(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Min(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Max(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Transpose(op) => Boundary::cod(op).map(Ints::from),
+            NIA::MatMul(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Lt(op) => Boundary::cod(op),
+            NIA::Ite(op) => Boundary::cod(op),
+            NIA::BroadcastIte(op) => Boundary::cod(op),
+            NIA::Le(op) => Boundary::cod(op),
+            NIA::Gt(op) => Boundary::cod(op),
+            NIA::Ge(op) => Boundary::cod(op),
+            NIA::Eq(op) => Boundary::cod(op),
+            NIA::Ne(op) => Boundary::cod(op),
         }
     }
 }
 impl<T: Matrix> Boundary<Ints> for LIA<T> {
     fn dom(&self) -> Poly<Ints> {
         match self {
-            LIA::Num(op) => op.dom().map(Ints::from),
-            LIA::Scale(op) => op.dom().map(Ints::from),
-            LIA::Add(op) => op.dom().map(Ints::from),
-            LIA::Sub(op) => op.dom().map(Ints::from),
-            LIA::Linear(op) => op.dom().map(Ints::from),
-            LIA::Affine(op) => op.dom().map(Ints::from),
-            LIA::ReLU(op) => op.dom().map(Ints::from),
-            LIA::Abs(op) => op.dom().map(Ints::from),
-            LIA::Neg(op) => op.dom().map(Ints::from),
-            LIA::Argmax(op) => op.dom().map(Ints::from),
-            LIA::Min(op) => op.dom().map(Ints::from),
-            LIA::Max(op) => op.dom().map(Ints::from),
-            LIA::Transpose(op) => op.dom().map(Ints::from),
-            LIA::Lt(op) => op.dom(),
-            LIA::Ite(op) => op.dom(),
-            LIA::BroadcastIte(op) => op.dom(),
-            LIA::Le(op) => op.dom(),
-            LIA::Gt(op) => op.dom(),
-            LIA::Ge(op) => op.dom(),
-            LIA::Eq(op) => op.dom(),
-            LIA::Ne(op) => op.dom(),
+            LIA::Num(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Scale(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Add(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Sub(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Linear(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Affine(op) => Boundary::dom(op).map(Ints::from),
+            LIA::ReLU(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Abs(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Neg(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Argmax(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Min(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Max(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Transpose(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Lt(op) => Boundary::dom(op),
+            LIA::Ite(op) => Boundary::dom(op),
+            LIA::BroadcastIte(op) => Boundary::dom(op),
+            LIA::Le(op) => Boundary::dom(op),
+            LIA::Gt(op) => Boundary::dom(op),
+            LIA::Ge(op) => Boundary::dom(op),
+            LIA::Eq(op) => Boundary::dom(op),
+            LIA::Ne(op) => Boundary::dom(op),
         }
     }
 
     fn cod(&self) -> Poly<Ints> {
         match self {
-            LIA::Num(op) => op.cod().map(Ints::from),
-            LIA::Scale(op) => op.cod().map(Ints::from),
-            LIA::Add(op) => op.cod().map(Ints::from),
-            LIA::Sub(op) => op.cod().map(Ints::from),
-            LIA::Linear(op) => op.cod().map(Ints::from),
-            LIA::Affine(op) => op.cod().map(Ints::from),
-            LIA::ReLU(op) => op.cod().map(Ints::from),
-            LIA::Abs(op) => op.cod().map(Ints::from),
-            LIA::Neg(op) => op.cod().map(Ints::from),
-            LIA::Argmax(op) => op.cod().map(Ints::from),
-            LIA::Min(op) => op.cod().map(Ints::from),
-            LIA::Max(op) => op.cod().map(Ints::from),
-            LIA::Transpose(op) => op.cod().map(Ints::from),
-            LIA::Lt(op) => op.cod(),
-            LIA::Ite(op) => op.cod(),
-            LIA::BroadcastIte(op) => op.cod(),
-            LIA::Le(op) => op.cod(),
-            LIA::Gt(op) => op.cod(),
-            LIA::Ge(op) => op.cod(),
-            LIA::Eq(op) => op.cod(),
-            LIA::Ne(op) => op.cod(),
+            LIA::Num(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Scale(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Add(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Sub(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Linear(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Affine(op) => Boundary::cod(op).map(Ints::from),
+            LIA::ReLU(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Abs(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Neg(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Argmax(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Min(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Max(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Transpose(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Lt(op) => Boundary::cod(op),
+            LIA::Ite(op) => Boundary::cod(op),
+            LIA::BroadcastIte(op) => Boundary::cod(op),
+            LIA::Le(op) => Boundary::cod(op),
+            LIA::Gt(op) => Boundary::cod(op),
+            LIA::Ge(op) => Boundary::cod(op),
+            LIA::Eq(op) => Boundary::cod(op),
+            LIA::Ne(op) => Boundary::cod(op),
         }
     }
 }
@@ -737,7 +775,7 @@ impl<T: Matrix> Boundary<Int> for Num<T> {
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.tensor.shape())].into()
+        Num::cod(self).into()
     }
 }
 
@@ -745,61 +783,61 @@ impl<T: Matrix> Boundary<Int> for Num<T> {
 /// matrices.
 impl<T: Matrix> Boundary<Int> for Scale<T> {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.tensor.shape())].into()
+        Scale::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.tensor.shape())].into()
+        Scale::cod(self).into()
     }
 }
 
 impl Boundary<Int> for Add {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape); 2].into()
+        Add::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape)].into()
+        Add::cod(self).into()
     }
 }
 
 impl Boundary<Int> for Sub {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape); 2].into()
+        Sub::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape)].into()
+        Sub::cod(self).into()
     }
 }
 
 impl Boundary<Int> for Mul {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape); 2].into()
+        Mul::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape)].into()
+        Mul::cod(self).into()
     }
 }
 
 impl Boundary<Int> for Div {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape); 2].into()
+        Div::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape)].into()
+        Div::cod(self).into()
     }
 }
 
 impl Boundary<Int> for Mod {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape); 2].into()
+        Mod::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape)].into()
+        Mod::cod(self).into()
     }
 }
 
@@ -807,13 +845,11 @@ impl Boundary<Int> for Mod {
 /// matrix of shape `[m, k]`.
 impl<T: Matrix> Boundary<Int> for Linear<T> {
     fn dom(&self) -> Poly<Int> {
-        let [_, n] = self.a.shape();
-        mono![Int::new_unchecked([n, self.cols])].into()
+        Linear::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        let [m, _] = self.a.shape();
-        mono![Int::new_unchecked([m, self.cols])].into()
+        Linear::cod(self).into()
     }
 }
 
@@ -821,172 +857,163 @@ impl<T: Matrix> Boundary<Int> for Linear<T> {
 /// of shape `[n, k]` to a matrix of shape `[m, k]`.
 impl<T: Matrix> Boundary<Int> for Affine<T> {
     fn dom(&self) -> Poly<Int> {
-        let [_, n] = self.a.shape();
-        let [_, k] = self.b.shape();
-        mono![Int::new_unchecked([n, k])].into()
+        Affine::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.b.shape())].into()
+        Affine::cod(self).into()
     }
 }
 
 impl Boundary<Int> for Neg {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape)].into()
+        Neg::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape)].into()
+        Neg::cod(self).into()
     }
 }
 
 impl Boundary<Int> for Abs {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape)].into()
+        Abs::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape)].into()
+        Abs::cod(self).into()
     }
 }
 
 impl Boundary<Int> for ReLU {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape)].into()
+        ReLU::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape)].into()
+        ReLU::cod(self).into()
     }
 }
 
 impl Boundary<Int> for Min {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape); 2].into()
+        Min::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape)].into()
+        Min::cod(self).into()
     }
 }
 
 impl Boundary<Int> for Max {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape); 2].into()
+        Max::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape)].into()
+        Max::cod(self).into()
     }
 }
 
 /// Takes a matrix of shape `[m, n]` to one of shape `[n, m]`.
 impl Boundary<Int> for Transpose {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape)].into()
+        Transpose::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new_unchecked([self.shape[1], self.shape[0]])].into()
+        Transpose::cod(self).into()
     }
 }
 
 /// Takes matrices of shapes `[m, n]` and `[n, k]` to one of shape `[m, k]`.
 impl Boundary<Int> for MatMul {
     fn dom(&self) -> Poly<Int> {
-        let [lhs, rhs] = self.shapes;
-        mono![Int::new_unchecked(lhs), Int::new_unchecked(rhs)].into()
+        MatMul::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        let [[m, _], [_, k]] = self.shapes;
-        mono![Int::new_unchecked([m, k])].into()
+        MatMul::cod(self).into()
     }
 }
 
 impl Boundary<Ints> for Lt {
     fn dom(&self) -> Poly<Ints> {
-        mono![Int::new_unchecked(self.shape).into(); 2].into()
+        Lt::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Ints> {
-        mono![Bool::new_unchecked(self.shape).into()].into()
+        Lt::cod(self).into()
     }
 }
 
 impl Boundary<Ints> for Le {
     fn dom(&self) -> Poly<Ints> {
-        mono![Int::new_unchecked(self.shape).into(); 2].into()
+        Le::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Ints> {
-        mono![Bool::new_unchecked(self.shape).into()].into()
+        Le::cod(self).into()
     }
 }
 
 impl Boundary<Ints> for Gt {
     fn dom(&self) -> Poly<Ints> {
-        mono![Int::new_unchecked(self.shape).into(); 2].into()
+        Gt::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Ints> {
-        mono![Bool::new_unchecked(self.shape).into()].into()
+        Gt::cod(self).into()
     }
 }
 
 impl Boundary<Ints> for Ge {
     fn dom(&self) -> Poly<Ints> {
-        mono![Int::new_unchecked(self.shape).into(); 2].into()
+        Ge::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Ints> {
-        mono![Bool::new_unchecked(self.shape).into()].into()
+        Ge::cod(self).into()
     }
 }
 
 impl Boundary<Ints> for Eq {
     fn dom(&self) -> Poly<Ints> {
-        mono![Int::new_unchecked(self.shape).into(); 2].into()
+        Eq::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Ints> {
-        mono![Bool::new_unchecked(self.shape).into()].into()
+        Eq::cod(self).into()
     }
 }
 
 impl Boundary<Ints> for Ne {
     fn dom(&self) -> Poly<Ints> {
-        mono![Int::new_unchecked(self.shape).into(); 2].into()
+        Ne::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Ints> {
-        mono![Bool::new_unchecked(self.shape).into()].into()
+        Ne::cod(self).into()
     }
 }
 
 impl Boundary<Int> for Argmax {
     fn dom(&self) -> Poly<Int> {
-        mono![Int::new_unchecked(self.shape)].into()
+        Argmax::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Int> {
-        mono![Int::new_unchecked([1, 1])].into()
+        Argmax::cod(self).into()
     }
 }
 
 impl Boundary<Ints> for Ite {
     fn dom(&self) -> Poly<Ints> {
-        mono![
-            Bool::new_unchecked(self.shape).into(),
-            Int::new_unchecked(self.shape).into(),
-            Int::new_unchecked(self.shape).into()
-        ]
-        .into()
+        Ite::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Ints> {
-        mono![Int::new_unchecked(self.shape).into()].into()
+        Ite::cod(self).into()
     }
 }
 
@@ -1126,17 +1153,15 @@ impl Add {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
     }
 }
 
@@ -1175,17 +1200,15 @@ impl Sub {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
     }
 }
 
@@ -1224,17 +1247,15 @@ impl Mul {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
     }
 }
 
@@ -1273,17 +1294,15 @@ impl Div {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
     }
 }
 
@@ -1322,17 +1341,15 @@ impl Mod {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
     }
 }
 
@@ -1371,17 +1388,15 @@ impl Neg {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
     }
 }
 
@@ -1420,17 +1435,15 @@ impl Abs {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
     }
 }
 
@@ -1469,17 +1482,15 @@ impl ReLU {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
     }
 }
 
@@ -1512,17 +1523,15 @@ impl Argmax {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked([1, 1])]
     }
 }
 
@@ -1561,17 +1570,15 @@ impl Min {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
     }
 }
 
@@ -1610,17 +1617,15 @@ impl Max {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
     }
 }
 
@@ -1660,17 +1665,15 @@ impl Transpose {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked([self.shape[1], self.shape[0]])]
     }
 }
 
@@ -1711,17 +1714,17 @@ impl MatMul {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        let [lhs, rhs] = self.shapes;
+        mono![Int::new_unchecked(lhs), Int::new_unchecked(rhs)]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Int> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        let [[m, _], [_, k]] = self.shapes;
+        mono![Int::new_unchecked([m, k])]
     }
 }
 
@@ -1760,17 +1763,15 @@ impl Lt {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Ints> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Ints> {
+        mono![Int::new_unchecked(self.shape).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Ints> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Ints> {
+        mono![Bool::new_unchecked(self.shape).into()]
     }
 }
 
@@ -1818,17 +1819,19 @@ impl Ite {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Ints> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Ints> {
+        mono![
+            Bool::new_unchecked(self.shape).into(),
+            Int::new_unchecked(self.shape).into(),
+            Int::new_unchecked(self.shape).into()
+        ]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Ints> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Ints> {
+        mono![Int::new_unchecked(self.shape).into()]
     }
 }
 
@@ -1867,17 +1870,15 @@ impl Le {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Ints> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Ints> {
+        mono![Int::new_unchecked(self.shape).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Ints> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Ints> {
+        mono![Bool::new_unchecked(self.shape).into()]
     }
 }
 
@@ -1916,17 +1917,15 @@ impl Gt {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Ints> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Ints> {
+        mono![Int::new_unchecked(self.shape).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Ints> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Ints> {
+        mono![Bool::new_unchecked(self.shape).into()]
     }
 }
 
@@ -1965,17 +1964,15 @@ impl Ge {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Ints> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Ints> {
+        mono![Int::new_unchecked(self.shape).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Ints> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Ints> {
+        mono![Bool::new_unchecked(self.shape).into()]
     }
 }
 
@@ -2014,17 +2011,15 @@ impl Eq {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Ints> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Ints> {
+        mono![Int::new_unchecked(self.shape).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Ints> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Ints> {
+        mono![Bool::new_unchecked(self.shape).into()]
     }
 }
 
@@ -2063,17 +2058,15 @@ impl Ne {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Ints> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Ints> {
+        mono![Int::new_unchecked(self.shape).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Ints> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Ints> {
+        mono![Bool::new_unchecked(self.shape).into()]
     }
 }
 
@@ -2100,16 +2093,11 @@ pub mod broadcast {
 
     impl Boundary<Ints> for Ite {
         fn dom(&self) -> Poly<Ints> {
-            mono![
-                Bool::new_unchecked([1, 1]).into(),
-                Int::new_unchecked(self.shape).into(),
-                Int::new_unchecked(self.shape).into()
-            ]
-            .into()
+            Ite::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Ints> {
-            mono![Int::new_unchecked(self.shape).into()].into()
+            Ite::cod(self).into()
         }
     }
 
@@ -2157,17 +2145,19 @@ pub mod broadcast {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Ints> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Ints> {
+            mono![
+                Bool::new_unchecked([1, 1]).into(),
+                Int::new_unchecked(self.shape).into(),
+                Int::new_unchecked(self.shape).into()
+            ]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Ints> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Ints> {
+            mono![Int::new_unchecked(self.shape).into()]
         }
     }
 }

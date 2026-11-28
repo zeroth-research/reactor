@@ -52,7 +52,6 @@ comparisons, `=` and `distinct` write booleans, as in SMT-LIB2.
 use super::bool::Bool;
 use crate::Matrix;
 use crate::zero::Real0;
-#[cfg(feature = "pyo3")]
 use base::boundary::Mono;
 use base::boundary::{Boundary, Poly};
 use base::differentiable::Differentiable;
@@ -177,6 +176,11 @@ impl<T: Matrix> Num<T> {
             tensor,
             width: x.width(),
         })
+    }
+
+    /// The sorts it writes.
+    pub(crate) fn cod(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.tensor.shape()).into()]
     }
 }
 
@@ -538,91 +542,91 @@ pub enum BV<T> {
 impl<T: Matrix> Boundary<Words> for BV<T> {
     fn dom(&self) -> Poly<Words> {
         match self {
-            BV::Num(op) => op.dom(),
-            BV::Concat(op) => op.dom(),
-            BV::Extract(op) => op.dom(),
-            BV::Repeat(op) => op.dom(),
-            BV::Not(op) => op.dom(),
-            BV::And(op) => op.dom(),
-            BV::Or(op) => op.dom(),
-            BV::Xor(op) => op.dom(),
-            BV::Nand(op) => op.dom(),
-            BV::Nor(op) => op.dom(),
-            BV::Xnor(op) => op.dom(),
-            BV::Neg(op) => op.dom(),
-            BV::Ite(op) => op.dom(),
-            BV::BroadcastIte(op) => op.dom(),
-            BV::Add(op) => op.dom(),
-            BV::Sub(op) => op.dom(),
-            BV::Mul(op) => op.dom(),
-            BV::Shl(op) => op.dom(),
-            BV::RotateLeft(op) => op.dom(),
-            BV::RotateRight(op) => op.dom(),
-            BV::Eq(op) => op.dom(),
-            BV::Ne(op) => op.dom(),
-            BV::SDiv(op) => op.dom(),
-            BV::Abs(op) => op.dom(),
-            BV::SRem(op) => op.dom(),
-            BV::SMod(op) => op.dom(),
-            BV::AShr(op) => op.dom(),
-            BV::SignExtend(op) => op.dom(),
-            BV::SLt(op) => op.dom(),
-            BV::SLe(op) => op.dom(),
-            BV::SGt(op) => op.dom(),
-            BV::SGe(op) => op.dom(),
-            BV::UDiv(op) => op.dom(),
-            BV::URem(op) => op.dom(),
-            BV::LShr(op) => op.dom(),
-            BV::ZeroExtend(op) => op.dom(),
-            BV::ULt(op) => op.dom(),
-            BV::ULe(op) => op.dom(),
-            BV::UGt(op) => op.dom(),
-            BV::UGe(op) => op.dom(),
+            BV::Num(op) => Boundary::dom(op),
+            BV::Concat(op) => Boundary::dom(op),
+            BV::Extract(op) => Boundary::dom(op),
+            BV::Repeat(op) => Boundary::dom(op),
+            BV::Not(op) => Boundary::dom(op),
+            BV::And(op) => Boundary::dom(op),
+            BV::Or(op) => Boundary::dom(op),
+            BV::Xor(op) => Boundary::dom(op),
+            BV::Nand(op) => Boundary::dom(op),
+            BV::Nor(op) => Boundary::dom(op),
+            BV::Xnor(op) => Boundary::dom(op),
+            BV::Neg(op) => Boundary::dom(op),
+            BV::Ite(op) => Boundary::dom(op),
+            BV::BroadcastIte(op) => Boundary::dom(op),
+            BV::Add(op) => Boundary::dom(op),
+            BV::Sub(op) => Boundary::dom(op),
+            BV::Mul(op) => Boundary::dom(op),
+            BV::Shl(op) => Boundary::dom(op),
+            BV::RotateLeft(op) => Boundary::dom(op),
+            BV::RotateRight(op) => Boundary::dom(op),
+            BV::Eq(op) => Boundary::dom(op),
+            BV::Ne(op) => Boundary::dom(op),
+            BV::SDiv(op) => Boundary::dom(op),
+            BV::Abs(op) => Boundary::dom(op),
+            BV::SRem(op) => Boundary::dom(op),
+            BV::SMod(op) => Boundary::dom(op),
+            BV::AShr(op) => Boundary::dom(op),
+            BV::SignExtend(op) => Boundary::dom(op),
+            BV::SLt(op) => Boundary::dom(op),
+            BV::SLe(op) => Boundary::dom(op),
+            BV::SGt(op) => Boundary::dom(op),
+            BV::SGe(op) => Boundary::dom(op),
+            BV::UDiv(op) => Boundary::dom(op),
+            BV::URem(op) => Boundary::dom(op),
+            BV::LShr(op) => Boundary::dom(op),
+            BV::ZeroExtend(op) => Boundary::dom(op),
+            BV::ULt(op) => Boundary::dom(op),
+            BV::ULe(op) => Boundary::dom(op),
+            BV::UGt(op) => Boundary::dom(op),
+            BV::UGe(op) => Boundary::dom(op),
         }
     }
 
     fn cod(&self) -> Poly<Words> {
         match self {
-            BV::Num(op) => op.cod(),
-            BV::Concat(op) => op.cod(),
-            BV::Extract(op) => op.cod(),
-            BV::Repeat(op) => op.cod(),
-            BV::Not(op) => op.cod(),
-            BV::And(op) => op.cod(),
-            BV::Or(op) => op.cod(),
-            BV::Xor(op) => op.cod(),
-            BV::Nand(op) => op.cod(),
-            BV::Nor(op) => op.cod(),
-            BV::Xnor(op) => op.cod(),
-            BV::Neg(op) => op.cod(),
-            BV::Ite(op) => op.cod(),
-            BV::BroadcastIte(op) => op.cod(),
-            BV::Add(op) => op.cod(),
-            BV::Sub(op) => op.cod(),
-            BV::Mul(op) => op.cod(),
-            BV::Shl(op) => op.cod(),
-            BV::RotateLeft(op) => op.cod(),
-            BV::RotateRight(op) => op.cod(),
-            BV::Eq(op) => op.cod(),
-            BV::Ne(op) => op.cod(),
-            BV::SDiv(op) => op.cod(),
-            BV::Abs(op) => op.cod(),
-            BV::SRem(op) => op.cod(),
-            BV::SMod(op) => op.cod(),
-            BV::AShr(op) => op.cod(),
-            BV::SignExtend(op) => op.cod(),
-            BV::SLt(op) => op.cod(),
-            BV::SLe(op) => op.cod(),
-            BV::SGt(op) => op.cod(),
-            BV::SGe(op) => op.cod(),
-            BV::UDiv(op) => op.cod(),
-            BV::URem(op) => op.cod(),
-            BV::LShr(op) => op.cod(),
-            BV::ZeroExtend(op) => op.cod(),
-            BV::ULt(op) => op.cod(),
-            BV::ULe(op) => op.cod(),
-            BV::UGt(op) => op.cod(),
-            BV::UGe(op) => op.cod(),
+            BV::Num(op) => Boundary::cod(op),
+            BV::Concat(op) => Boundary::cod(op),
+            BV::Extract(op) => Boundary::cod(op),
+            BV::Repeat(op) => Boundary::cod(op),
+            BV::Not(op) => Boundary::cod(op),
+            BV::And(op) => Boundary::cod(op),
+            BV::Or(op) => Boundary::cod(op),
+            BV::Xor(op) => Boundary::cod(op),
+            BV::Nand(op) => Boundary::cod(op),
+            BV::Nor(op) => Boundary::cod(op),
+            BV::Xnor(op) => Boundary::cod(op),
+            BV::Neg(op) => Boundary::cod(op),
+            BV::Ite(op) => Boundary::cod(op),
+            BV::BroadcastIte(op) => Boundary::cod(op),
+            BV::Add(op) => Boundary::cod(op),
+            BV::Sub(op) => Boundary::cod(op),
+            BV::Mul(op) => Boundary::cod(op),
+            BV::Shl(op) => Boundary::cod(op),
+            BV::RotateLeft(op) => Boundary::cod(op),
+            BV::RotateRight(op) => Boundary::cod(op),
+            BV::Eq(op) => Boundary::cod(op),
+            BV::Ne(op) => Boundary::cod(op),
+            BV::SDiv(op) => Boundary::cod(op),
+            BV::Abs(op) => Boundary::cod(op),
+            BV::SRem(op) => Boundary::cod(op),
+            BV::SMod(op) => Boundary::cod(op),
+            BV::AShr(op) => Boundary::cod(op),
+            BV::SignExtend(op) => Boundary::cod(op),
+            BV::SLt(op) => Boundary::cod(op),
+            BV::SLe(op) => Boundary::cod(op),
+            BV::SGt(op) => Boundary::cod(op),
+            BV::SGe(op) => Boundary::cod(op),
+            BV::UDiv(op) => Boundary::cod(op),
+            BV::URem(op) => Boundary::cod(op),
+            BV::LShr(op) => Boundary::cod(op),
+            BV::ZeroExtend(op) => Boundary::cod(op),
+            BV::ULt(op) => Boundary::cod(op),
+            BV::ULe(op) => Boundary::cod(op),
+            BV::UGt(op) => Boundary::cod(op),
+            BV::UGe(op) => Boundary::cod(op),
         }
     }
 }
@@ -633,218 +637,207 @@ impl<T: Matrix> Boundary<Words> for Num<T> {
     }
 
     fn cod(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.tensor.shape()).into()].into()
+        Num::cod(self).into()
     }
 }
 
 impl Boundary<Words> for Concat {
     fn dom(&self) -> Poly<Words> {
-        let ([u, v], shape) = (self.widths, self.shape);
-        mono![
-            Word::new_unchecked(u, shape).into(),
-            Word::new_unchecked(v, shape).into()
-        ]
-        .into()
+        Concat::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Words> {
-        let [u, v] = self.widths;
-        mono![Word::new_unchecked(u + v, self.shape).into()].into()
+        Concat::cod(self).into()
     }
 }
 
 impl Boundary<Words> for Extract {
     fn dom(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        Extract::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.i - self.j + 1, self.shape).into()].into()
+        Extract::cod(self).into()
     }
 }
 
 impl Boundary<Words> for Repeat {
     fn dom(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        Repeat::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.i * self.width, self.shape).into()].into()
+        Repeat::cod(self).into()
     }
 }
 
 impl Boundary<Words> for Not {
     fn dom(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        Not::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        Not::cod(self).into()
     }
 }
 
 impl Boundary<Words> for And {
     fn dom(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+        And::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        And::cod(self).into()
     }
 }
 
 impl Boundary<Words> for Or {
     fn dom(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+        Or::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        Or::cod(self).into()
     }
 }
 
 impl Boundary<Words> for Xor {
     fn dom(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+        Xor::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        Xor::cod(self).into()
     }
 }
 
 impl Boundary<Words> for Nand {
     fn dom(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+        Nand::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        Nand::cod(self).into()
     }
 }
 
 impl Boundary<Words> for Nor {
     fn dom(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+        Nor::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        Nor::cod(self).into()
     }
 }
 
 impl Boundary<Words> for Xnor {
     fn dom(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+        Xnor::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        Xnor::cod(self).into()
     }
 }
 
 impl Boundary<Words> for Neg {
     fn dom(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        Neg::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        Neg::cod(self).into()
     }
 }
 
 impl Boundary<Words> for Add {
     fn dom(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+        Add::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        Add::cod(self).into()
     }
 }
 
 impl Boundary<Words> for Sub {
     fn dom(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+        Sub::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        Sub::cod(self).into()
     }
 }
 
 impl Boundary<Words> for Mul {
     fn dom(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+        Mul::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        Mul::cod(self).into()
     }
 }
 
 impl Boundary<Words> for Shl {
     fn dom(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+        Shl::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        Shl::cod(self).into()
     }
 }
 
 impl Boundary<Words> for RotateLeft {
     fn dom(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        RotateLeft::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        RotateLeft::cod(self).into()
     }
 }
 
 impl Boundary<Words> for RotateRight {
     fn dom(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        RotateRight::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        RotateRight::cod(self).into()
     }
 }
 
 impl Boundary<Words> for Eq {
     fn dom(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+        Eq::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Words> {
-        mono![Bool::new_unchecked(self.shape).into()].into()
+        Eq::cod(self).into()
     }
 }
 
 impl Boundary<Words> for Ne {
     fn dom(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+        Ne::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Words> {
-        mono![Bool::new_unchecked(self.shape).into()].into()
+        Ne::cod(self).into()
     }
 }
 
 impl Boundary<Words> for Ite {
     fn dom(&self) -> Poly<Words> {
-        mono![
-            Bool::new_unchecked(self.shape).into(),
-            Word::new_unchecked(self.width, self.shape).into(),
-            Word::new_unchecked(self.width, self.shape).into()
-        ]
-        .into()
+        Ite::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Words> {
-        mono![Word::new_unchecked(self.width, self.shape).into()].into()
+        Ite::cod(self).into()
     }
 }
 
@@ -853,7 +846,6 @@ impl Boundary<Words> for Ite {
 pub mod signed {
     use super::{Word, Words};
     use crate::bool::Bool;
-    #[cfg(feature = "pyo3")]
     use base::boundary::Mono;
     use base::boundary::{Boundary, Poly};
     use base::mono;
@@ -1010,101 +1002,101 @@ pub mod signed {
 
     impl Boundary<Words> for Div {
         fn dom(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+            Div::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into()].into()
+            Div::cod(self).into()
         }
     }
 
     impl Boundary<Words> for Rem {
         fn dom(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+            Rem::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into()].into()
+            Rem::cod(self).into()
         }
     }
 
     impl Boundary<Words> for Mod {
         fn dom(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+            Mod::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into()].into()
+            Mod::cod(self).into()
         }
     }
 
     impl Boundary<Words> for Shr {
         fn dom(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+            Shr::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into()].into()
+            Shr::cod(self).into()
         }
     }
 
     impl Boundary<Words> for Extend {
         fn dom(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into()].into()
+            Extend::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width + self.i, self.shape).into()].into()
+            Extend::cod(self).into()
         }
     }
 
     impl Boundary<Words> for Lt {
         fn dom(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+            Lt::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Words> {
-            mono![Bool::new_unchecked(self.shape).into()].into()
+            Lt::cod(self).into()
         }
     }
 
     impl Boundary<Words> for Le {
         fn dom(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+            Le::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Words> {
-            mono![Bool::new_unchecked(self.shape).into()].into()
+            Le::cod(self).into()
         }
     }
 
     impl Boundary<Words> for Gt {
         fn dom(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+            Gt::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Words> {
-            mono![Bool::new_unchecked(self.shape).into()].into()
+            Gt::cod(self).into()
         }
     }
 
     impl Boundary<Words> for Ge {
         fn dom(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+            Ge::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Words> {
-            mono![Bool::new_unchecked(self.shape).into()].into()
+            Ge::cod(self).into()
         }
     }
 
     impl Boundary<Words> for Abs {
         fn dom(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into()].into()
+            Abs::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into()].into()
+            Abs::cod(self).into()
         }
     }
 
@@ -1150,17 +1142,15 @@ pub mod signed {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into(); 2]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into()]
         }
     }
 
@@ -1205,17 +1195,15 @@ pub mod signed {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into()]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into()]
         }
     }
 
@@ -1260,17 +1248,15 @@ pub mod signed {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into(); 2]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into()]
         }
     }
 
@@ -1315,17 +1301,15 @@ pub mod signed {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into(); 2]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into()]
         }
     }
 
@@ -1370,17 +1354,15 @@ pub mod signed {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into(); 2]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into()]
         }
     }
 
@@ -1441,17 +1423,15 @@ pub mod signed {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into()]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width + self.i, self.shape).into()]
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -1492,17 +1472,15 @@ pub mod signed {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into(); 2]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Words> {
+            mono![Bool::new_unchecked(self.shape).into()]
         }
     }
 
@@ -1538,17 +1516,15 @@ pub mod signed {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into(); 2]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Words> {
+            mono![Bool::new_unchecked(self.shape).into()]
         }
     }
 
@@ -1584,17 +1560,15 @@ pub mod signed {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into(); 2]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Words> {
+            mono![Bool::new_unchecked(self.shape).into()]
         }
     }
 
@@ -1630,17 +1604,15 @@ pub mod signed {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into(); 2]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Words> {
+            mono![Bool::new_unchecked(self.shape).into()]
         }
     }
 }
@@ -1650,7 +1622,6 @@ pub mod signed {
 pub mod unsigned {
     use super::{Word, Words};
     use crate::bool::Bool;
-    #[cfg(feature = "pyo3")]
     use base::boundary::Mono;
     use base::boundary::{Boundary, Poly};
     use base::mono;
@@ -1776,81 +1747,81 @@ pub mod unsigned {
 
     impl Boundary<Words> for Div {
         fn dom(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+            Div::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into()].into()
+            Div::cod(self).into()
         }
     }
 
     impl Boundary<Words> for Rem {
         fn dom(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+            Rem::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into()].into()
+            Rem::cod(self).into()
         }
     }
 
     impl Boundary<Words> for Shr {
         fn dom(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+            Shr::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into()].into()
+            Shr::cod(self).into()
         }
     }
 
     impl Boundary<Words> for Extend {
         fn dom(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into()].into()
+            Extend::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width + self.i, self.shape).into()].into()
+            Extend::cod(self).into()
         }
     }
 
     impl Boundary<Words> for Lt {
         fn dom(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+            Lt::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Words> {
-            mono![Bool::new_unchecked(self.shape).into()].into()
+            Lt::cod(self).into()
         }
     }
 
     impl Boundary<Words> for Le {
         fn dom(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+            Le::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Words> {
-            mono![Bool::new_unchecked(self.shape).into()].into()
+            Le::cod(self).into()
         }
     }
 
     impl Boundary<Words> for Gt {
         fn dom(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+            Gt::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Words> {
-            mono![Bool::new_unchecked(self.shape).into()].into()
+            Gt::cod(self).into()
         }
     }
 
     impl Boundary<Words> for Ge {
         fn dom(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into(); 2].into()
+            Ge::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Words> {
-            mono![Bool::new_unchecked(self.shape).into()].into()
+            Ge::cod(self).into()
         }
     }
 
@@ -1896,17 +1867,15 @@ pub mod unsigned {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into(); 2]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into()]
         }
     }
 
@@ -1951,17 +1920,15 @@ pub mod unsigned {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into(); 2]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into()]
         }
     }
 
@@ -2006,17 +1973,15 @@ pub mod unsigned {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into(); 2]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into()]
         }
     }
 
@@ -2077,17 +2042,15 @@ pub mod unsigned {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into()]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width + self.i, self.shape).into()]
         }
 
         #[cfg_attr(feature = "pyo3", getter)]
@@ -2128,17 +2091,15 @@ pub mod unsigned {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into(); 2]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Words> {
+            mono![Bool::new_unchecked(self.shape).into()]
         }
     }
 
@@ -2174,17 +2135,15 @@ pub mod unsigned {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into(); 2]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Words> {
+            mono![Bool::new_unchecked(self.shape).into()]
         }
     }
 
@@ -2220,17 +2179,15 @@ pub mod unsigned {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into(); 2]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Words> {
+            mono![Bool::new_unchecked(self.shape).into()]
         }
     }
 
@@ -2266,17 +2223,15 @@ pub mod unsigned {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into(); 2]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Words> {
+            mono![Bool::new_unchecked(self.shape).into()]
         }
     }
 }
@@ -2466,17 +2421,20 @@ impl Concat {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Words> {
+        let ([u, v], shape) = (self.widths, self.shape);
+        mono![
+            Word::new_unchecked(u, shape).into(),
+            Word::new_unchecked(v, shape).into()
+        ]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Words> {
+        let [u, v] = self.widths;
+        mono![Word::new_unchecked(u + v, self.shape).into()]
     }
 }
 
@@ -2520,17 +2478,15 @@ impl Extract {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.i - self.j + 1, self.shape).into()]
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2604,17 +2560,15 @@ impl Repeat {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.i * self.width, self.shape).into()]
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -2664,17 +2618,15 @@ impl Not {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()]
     }
 }
 
@@ -2719,17 +2671,15 @@ impl And {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()]
     }
 }
 
@@ -2774,17 +2724,15 @@ impl Or {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()]
     }
 }
 
@@ -2829,17 +2777,15 @@ impl Xor {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()]
     }
 }
 
@@ -2884,17 +2830,15 @@ impl Nand {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()]
     }
 }
 
@@ -2939,17 +2883,15 @@ impl Nor {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()]
     }
 }
 
@@ -2994,17 +2936,15 @@ impl Xnor {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()]
     }
 }
 
@@ -3049,17 +2989,15 @@ impl Neg {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()]
     }
 }
 
@@ -3115,17 +3053,19 @@ impl Ite {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Words> {
+        mono![
+            Bool::new_unchecked(self.shape).into(),
+            Word::new_unchecked(self.width, self.shape).into(),
+            Word::new_unchecked(self.width, self.shape).into()
+        ]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()]
     }
 }
 
@@ -3170,17 +3110,15 @@ impl Add {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()]
     }
 }
 
@@ -3225,17 +3163,15 @@ impl Sub {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()]
     }
 }
 
@@ -3280,17 +3216,15 @@ impl Mul {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()]
     }
 }
 
@@ -3335,17 +3269,15 @@ impl Shl {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()]
     }
 }
 
@@ -3392,17 +3324,15 @@ impl RotateLeft {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()]
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3454,17 +3384,15 @@ impl RotateRight {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into()]
     }
 
     #[cfg_attr(feature = "pyo3", getter)]
@@ -3505,17 +3433,15 @@ impl Eq {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Words> {
+        mono![Bool::new_unchecked(self.shape).into()]
     }
 }
 
@@ -3551,17 +3477,15 @@ impl Ne {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Words> {
+        mono![Word::new_unchecked(self.width, self.shape).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Words> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Words> {
+        mono![Bool::new_unchecked(self.shape).into()]
     }
 }
 
@@ -3589,16 +3513,11 @@ pub mod broadcast {
 
     impl Boundary<Words> for Ite {
         fn dom(&self) -> Poly<Words> {
-            mono![
-                Bool::new_unchecked([1, 1]).into(),
-                Word::new_unchecked(self.width, self.shape).into(),
-                Word::new_unchecked(self.width, self.shape).into()
-            ]
-            .into()
+            Ite::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Words> {
-            mono![Word::new_unchecked(self.width, self.shape).into()].into()
+            Ite::cod(self).into()
         }
     }
 
@@ -3654,17 +3573,19 @@ pub mod broadcast {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Words> {
+            mono![
+                Bool::new_unchecked([1, 1]).into(),
+                Word::new_unchecked(self.width, self.shape).into(),
+                Word::new_unchecked(self.width, self.shape).into()
+            ]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Words> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Words> {
+            mono![Word::new_unchecked(self.width, self.shape).into()]
         }
     }
 }

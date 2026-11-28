@@ -100,7 +100,6 @@ pub mod zero;
 pub use matrix::Matrix;
 
 use self::{bool::Bool, r#enum::Enum, event::Event, int::Int, real::Real, word::Word};
-#[cfg(feature = "pyo3")]
 use base::boundary::Mono;
 use base::boundary::{Boundary, Poly};
 use base::differentiable::Differentiable;
@@ -394,17 +393,17 @@ impl Boundary<Any> for Havoc {
     }
 
     fn cod(&self) -> Poly<Any> {
-        base::mono![self.sort.clone()].into()
+        Havoc::cod(self).into()
     }
 }
 
 impl Boundary<Any> for Skip {
     fn dom(&self) -> Poly<Any> {
-        base::mono![self.sort.clone()].into()
+        Skip::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Any> {
-        base::mono![self.sort.clone()].into()
+        Skip::cod(self).into()
     }
 }
 
@@ -450,10 +449,9 @@ impl Havoc {
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Any> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Any> {
+        base::mono![self.sort.clone()]
     }
 }
 
@@ -478,17 +476,15 @@ impl Skip {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Any> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Any> {
+        base::mono![self.sort.clone()]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Any> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Any> {
+        base::mono![self.sort.clone()]
     }
 }
 
@@ -533,29 +529,29 @@ impl<T: Matrix> Differential<Any> for Op<T> {
 impl<T: Matrix> Boundary<Any> for Op<T> {
     fn dom(&self) -> Poly<Any> {
         match self {
-            Op::Real(op) => op.dom().map(Any::from),
-            Op::Int(op) => op.dom().map(Any::from),
-            Op::Bool(op) => op.dom().map(Any::from),
-            Op::Word(op) => op.dom().map(Any::from),
-            Op::Enum(op) => op.dom(),
-            Op::Event(op) => op.dom().map(Any::from),
-            Op::Havoc(op) => op.dom(),
-            Op::Skip(op) => op.dom(),
-            Op::Zero(op) => op.dom().map(Any::from),
+            Op::Real(op) => Boundary::dom(op).map(Any::from),
+            Op::Int(op) => Boundary::dom(op).map(Any::from),
+            Op::Bool(op) => Boundary::dom(op).map(Any::from),
+            Op::Word(op) => Boundary::dom(op).map(Any::from),
+            Op::Enum(op) => Boundary::dom(op),
+            Op::Event(op) => Boundary::dom(op).map(Any::from),
+            Op::Havoc(op) => Boundary::dom(op),
+            Op::Skip(op) => Boundary::dom(op),
+            Op::Zero(op) => Boundary::dom(op).map(Any::from),
         }
     }
 
     fn cod(&self) -> Poly<Any> {
         match self {
-            Op::Real(op) => op.cod().map(Any::from),
-            Op::Int(op) => op.cod().map(Any::from),
-            Op::Bool(op) => op.cod().map(Any::from),
-            Op::Word(op) => op.cod().map(Any::from),
-            Op::Enum(op) => op.cod(),
-            Op::Event(op) => op.cod().map(Any::from),
-            Op::Havoc(op) => op.cod(),
-            Op::Skip(op) => op.cod(),
-            Op::Zero(op) => op.cod().map(Any::from),
+            Op::Real(op) => Boundary::cod(op).map(Any::from),
+            Op::Int(op) => Boundary::cod(op).map(Any::from),
+            Op::Bool(op) => Boundary::cod(op).map(Any::from),
+            Op::Word(op) => Boundary::cod(op).map(Any::from),
+            Op::Enum(op) => Boundary::cod(op),
+            Op::Event(op) => Boundary::cod(op).map(Any::from),
+            Op::Havoc(op) => Boundary::cod(op),
+            Op::Skip(op) => Boundary::cod(op),
+            Op::Zero(op) => Boundary::cod(op).map(Any::from),
         }
     }
 }

@@ -149,40 +149,41 @@ impl Xor {
 
 impl Boundary<Bools> for Xor {
     fn dom(&self) -> Poly<Bools> {
-        Mono::from_iter(self.dom.iter().cloned()).into()
+        Xor::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Bools> {
-        mono![self.cod].into()
+        Xor::cod(self).into()
     }
 }
 
-#[cfg(feature = "pyo3")]
-#[pymethods]
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
 impl Xor {
     /// Python builds it from its domain `dom`, two values of the same event, or
     /// a value of an event and a boolean of the shape `[1, 1]`, in either
     /// order; its codomain `cod`, when given, must be the one it writes.
+    #[cfg(feature = "pyo3")]
     #[new]
     #[pyo3(signature = (dom, cod = None))]
     fn py_new(dom: [Bools; 2], cod: Option<Bools>) -> Result<Self, crate::Error> {
         crate::check_cod(Self::with_dom(dom), cod)
     }
 
+    #[cfg(feature = "pyo3")]
     #[classattr]
     fn __match_args__() -> (&'static str, &'static str) {
         ("dom", "cod")
     }
 
     /// The sorts it reads, as a tuple.
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Bools> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Bools> {
+        Mono::from_iter(self.dom.iter().cloned())
     }
 
     /// The sorts it writes, as a tuple.
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Bools> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Bools> {
+        mono![self.cod]
     }
 }

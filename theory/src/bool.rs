@@ -19,7 +19,6 @@ information to compute its [`Boundary`]:
 
 use crate::Matrix;
 use crate::zero::Real0;
-#[cfg(feature = "pyo3")]
 use base::boundary::Mono;
 use base::boundary::{Boundary, Poly};
 use base::differentiable::Differentiable;
@@ -120,6 +119,11 @@ impl<T: Matrix> Truth<T> {
             ));
         }
         Ok(Truth { tensor })
+    }
+
+    /// The sorts it writes.
+    pub(crate) fn cod(&self) -> Mono<Bool> {
+        mono![Bool::new_unchecked(self.tensor.shape())]
     }
 }
 
@@ -236,33 +240,33 @@ pub enum Prop<T> {
 impl<T: Matrix> Boundary<Bool> for Prop<T> {
     fn dom(&self) -> Poly<Bool> {
         match self {
-            Prop::Truth(op) => op.dom(),
-            Prop::And(op) => op.dom(),
-            Prop::Or(op) => op.dom(),
-            Prop::Xor(op) => op.dom(),
-            Prop::Not(op) => op.dom(),
-            Prop::Eq(op) => op.dom(),
-            Prop::Ne(op) => op.dom(),
-            Prop::Ite(op) => op.dom(),
-            Prop::BroadcastIte(op) => op.dom(),
-            Prop::ReduceAnd(op) => op.dom(),
-            Prop::ReduceOr(op) => op.dom(),
+            Prop::Truth(op) => Boundary::dom(op),
+            Prop::And(op) => Boundary::dom(op),
+            Prop::Or(op) => Boundary::dom(op),
+            Prop::Xor(op) => Boundary::dom(op),
+            Prop::Not(op) => Boundary::dom(op),
+            Prop::Eq(op) => Boundary::dom(op),
+            Prop::Ne(op) => Boundary::dom(op),
+            Prop::Ite(op) => Boundary::dom(op),
+            Prop::BroadcastIte(op) => Boundary::dom(op),
+            Prop::ReduceAnd(op) => Boundary::dom(op),
+            Prop::ReduceOr(op) => Boundary::dom(op),
         }
     }
 
     fn cod(&self) -> Poly<Bool> {
         match self {
-            Prop::Truth(op) => op.cod(),
-            Prop::And(op) => op.cod(),
-            Prop::Or(op) => op.cod(),
-            Prop::Xor(op) => op.cod(),
-            Prop::Not(op) => op.cod(),
-            Prop::Eq(op) => op.cod(),
-            Prop::Ne(op) => op.cod(),
-            Prop::Ite(op) => op.cod(),
-            Prop::BroadcastIte(op) => op.cod(),
-            Prop::ReduceAnd(op) => op.cod(),
-            Prop::ReduceOr(op) => op.cod(),
+            Prop::Truth(op) => Boundary::cod(op),
+            Prop::And(op) => Boundary::cod(op),
+            Prop::Or(op) => Boundary::cod(op),
+            Prop::Xor(op) => Boundary::cod(op),
+            Prop::Not(op) => Boundary::cod(op),
+            Prop::Eq(op) => Boundary::cod(op),
+            Prop::Ne(op) => Boundary::cod(op),
+            Prop::Ite(op) => Boundary::cod(op),
+            Prop::BroadcastIte(op) => Boundary::cod(op),
+            Prop::ReduceAnd(op) => Boundary::cod(op),
+            Prop::ReduceOr(op) => Boundary::cod(op),
         }
     }
 }
@@ -273,77 +277,77 @@ impl<T: Matrix> Boundary<Bool> for Truth<T> {
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new_unchecked(self.tensor.shape())].into()
+        Truth::cod(self).into()
     }
 }
 
 impl Boundary<Bool> for And {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new_unchecked(self.shape); 2].into()
+        And::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new_unchecked(self.shape)].into()
+        And::cod(self).into()
     }
 }
 
 impl Boundary<Bool> for Or {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new_unchecked(self.shape); 2].into()
+        Or::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new_unchecked(self.shape)].into()
+        Or::cod(self).into()
     }
 }
 
 impl Boundary<Bool> for Xor {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new_unchecked(self.shape); 2].into()
+        Xor::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new_unchecked(self.shape)].into()
+        Xor::cod(self).into()
     }
 }
 
 impl Boundary<Bool> for Not {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new_unchecked(self.shape)].into()
+        Not::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new_unchecked(self.shape)].into()
+        Not::cod(self).into()
     }
 }
 
 impl Boundary<Bool> for Eq {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new_unchecked(self.shape); 2].into()
+        Eq::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new_unchecked(self.shape)].into()
+        Eq::cod(self).into()
     }
 }
 
 impl Boundary<Bool> for Ne {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new_unchecked(self.shape); 2].into()
+        Ne::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new_unchecked(self.shape)].into()
+        Ne::cod(self).into()
     }
 }
 
 impl Boundary<Bool> for Ite {
     fn dom(&self) -> Poly<Bool> {
-        mono![Bool::new_unchecked(self.shape); 3].into()
+        Ite::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Bool> {
-        mono![Bool::new_unchecked(self.shape)].into()
+        Ite::cod(self).into()
     }
 }
 
@@ -438,17 +442,15 @@ impl And {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Bool> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Bool> {
+        mono![Bool::new_unchecked(self.shape); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Bool> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Bool> {
+        mono![Bool::new_unchecked(self.shape)]
     }
 }
 
@@ -487,17 +489,15 @@ impl Or {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Bool> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Bool> {
+        mono![Bool::new_unchecked(self.shape); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Bool> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Bool> {
+        mono![Bool::new_unchecked(self.shape)]
     }
 }
 
@@ -536,17 +536,15 @@ impl Xor {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Bool> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Bool> {
+        mono![Bool::new_unchecked(self.shape); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Bool> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Bool> {
+        mono![Bool::new_unchecked(self.shape)]
     }
 }
 
@@ -585,17 +583,15 @@ impl Not {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Bool> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Bool> {
+        mono![Bool::new_unchecked(self.shape)]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Bool> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Bool> {
+        mono![Bool::new_unchecked(self.shape)]
     }
 }
 
@@ -634,17 +630,15 @@ impl Eq {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Bool> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Bool> {
+        mono![Bool::new_unchecked(self.shape); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Bool> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Bool> {
+        mono![Bool::new_unchecked(self.shape)]
     }
 }
 
@@ -683,17 +677,15 @@ impl Ne {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Bool> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Bool> {
+        mono![Bool::new_unchecked(self.shape); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Bool> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Bool> {
+        mono![Bool::new_unchecked(self.shape)]
     }
 }
 
@@ -732,17 +724,15 @@ impl Ite {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Bool> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Bool> {
+        mono![Bool::new_unchecked(self.shape); 3]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Bool> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Bool> {
+        mono![Bool::new_unchecked(self.shape)]
     }
 }
 
@@ -769,16 +759,11 @@ pub mod broadcast {
 
     impl Boundary<Bool> for Ite {
         fn dom(&self) -> Poly<Bool> {
-            mono![
-                Bool::new_unchecked([1, 1]),
-                Bool::new_unchecked(self.shape),
-                Bool::new_unchecked(self.shape)
-            ]
-            .into()
+            Ite::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Bool> {
-            mono![Bool::new_unchecked(self.shape)].into()
+            Ite::cod(self).into()
         }
     }
 
@@ -825,17 +810,19 @@ pub mod broadcast {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Bool> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Bool> {
+            mono![
+                Bool::new_unchecked([1, 1]),
+                Bool::new_unchecked(self.shape),
+                Bool::new_unchecked(self.shape)
+            ]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Bool> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Bool> {
+            mono![Bool::new_unchecked(self.shape)]
         }
     }
 }
@@ -917,11 +904,11 @@ pub mod reduce {
 
     impl Boundary<Bool> for And {
         fn dom(&self) -> Poly<Bool> {
-            mono![Bool::new_unchecked(self.shape)].into()
+            And::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Bool> {
-            mono![Bool::new_unchecked(reduced(self.shape, self.axis))].into()
+            And::cod(self).into()
         }
     }
 
@@ -946,17 +933,15 @@ pub mod reduce {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Bool> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Bool> {
+            mono![Bool::new_unchecked(self.shape)]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Bool> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Bool> {
+            mono![Bool::new_unchecked(reduced(self.shape, self.axis))]
         }
 
         /// The axis along which it reduces: 0 for the rows, 1 for the
@@ -983,11 +968,11 @@ pub mod reduce {
 
     impl Boundary<Bool> for Or {
         fn dom(&self) -> Poly<Bool> {
-            mono![Bool::new_unchecked(self.shape)].into()
+            Or::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Bool> {
-            mono![Bool::new_unchecked(reduced(self.shape, self.axis))].into()
+            Or::cod(self).into()
         }
     }
 
@@ -1012,17 +997,15 @@ pub mod reduce {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Bool> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Bool> {
+            mono![Bool::new_unchecked(self.shape)]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Bool> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Bool> {
+            mono![Bool::new_unchecked(reduced(self.shape, self.axis))]
         }
 
         /// The axis along which it reduces: 0 for the rows, 1 for the

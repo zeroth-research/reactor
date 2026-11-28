@@ -52,7 +52,7 @@ impl Num {
     #[getter]
     fn cod(slf: &Bound<'_, Self>) -> PyResult<Mono<Words>> {
         let op: crate::word::Num<super::Tensor> = slf.extract()?;
-        Ok(Mono::try_from(base::boundary::Boundary::cod(&op)).unwrap())
+        Ok(op.cod())
     }
 }
 
@@ -80,7 +80,7 @@ impl<'py> IntoPyObject<'py> for crate::word::BV<super::Tensor> {
 
         match self {
             BV::Num(op) => {
-                let Words::Word(cod) = super::sole(base::boundary::Boundary::cod(&op)) else {
+                let Words::Word(cod) = super::sole(op.cod()) else {
                     unreachable!("a numeral writes a word")
                 };
                 Num(op.tensor().clone(), cod.width())

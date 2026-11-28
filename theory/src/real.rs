@@ -36,7 +36,6 @@ sorts of the theory, rather than in [`Real`].
 
 use super::bool::Bool;
 use crate::Matrix;
-#[cfg(feature = "pyo3")]
 use base::boundary::Mono;
 use base::boundary::{Boundary, Poly};
 use base::differentiable::Differentiable;
@@ -169,6 +168,11 @@ impl<T: Matrix> Num<T> {
             degree: x.degree(),
         })
     }
+
+    /// The sorts it writes.
+    pub(crate) fn cod(&self) -> Mono<Real> {
+        mono![Real::with_degree(self.tensor.shape(), self.degree)]
+    }
 }
 
 impl<T> Num<T> {
@@ -222,6 +226,16 @@ impl<T: Matrix> Scale<T> {
             tensor,
             degree: x.degree(),
         })
+    }
+
+    /// The sorts it reads.
+    pub(crate) fn dom(&self) -> Mono<Real> {
+        mono![Real::with_degree(self.tensor.shape(), self.degree)]
+    }
+
+    /// The sorts it writes.
+    pub(crate) fn cod(&self) -> Mono<Real> {
+        mono![Real::with_degree(self.tensor.shape(), self.degree)]
     }
 }
 
@@ -354,6 +368,18 @@ impl<T: Matrix> Linear<T> {
             degree: x.degree(),
         })
     }
+
+    /// The sorts it reads.
+    pub(crate) fn dom(&self) -> Mono<Real> {
+        let [_, n] = self.a.shape();
+        mono![Real::with_degree([n, self.cols], self.degree)]
+    }
+
+    /// The sorts it writes.
+    pub(crate) fn cod(&self) -> Mono<Real> {
+        let [m, _] = self.a.shape();
+        mono![Real::with_degree([m, self.cols], self.degree)]
+    }
 }
 
 impl<T> Linear<T> {
@@ -413,6 +439,18 @@ impl<T: Matrix> Affine<T> {
             ));
         }
         Ok(op)
+    }
+
+    /// The sorts it reads.
+    pub(crate) fn dom(&self) -> Mono<Real> {
+        let [_, n] = self.a.shape();
+        let [_, k] = self.b.shape();
+        mono![Real::with_degree([n, k], self.degree)]
+    }
+
+    /// The sorts it writes.
+    pub(crate) fn cod(&self) -> Mono<Real> {
+        mono![Real::with_degree(self.b.shape(), self.degree)]
     }
 }
 
@@ -743,116 +781,116 @@ pub enum NRA<T> {
 impl<T: Matrix> Boundary<Reals> for NRA<T> {
     fn dom(&self) -> Poly<Reals> {
         match self {
-            NRA::Num(op) => op.dom().map(Reals::from),
-            NRA::Scale(op) => op.dom().map(Reals::from),
-            NRA::Add(op) => op.dom().map(Reals::from),
-            NRA::Sub(op) => op.dom().map(Reals::from),
-            NRA::Mul(op) => op.dom().map(Reals::from),
-            NRA::Div(op) => op.dom().map(Reals::from),
-            NRA::Linear(op) => op.dom().map(Reals::from),
-            NRA::Affine(op) => op.dom().map(Reals::from),
-            NRA::ReLU(op) => op.dom().map(Reals::from),
-            NRA::Abs(op) => op.dom().map(Reals::from),
-            NRA::Neg(op) => op.dom().map(Reals::from),
-            NRA::Zero(op) => op.dom().map(Reals::from),
-            NRA::Argmax(op) => op.dom().map(Reals::from),
-            NRA::Min(op) => op.dom().map(Reals::from),
-            NRA::Max(op) => op.dom().map(Reals::from),
-            NRA::Transpose(op) => op.dom().map(Reals::from),
-            NRA::MatMul(op) => op.dom().map(Reals::from),
-            NRA::Lt(op) => op.dom(),
-            NRA::Ite(op) => op.dom(),
-            NRA::BroadcastIte(op) => op.dom(),
-            NRA::Le(op) => op.dom(),
-            NRA::Gt(op) => op.dom(),
-            NRA::Ge(op) => op.dom(),
-            NRA::Eq(op) => op.dom(),
-            NRA::Ne(op) => op.dom(),
+            NRA::Num(op) => Boundary::dom(op).map(Reals::from),
+            NRA::Scale(op) => Boundary::dom(op).map(Reals::from),
+            NRA::Add(op) => Boundary::dom(op).map(Reals::from),
+            NRA::Sub(op) => Boundary::dom(op).map(Reals::from),
+            NRA::Mul(op) => Boundary::dom(op).map(Reals::from),
+            NRA::Div(op) => Boundary::dom(op).map(Reals::from),
+            NRA::Linear(op) => Boundary::dom(op).map(Reals::from),
+            NRA::Affine(op) => Boundary::dom(op).map(Reals::from),
+            NRA::ReLU(op) => Boundary::dom(op).map(Reals::from),
+            NRA::Abs(op) => Boundary::dom(op).map(Reals::from),
+            NRA::Neg(op) => Boundary::dom(op).map(Reals::from),
+            NRA::Zero(op) => Boundary::dom(op).map(Reals::from),
+            NRA::Argmax(op) => Boundary::dom(op).map(Reals::from),
+            NRA::Min(op) => Boundary::dom(op).map(Reals::from),
+            NRA::Max(op) => Boundary::dom(op).map(Reals::from),
+            NRA::Transpose(op) => Boundary::dom(op).map(Reals::from),
+            NRA::MatMul(op) => Boundary::dom(op).map(Reals::from),
+            NRA::Lt(op) => Boundary::dom(op),
+            NRA::Ite(op) => Boundary::dom(op),
+            NRA::BroadcastIte(op) => Boundary::dom(op),
+            NRA::Le(op) => Boundary::dom(op),
+            NRA::Gt(op) => Boundary::dom(op),
+            NRA::Ge(op) => Boundary::dom(op),
+            NRA::Eq(op) => Boundary::dom(op),
+            NRA::Ne(op) => Boundary::dom(op),
         }
     }
 
     fn cod(&self) -> Poly<Reals> {
         match self {
-            NRA::Num(op) => op.cod().map(Reals::from),
-            NRA::Scale(op) => op.cod().map(Reals::from),
-            NRA::Add(op) => op.cod().map(Reals::from),
-            NRA::Sub(op) => op.cod().map(Reals::from),
-            NRA::Mul(op) => op.cod().map(Reals::from),
-            NRA::Div(op) => op.cod().map(Reals::from),
-            NRA::Linear(op) => op.cod().map(Reals::from),
-            NRA::Affine(op) => op.cod().map(Reals::from),
-            NRA::ReLU(op) => op.cod().map(Reals::from),
-            NRA::Abs(op) => op.cod().map(Reals::from),
-            NRA::Neg(op) => op.cod().map(Reals::from),
-            NRA::Zero(op) => op.cod().map(Reals::from),
-            NRA::Argmax(op) => op.cod().map(Reals::from),
-            NRA::Min(op) => op.cod().map(Reals::from),
-            NRA::Max(op) => op.cod().map(Reals::from),
-            NRA::Transpose(op) => op.cod().map(Reals::from),
-            NRA::MatMul(op) => op.cod().map(Reals::from),
-            NRA::Lt(op) => op.cod(),
-            NRA::Ite(op) => op.cod(),
-            NRA::BroadcastIte(op) => op.cod(),
-            NRA::Le(op) => op.cod(),
-            NRA::Gt(op) => op.cod(),
-            NRA::Ge(op) => op.cod(),
-            NRA::Eq(op) => op.cod(),
-            NRA::Ne(op) => op.cod(),
+            NRA::Num(op) => Boundary::cod(op).map(Reals::from),
+            NRA::Scale(op) => Boundary::cod(op).map(Reals::from),
+            NRA::Add(op) => Boundary::cod(op).map(Reals::from),
+            NRA::Sub(op) => Boundary::cod(op).map(Reals::from),
+            NRA::Mul(op) => Boundary::cod(op).map(Reals::from),
+            NRA::Div(op) => Boundary::cod(op).map(Reals::from),
+            NRA::Linear(op) => Boundary::cod(op).map(Reals::from),
+            NRA::Affine(op) => Boundary::cod(op).map(Reals::from),
+            NRA::ReLU(op) => Boundary::cod(op).map(Reals::from),
+            NRA::Abs(op) => Boundary::cod(op).map(Reals::from),
+            NRA::Neg(op) => Boundary::cod(op).map(Reals::from),
+            NRA::Zero(op) => Boundary::cod(op).map(Reals::from),
+            NRA::Argmax(op) => Boundary::cod(op).map(Reals::from),
+            NRA::Min(op) => Boundary::cod(op).map(Reals::from),
+            NRA::Max(op) => Boundary::cod(op).map(Reals::from),
+            NRA::Transpose(op) => Boundary::cod(op).map(Reals::from),
+            NRA::MatMul(op) => Boundary::cod(op).map(Reals::from),
+            NRA::Lt(op) => Boundary::cod(op),
+            NRA::Ite(op) => Boundary::cod(op),
+            NRA::BroadcastIte(op) => Boundary::cod(op),
+            NRA::Le(op) => Boundary::cod(op),
+            NRA::Gt(op) => Boundary::cod(op),
+            NRA::Ge(op) => Boundary::cod(op),
+            NRA::Eq(op) => Boundary::cod(op),
+            NRA::Ne(op) => Boundary::cod(op),
         }
     }
 }
 impl<T: Matrix> Boundary<Reals> for LRA<T> {
     fn dom(&self) -> Poly<Reals> {
         match self {
-            LRA::Num(op) => op.dom().map(Reals::from),
-            LRA::Scale(op) => op.dom().map(Reals::from),
-            LRA::Add(op) => op.dom().map(Reals::from),
-            LRA::Sub(op) => op.dom().map(Reals::from),
-            LRA::Linear(op) => op.dom().map(Reals::from),
-            LRA::Affine(op) => op.dom().map(Reals::from),
-            LRA::ReLU(op) => op.dom().map(Reals::from),
-            LRA::Abs(op) => op.dom().map(Reals::from),
-            LRA::Neg(op) => op.dom().map(Reals::from),
-            LRA::Zero(op) => op.dom().map(Reals::from),
-            LRA::Argmax(op) => op.dom().map(Reals::from),
-            LRA::Min(op) => op.dom().map(Reals::from),
-            LRA::Max(op) => op.dom().map(Reals::from),
-            LRA::Transpose(op) => op.dom().map(Reals::from),
-            LRA::Lt(op) => op.dom(),
-            LRA::Ite(op) => op.dom(),
-            LRA::BroadcastIte(op) => op.dom(),
-            LRA::Le(op) => op.dom(),
-            LRA::Gt(op) => op.dom(),
-            LRA::Ge(op) => op.dom(),
-            LRA::Eq(op) => op.dom(),
-            LRA::Ne(op) => op.dom(),
+            LRA::Num(op) => Boundary::dom(op).map(Reals::from),
+            LRA::Scale(op) => Boundary::dom(op).map(Reals::from),
+            LRA::Add(op) => Boundary::dom(op).map(Reals::from),
+            LRA::Sub(op) => Boundary::dom(op).map(Reals::from),
+            LRA::Linear(op) => Boundary::dom(op).map(Reals::from),
+            LRA::Affine(op) => Boundary::dom(op).map(Reals::from),
+            LRA::ReLU(op) => Boundary::dom(op).map(Reals::from),
+            LRA::Abs(op) => Boundary::dom(op).map(Reals::from),
+            LRA::Neg(op) => Boundary::dom(op).map(Reals::from),
+            LRA::Zero(op) => Boundary::dom(op).map(Reals::from),
+            LRA::Argmax(op) => Boundary::dom(op).map(Reals::from),
+            LRA::Min(op) => Boundary::dom(op).map(Reals::from),
+            LRA::Max(op) => Boundary::dom(op).map(Reals::from),
+            LRA::Transpose(op) => Boundary::dom(op).map(Reals::from),
+            LRA::Lt(op) => Boundary::dom(op),
+            LRA::Ite(op) => Boundary::dom(op),
+            LRA::BroadcastIte(op) => Boundary::dom(op),
+            LRA::Le(op) => Boundary::dom(op),
+            LRA::Gt(op) => Boundary::dom(op),
+            LRA::Ge(op) => Boundary::dom(op),
+            LRA::Eq(op) => Boundary::dom(op),
+            LRA::Ne(op) => Boundary::dom(op),
         }
     }
 
     fn cod(&self) -> Poly<Reals> {
         match self {
-            LRA::Num(op) => op.cod().map(Reals::from),
-            LRA::Scale(op) => op.cod().map(Reals::from),
-            LRA::Add(op) => op.cod().map(Reals::from),
-            LRA::Sub(op) => op.cod().map(Reals::from),
-            LRA::Linear(op) => op.cod().map(Reals::from),
-            LRA::Affine(op) => op.cod().map(Reals::from),
-            LRA::ReLU(op) => op.cod().map(Reals::from),
-            LRA::Abs(op) => op.cod().map(Reals::from),
-            LRA::Neg(op) => op.cod().map(Reals::from),
-            LRA::Zero(op) => op.cod().map(Reals::from),
-            LRA::Argmax(op) => op.cod().map(Reals::from),
-            LRA::Min(op) => op.cod().map(Reals::from),
-            LRA::Max(op) => op.cod().map(Reals::from),
-            LRA::Transpose(op) => op.cod().map(Reals::from),
-            LRA::Lt(op) => op.cod(),
-            LRA::Ite(op) => op.cod(),
-            LRA::BroadcastIte(op) => op.cod(),
-            LRA::Le(op) => op.cod(),
-            LRA::Gt(op) => op.cod(),
-            LRA::Ge(op) => op.cod(),
-            LRA::Eq(op) => op.cod(),
-            LRA::Ne(op) => op.cod(),
+            LRA::Num(op) => Boundary::cod(op).map(Reals::from),
+            LRA::Scale(op) => Boundary::cod(op).map(Reals::from),
+            LRA::Add(op) => Boundary::cod(op).map(Reals::from),
+            LRA::Sub(op) => Boundary::cod(op).map(Reals::from),
+            LRA::Linear(op) => Boundary::cod(op).map(Reals::from),
+            LRA::Affine(op) => Boundary::cod(op).map(Reals::from),
+            LRA::ReLU(op) => Boundary::cod(op).map(Reals::from),
+            LRA::Abs(op) => Boundary::cod(op).map(Reals::from),
+            LRA::Neg(op) => Boundary::cod(op).map(Reals::from),
+            LRA::Zero(op) => Boundary::cod(op).map(Reals::from),
+            LRA::Argmax(op) => Boundary::cod(op).map(Reals::from),
+            LRA::Min(op) => Boundary::cod(op).map(Reals::from),
+            LRA::Max(op) => Boundary::cod(op).map(Reals::from),
+            LRA::Transpose(op) => Boundary::cod(op).map(Reals::from),
+            LRA::Lt(op) => Boundary::cod(op),
+            LRA::Ite(op) => Boundary::cod(op),
+            LRA::BroadcastIte(op) => Boundary::cod(op),
+            LRA::Le(op) => Boundary::cod(op),
+            LRA::Gt(op) => Boundary::cod(op),
+            LRA::Ge(op) => Boundary::cod(op),
+            LRA::Eq(op) => Boundary::cod(op),
+            LRA::Ne(op) => Boundary::cod(op),
         }
     }
 }
@@ -863,7 +901,7 @@ impl<T: Matrix> Boundary<Real> for Num<T> {
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.tensor.shape(), self.degree)].into()
+        Num::cod(self).into()
     }
 }
 
@@ -871,67 +909,53 @@ impl<T: Matrix> Boundary<Real> for Num<T> {
 /// matrices.
 impl<T: Matrix> Boundary<Real> for Scale<T> {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.tensor.shape(), self.degree)].into()
+        Scale::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.tensor.shape(), self.degree)].into()
+        Scale::cod(self).into()
     }
 }
 
 impl Boundary<Real> for Add {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.shape, self.degree); 2].into()
+        Add::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.shape, self.degree)].into()
+        Add::cod(self).into()
     }
 }
 
 impl Boundary<Real> for Sub {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.shape, self.degree); 2].into()
+        Sub::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.shape, self.degree)].into()
+        Sub::cod(self).into()
     }
 }
 
 /// Takes matrices of degrees `p` and `q` to one of degree `p + q`.
 impl Boundary<Real> for Mul {
     fn dom(&self) -> Poly<Real> {
-        let [p, q] = self.degrees;
-        mono![
-            Real::with_degree(self.shape, p),
-            Real::with_degree(self.shape, q)
-        ]
-        .into()
+        Mul::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        // in range: `with_dom` checks it
-        let [p, q] = self.degrees;
-        mono![Real::with_degree(self.shape, p + q)].into()
+        Mul::cod(self).into()
     }
 }
 
 /// Takes matrices of degrees `p` and `q` to one of degree `p - q`.
 impl Boundary<Real> for Div {
     fn dom(&self) -> Poly<Real> {
-        let [p, q] = self.degrees;
-        mono![
-            Real::with_degree(self.shape, p),
-            Real::with_degree(self.shape, q)
-        ]
-        .into()
+        Div::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        // not negative: `with_dom` checks it
-        let [p, q] = self.degrees;
-        mono![Real::with_degree(self.shape, p - q)].into()
+        Div::cod(self).into()
     }
 }
 
@@ -939,13 +963,11 @@ impl Boundary<Real> for Div {
 /// matrix of shape `[m, k]`.
 impl<T: Matrix> Boundary<Real> for Linear<T> {
     fn dom(&self) -> Poly<Real> {
-        let [_, n] = self.a.shape();
-        mono![Real::with_degree([n, self.cols], self.degree)].into()
+        Linear::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        let [m, _] = self.a.shape();
-        mono![Real::with_degree([m, self.cols], self.degree)].into()
+        Linear::cod(self).into()
     }
 }
 
@@ -953,13 +975,11 @@ impl<T: Matrix> Boundary<Real> for Linear<T> {
 /// of shape `[n, k]` to a matrix of shape `[m, k]`.
 impl<T: Matrix> Boundary<Real> for Affine<T> {
     fn dom(&self) -> Poly<Real> {
-        let [_, n] = self.a.shape();
-        let [_, k] = self.b.shape();
-        mono![Real::with_degree([n, k], self.degree)].into()
+        Affine::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.b.shape(), self.degree)].into()
+        Affine::cod(self).into()
     }
 }
 
@@ -969,72 +989,68 @@ impl Boundary<Real> for Zero {
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.shape, self.degree)].into()
+        Zero::cod(self).into()
     }
 }
 
 impl Boundary<Real> for Neg {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.shape, self.degree)].into()
+        Neg::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.shape, self.degree)].into()
+        Neg::cod(self).into()
     }
 }
 
 impl Boundary<Real> for Abs {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.shape, self.degree)].into()
+        Abs::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.shape, self.degree)].into()
+        Abs::cod(self).into()
     }
 }
 
 impl Boundary<Real> for ReLU {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.shape, self.degree)].into()
+        ReLU::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.shape, self.degree)].into()
+        ReLU::cod(self).into()
     }
 }
 
 impl Boundary<Real> for Min {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.shape, self.degree); 2].into()
+        Min::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.shape, self.degree)].into()
+        Min::cod(self).into()
     }
 }
 
 impl Boundary<Real> for Max {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.shape, self.degree); 2].into()
+        Max::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.shape, self.degree)].into()
+        Max::cod(self).into()
     }
 }
 
 /// Takes a matrix of shape `[m, n]` to one of shape `[n, m]`.
 impl Boundary<Real> for Transpose {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.shape, self.degree)].into()
+        Transpose::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::with_degree(
-            [self.shape[1], self.shape[0]],
-            self.degree
-        )]
-        .into()
+        Transpose::cod(self).into()
     }
 }
 
@@ -1042,101 +1058,91 @@ impl Boundary<Real> for Transpose {
 /// to one of shape `[m, k]` and degree `p + q`.
 impl Boundary<Real> for MatMul {
     fn dom(&self) -> Poly<Real> {
-        let [lhs, rhs] = self.shapes;
-        let [p, q] = self.degrees;
-        mono![Real::with_degree(lhs, p), Real::with_degree(rhs, q)].into()
+        MatMul::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        let [[m, _], [_, k]] = self.shapes;
-        // in range: `with_dom` checks it
-        let [p, q] = self.degrees;
-        mono![Real::with_degree([m, k], p + q)].into()
+        MatMul::cod(self).into()
     }
 }
 
 impl Boundary<Reals> for Lt {
     fn dom(&self) -> Poly<Reals> {
-        mono![Real::with_degree(self.shape, self.degree).into(); 2].into()
+        Lt::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Reals> {
-        mono![Bool::new_unchecked(self.shape).into()].into()
+        Lt::cod(self).into()
     }
 }
 
 impl Boundary<Reals> for Le {
     fn dom(&self) -> Poly<Reals> {
-        mono![Real::with_degree(self.shape, self.degree).into(); 2].into()
+        Le::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Reals> {
-        mono![Bool::new_unchecked(self.shape).into()].into()
+        Le::cod(self).into()
     }
 }
 
 impl Boundary<Reals> for Gt {
     fn dom(&self) -> Poly<Reals> {
-        mono![Real::with_degree(self.shape, self.degree).into(); 2].into()
+        Gt::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Reals> {
-        mono![Bool::new_unchecked(self.shape).into()].into()
+        Gt::cod(self).into()
     }
 }
 
 impl Boundary<Reals> for Ge {
     fn dom(&self) -> Poly<Reals> {
-        mono![Real::with_degree(self.shape, self.degree).into(); 2].into()
+        Ge::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Reals> {
-        mono![Bool::new_unchecked(self.shape).into()].into()
+        Ge::cod(self).into()
     }
 }
 
 impl Boundary<Reals> for Eq {
     fn dom(&self) -> Poly<Reals> {
-        mono![Real::with_degree(self.shape, self.degree).into(); 2].into()
+        Eq::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Reals> {
-        mono![Bool::new_unchecked(self.shape).into()].into()
+        Eq::cod(self).into()
     }
 }
 
 impl Boundary<Reals> for Ne {
     fn dom(&self) -> Poly<Reals> {
-        mono![Real::with_degree(self.shape, self.degree).into(); 2].into()
+        Ne::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Reals> {
-        mono![Bool::new_unchecked(self.shape).into()].into()
+        Ne::cod(self).into()
     }
 }
 
 impl Boundary<Real> for Argmax {
     fn dom(&self) -> Poly<Real> {
-        mono![Real::with_degree(self.shape, self.degree)].into()
+        Argmax::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Real> {
-        mono![Real::new_unchecked([1, 1])].into()
+        Argmax::cod(self).into()
     }
 }
 
 impl Boundary<Reals> for Ite {
     fn dom(&self) -> Poly<Reals> {
-        mono![
-            Bool::new_unchecked(self.shape).into(),
-            Real::with_degree(self.shape, self.degree).into(),
-            Real::with_degree(self.shape, self.degree).into()
-        ]
-        .into()
+        Ite::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Reals> {
-        mono![Real::with_degree(self.shape, self.degree).into()].into()
+        Ite::cod(self).into()
     }
 }
 
@@ -1282,17 +1288,15 @@ impl Add {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Real> {
+        mono![Real::with_degree(self.shape, self.degree); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Real> {
+        mono![Real::with_degree(self.shape, self.degree)]
     }
 }
 
@@ -1337,17 +1341,15 @@ impl Sub {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Real> {
+        mono![Real::with_degree(self.shape, self.degree); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Real> {
+        mono![Real::with_degree(self.shape, self.degree)]
     }
 }
 
@@ -1392,17 +1394,21 @@ impl Mul {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Real> {
+        let [p, q] = self.degrees;
+        mono![
+            Real::with_degree(self.shape, p),
+            Real::with_degree(self.shape, q)
+        ]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Real> {
+        // in range: `with_dom` checks it
+        let [p, q] = self.degrees;
+        mono![Real::with_degree(self.shape, p + q)]
     }
 }
 
@@ -1447,17 +1453,21 @@ impl Div {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Real> {
+        let [p, q] = self.degrees;
+        mono![
+            Real::with_degree(self.shape, p),
+            Real::with_degree(self.shape, q)
+        ]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Real> {
+        // not negative: `with_dom` checks it
+        let [p, q] = self.degrees;
+        mono![Real::with_degree(self.shape, p - q)]
     }
 }
 
@@ -1492,10 +1502,9 @@ impl Zero {
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Real> {
+        mono![Real::with_degree(self.shape, self.degree)]
     }
 }
 
@@ -1540,17 +1549,15 @@ impl Neg {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Real> {
+        mono![Real::with_degree(self.shape, self.degree)]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Real> {
+        mono![Real::with_degree(self.shape, self.degree)]
     }
 }
 
@@ -1595,17 +1602,15 @@ impl Abs {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Real> {
+        mono![Real::with_degree(self.shape, self.degree)]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Real> {
+        mono![Real::with_degree(self.shape, self.degree)]
     }
 }
 
@@ -1650,17 +1655,15 @@ impl ReLU {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Real> {
+        mono![Real::with_degree(self.shape, self.degree)]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Real> {
+        mono![Real::with_degree(self.shape, self.degree)]
     }
 }
 
@@ -1696,17 +1699,15 @@ impl Argmax {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Real> {
+        mono![Real::with_degree(self.shape, self.degree)]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Real> {
+        mono![Real::new_unchecked([1, 1])]
     }
 }
 
@@ -1751,17 +1752,15 @@ impl Min {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Real> {
+        mono![Real::with_degree(self.shape, self.degree); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Real> {
+        mono![Real::with_degree(self.shape, self.degree)]
     }
 }
 
@@ -1806,17 +1805,15 @@ impl Max {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Real> {
+        mono![Real::with_degree(self.shape, self.degree); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Real> {
+        mono![Real::with_degree(self.shape, self.degree)]
     }
 }
 
@@ -1862,17 +1859,18 @@ impl Transpose {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Real> {
+        mono![Real::with_degree(self.shape, self.degree)]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Real> {
+        mono![Real::with_degree(
+            [self.shape[1], self.shape[0]],
+            self.degree
+        )]
     }
 }
 
@@ -1921,17 +1919,20 @@ impl MatMul {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Real> {
+        let [lhs, rhs] = self.shapes;
+        let [p, q] = self.degrees;
+        mono![Real::with_degree(lhs, p), Real::with_degree(rhs, q)]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Real> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Real> {
+        let [[m, _], [_, k]] = self.shapes;
+        // in range: `with_dom` checks it
+        let [p, q] = self.degrees;
+        mono![Real::with_degree([m, k], p + q)]
     }
 }
 
@@ -1967,17 +1968,15 @@ impl Lt {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Reals> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Reals> {
+        mono![Real::with_degree(self.shape, self.degree).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Reals> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Reals> {
+        mono![Bool::new_unchecked(self.shape).into()]
     }
 }
 
@@ -2033,17 +2032,19 @@ impl Ite {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Reals> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Reals> {
+        mono![
+            Bool::new_unchecked(self.shape).into(),
+            Real::with_degree(self.shape, self.degree).into(),
+            Real::with_degree(self.shape, self.degree).into()
+        ]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Reals> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Reals> {
+        mono![Real::with_degree(self.shape, self.degree).into()]
     }
 }
 
@@ -2079,17 +2080,15 @@ impl Le {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Reals> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Reals> {
+        mono![Real::with_degree(self.shape, self.degree).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Reals> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Reals> {
+        mono![Bool::new_unchecked(self.shape).into()]
     }
 }
 
@@ -2125,17 +2124,15 @@ impl Gt {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Reals> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Reals> {
+        mono![Real::with_degree(self.shape, self.degree).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Reals> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Reals> {
+        mono![Bool::new_unchecked(self.shape).into()]
     }
 }
 
@@ -2171,17 +2168,15 @@ impl Ge {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Reals> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Reals> {
+        mono![Real::with_degree(self.shape, self.degree).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Reals> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Reals> {
+        mono![Bool::new_unchecked(self.shape).into()]
     }
 }
 
@@ -2217,17 +2212,15 @@ impl Eq {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Reals> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Reals> {
+        mono![Real::with_degree(self.shape, self.degree).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Reals> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Reals> {
+        mono![Bool::new_unchecked(self.shape).into()]
     }
 }
 
@@ -2263,17 +2256,15 @@ impl Ne {
     }
 
     /// The sorts it reads, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(dom)]
-    fn py_dom(&self) -> Mono<Reals> {
-        Mono::try_from(Boundary::dom(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Reals> {
+        mono![Real::with_degree(self.shape, self.degree).into(); 2]
     }
 
     /// The sorts it writes, as a tuple.
-    #[cfg(feature = "pyo3")]
-    #[getter(cod)]
-    fn py_cod(&self) -> Mono<Reals> {
-        Mono::try_from(Boundary::cod(self)).unwrap()
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Reals> {
+        mono![Bool::new_unchecked(self.shape).into()]
     }
 }
 
@@ -2303,16 +2294,11 @@ pub mod broadcast {
 
     impl Boundary<Reals> for Ite {
         fn dom(&self) -> Poly<Reals> {
-            mono![
-                Bool::new_unchecked([1, 1]).into(),
-                Real::with_degree(self.shape, self.degree).into(),
-                Real::with_degree(self.shape, self.degree).into()
-            ]
-            .into()
+            Ite::dom(self).into()
         }
 
         fn cod(&self) -> Poly<Reals> {
-            mono![Real::with_degree(self.shape, self.degree).into()].into()
+            Ite::cod(self).into()
         }
     }
 
@@ -2368,17 +2354,19 @@ pub mod broadcast {
         }
 
         /// The sorts it reads, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(dom)]
-        fn py_dom(&self) -> Mono<Reals> {
-            Mono::try_from(Boundary::dom(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Reals> {
+            mono![
+                Bool::new_unchecked([1, 1]).into(),
+                Real::with_degree(self.shape, self.degree).into(),
+                Real::with_degree(self.shape, self.degree).into()
+            ]
         }
 
         /// The sorts it writes, as a tuple.
-        #[cfg(feature = "pyo3")]
-        #[getter(cod)]
-        fn py_cod(&self) -> Mono<Reals> {
-            Mono::try_from(Boundary::cod(self)).unwrap()
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Reals> {
+            mono![Real::with_degree(self.shape, self.degree).into()]
         }
     }
 }

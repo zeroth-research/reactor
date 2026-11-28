@@ -98,13 +98,10 @@ fn check_matrix(tensor: &tch::Tensor) -> Result<(), crate::Error> {
     Ok(())
 }
 
-/// The sort of a boundary holding exactly one: that of the operations
-/// reading or writing a single matrix. Panics for any other boundary.
-fn sole<S: Clone>(sorts: base::boundary::Poly<S>) -> S {
-    let [m] = sorts.as_slice() else {
-        panic!("expected a boundary of one product");
-    };
-    let [s] = m.as_slice() else {
+/// The sort of a product holding exactly one: the domain or codomain of the
+/// operations reading or writing a single matrix. Panics for any other product.
+fn sole<S: Clone>(sorts: base::boundary::Mono<S>) -> S {
+    let [s] = sorts.as_slice() else {
         panic!("expected a boundary of one sort");
     };
     s.clone()
