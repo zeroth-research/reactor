@@ -1,11 +1,15 @@
-"""Tests for reactor.torch.Module: theory-parameterized interface sorts (LRA/LIA/BV)
+"""Tests for reactor.torch.Module: interface sorts selected by `number=` (Real/Int/Word)
 and weight-dtype validation."""
 
 import pytest
 import torch
 import torch.nn as nn
 
-from reactor import LRA, LIA, BV, Real, Int, Bool, X
+from reactor import X
+from reactor.real import Real
+from reactor.int import Int
+from reactor.word import Word
+from reactor.bool import Bool
 from reactor.torch import Module
 
 
@@ -30,45 +34,45 @@ def _to_int_weights(net, dtype=torch.int64):
     return net
 
 
-# --- interface sorts follow the theory ---------------------------------------
+# --- interface sorts follow the numeric sort ---------------------------------------
 
 
 def _sorts(m):
     return list(m.extl)[0].dtype, list(m.intf)[0].dtype
 
 
-def test_default_theory_is_real():
+def test_default_number_is_real():
     e, i = _sorts(Module(Net()))
     assert isinstance(e, Real) and isinstance(i, Real)
 
 
-def test_lra_is_real():
-    e, i = _sorts(Module(Net(), theory=LRA))
+def test_real_is_real():
+    e, i = _sorts(Module(Net(), number=Real))
     assert isinstance(e, Real) and isinstance(i, Real)
 
 
-def test_lia_is_int():
-    e, i = _sorts(Module(_to_int_weights(Net()), theory=LIA))
+def test_int_is_int():
+    e, i = _sorts(Module(_to_int_weights(Net()), number=Int))
     assert isinstance(e, Int) and isinstance(i, Int)
 
 
-def test_bv_unsupported_for_nn():
-    # BV has no Transpose/Linear ops, so a neural module can't compile to it (yet).
-    with pytest.raises(NotImplementedError, match="does not support neural modules"):
-        Module(_to_int_weights(Net()), theory=BV)
+def test_word_unsupported_for_nn():
+    # words have no Transpose/Linear ops, so a neural module can't compile to them (yet).
+    with pytest.raises(NotImplementedError, match="need real or integer numbers"):
+        Module(_to_int_weights(Net()), number=Word)
 
 
-# --- weight dtype must match the theory (used as-is, no coercion) ------------
+# --- weight dtype must match the numeric sort (used as-is, no coercion) ------------
 
 
-def test_float_weights_under_lia_raise():
+def test_float_weights_under_int_raise():
     with pytest.raises(TypeError, match="integer"):
-        Module(Net(), theory=LIA)
+        Module(Net(), number=Int)
 
 
-def test_int_weights_under_lra_raise():
+def test_int_weights_under_real_raise():
     with pytest.raises(TypeError, match="floating-point"):
-        Module(_to_int_weights(Net()), theory=LRA)
+        Module(_to_int_weights(Net()), number=Real)
 
 
 # --- combinatorial (V(s')) vs sequential (V(s)) ------------------------------
@@ -98,8 +102,8 @@ def test_combinatorial_reads_next_only():
     assert X(extl).id in _wait_ids(m)
 
 
-def test_sequential_with_lia_builds():
-    m = Module(_to_int_weights(Net()), theory=LIA)
+def test_sequential_with_int_builds():
+    m = Module(_to_int_weights(Net()), number=Int)
     extl = list(m.extl)[0]
     assert isinstance(extl.dtype, Int)
     assert extl.id in _read_ids(m)

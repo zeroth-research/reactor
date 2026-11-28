@@ -10,21 +10,40 @@ from functools import lru_cache
 from pathlib import Path
 from lark import Lark, Transformer, Tree, Token
 
-from ..reactor import Wire, Term, Module, BV, Var, X
-from ..sort import Sort, BitVec, Bool
+from ..reactor import Wire, Term, Module, Var, X, Skip
+from ..real import Real
+from ..int import Int
+from ..bool import Bool
+from ..word import Word
+from ..zero import Real0
+from .. import int as _ii
+from .. import bool as _bl
+from .. import word as _ww
+from ..word import signed as _ws
+from ..word import unsigned as _wu
+
+__all__ = ["parse_smv"]
 
 
 def _bw(sort) -> int:
-    """Bit-width of a BitVec Sort (Sorts expose no methods; match instead)."""
+    """Width of a word sort."""
     match sort:
-        case BitVec(bw, _):
-            return bw
-    raise TypeError(f"not a BitVec sort: {sort}")
+        case Word(w):
+            return w
+    raise TypeError(f"not a word sort: {sort}")
 
 
-def _bv_const(value) -> "BV.Const":
-    """A scalar BV constant op from an int value (2-D initializer)."""
-    return BV.Const(torch.tensor([[int(value)]], dtype=torch.int64))
+def _const_op(value, sort):
+    """The constant `value` as a scalar of `sort`: a boolean (nonzero is TRUE), an
+    integer, or a word reduced modulo 2^width."""
+    match sort:
+        case Bool():
+            return _bl.Truth(torch.tensor([[bool(value)]]), sort)
+        case Int():
+            return _ii.Num(torch.tensor([[int(value)]], dtype=torch.int64), sort)
+        case Word(w):
+            return _ww.Num(torch.tensor([[int(value) % (1 << w)]], dtype=torch.int64), sort)
+    raise TypeError(f"no constant of sort {sort}")
 
 
 # ---------------------------------------------------------------------------
@@ -66,8 +85,8 @@ def parse_smv(
 
 @dataclass(frozen=True)
 class _SMVType:
-    """SMV variable type: BV Sort paired with its signedness."""
-    dtype: Sort
+    """SMV variable type: its sort (a boolean or a word) paired with its signedness."""
+    dtype: Real | Int | Bool | Word | Real0
     signed: bool
 
 
@@ -257,38 +276,38 @@ def _try_extract_assign(
 # 5. Type resolution
 # ---------------------------------------------------------------------------
 
-# The SMV parser is BV-only: every SMV value lowers to a bit-vector wire,
-# every emitted op is in the BV theory. The default width below is used for
-# SMV's unbounded `integer` (and enum / range types). Adjust freely; the
-# tests don't depend on the specific value.
+# Booleans lower to `Bool`, and every other SMV value to a word: SMV's unbounded
+# `integer` (and enum / range types) to words of the default width below. Adjust
+# freely; the tests don't depend on the specific value.
 _DEFAULT_INT_BW = 32
+_SCALAR = [1, 1]
 
 
 def _resolve_type(tree: Tree, enum_values: dict[str, int]) -> _SMVType:
     if isinstance(tree, Tree):
         match tree.data:
             case "type_bool":
-                return _SMVType(BitVec(1, [1, 1]), signed=False)
+                return _SMVType(Bool(_SCALAR), signed=False)
             case "type_int" | "range_type":
-                return _SMVType(BitVec(_DEFAULT_INT_BW, [1, 1]), signed=True)
+                return _SMVType(Word(_DEFAULT_INT_BW, _SCALAR), signed=True)
             case "type_spec":
                 return _resolve_type(tree.children[0], enum_values)
             case "word_type":
                 sign_tok = str(tree.children[0])
                 width = int(str(tree.children[1]))
-                return _SMVType(BitVec(width, [1, 1]), signed=(sign_tok == "signed"))
+                return _SMVType(Word(width, _SCALAR), signed=(sign_tok == "signed"))
             case "enum_type":
                 for code, ev in enumerate(_typed_children(tree, "enum_value")):
                     name = _extract_name(ev.children[0])
                     if name is not None:
                         enum_values.setdefault(name, code)
-                return _SMVType(BitVec(_DEFAULT_INT_BW, [1, 1]), signed=False)
+                return _SMVType(Word(_DEFAULT_INT_BW, _SCALAR), signed=False)
     # Token fallback
     text = str(tree).strip()
     if text == "boolean":
-        return _SMVType(BitVec(1, [1, 1]), signed=False)
+        return _SMVType(Bool(_SCALAR), signed=False)
     if text == "integer":
-        return _SMVType(BitVec(_DEFAULT_INT_BW, [1, 1]), signed=True)
+        return _SMVType(Word(_DEFAULT_INT_BW, _SCALAR), signed=True)
     raise ValueError(f"unsupported type: {tree}")
 
 
@@ -296,19 +315,18 @@ def _resolve_type(tree: Tree, enum_values: dict[str, int]) -> _SMVType:
 # 6. Lowerer
 # ---------------------------------------------------------------------------
 
-# Table-driven binary operator dispatch. Values are op-name strings into
-# the `IType.BV` namespace (the SMV parser is BV-only). Resolution is
-# deferred to term-construction time so missing ops produce a useful error.
+# Table-driven binary operator dispatch, by the operator's name; `_binary_op`
+# resolves it, for booleans and for words, at term-construction time.
 _BINOPS: dict[str, dict[str, str]] = {
     "iff": {"<->": "Xnor", "xnor": "Xnor"},
     "or_expr": {"|": "Or", "or": "Or", "xor": "Xor"},
     "and_expr": {"&": "And", "and": "And"},
     "arith_expr": {"+": "Add", "-": "Sub"},
-    "mod_expr": {"mod": "UMod"},
-    "term_expr": {"*": "Mul", "/": "UDiv"},
+    "mod_expr": {"mod": "Mod"},
+    "term_expr": {"*": "Mul", "/": "Div"},
 }
 
-# Comparison ops split by sign; handled in _lower_cmp / _cmp_itype.
+# Comparison ops split by sign; handled in _lower_cmp.
 _CMP_FIXED: dict[str, str] = {"=": "Eq", "!=": "Ne"}
 _CMP_ORDERED: dict[str, str] = {"<": "Lt", "<=": "Le", ">": "Gt", ">=": "Ge"}
 
@@ -322,17 +340,6 @@ _NARY_OPS = {
     "abs_call": "Abs",
 }
 
-
-def _bv_op(name: str):
-    """Construct `BV.<name>()` (raises AttributeError if the op is missing).
-
-    Note: Xnor / Implies are referenced by the grammar maps but are NOT BV ops;
-    those SMV constructs aren't exercised by the fixtures. If needed later, compose
-    them (Not(Xor) / Or(Not, b)) here.
-    """
-    return getattr(BV, name)()
-
-
 _METHODS = {
     "builtin_call": "_lower_builtin",
     "case_expr": "_lower_case",
@@ -342,31 +349,22 @@ _METHODS = {
     "paren_expr": "_lower_paren",
 }
 
-_BUILTIN_MAP = {
-    "bool": lambda: BV.BVToBool(),
-    "word1": lambda: BV.Id(),
-    "unsigned": lambda: BV.Id(),
-    "signed": lambda: BV.Id(),
-}
 
-
-def _const_out_dtype(itype):
-    """Output Sort for a scalar const op, or None to defer to the target wire."""
-    # BV-only parser: const width defers to the target/default width.
-    return None
-
-
-def _builtin_out_dtype(fn_name: str, in_dtype):
-    """Return the output DType for a BV cast/conversion builtin."""
-    if fn_name in ("bool", "word1"):
-        return BitVec(1, [1, 1])
-    if fn_name in ("unsigned", "signed"):
-        return BitVec(_bw(in_dtype), [1, 1])
-    return None
+def _is_literal(tree) -> bool:
+    """Whether *tree* is a bare number, which takes its sort from its context."""
+    node = _peel(tree)
+    if isinstance(node, Token):
+        return node.type == "NUMBER"
+    return isinstance(node, Tree) and node.data == "int_lit"
 
 
 class _Lowerer:
-    """Recursive expression-to-Term lowerer."""
+    """Recursive expression-to-Term lowerer.
+
+    A number literal has no sort of its own: it takes that of the wire it is lowered
+    to, or else the sort *hint* of the operand it combines with, or else a word of the
+    default width.
+    """
 
     def __init__(
             self,
@@ -387,118 +385,198 @@ class _Lowerer:
 
     # --- public entry -------------------------------------------------------
 
-    def lower(self, tree, target: Wire | None = None) -> Wire:
+    def lower(self, tree, target: Wire | None = None, hint: Real | Int | Bool | Word | Real0 | None = None) -> Wire:
         """Lower *tree* into Term(s), return the wire carrying the result."""
         # Token leaf (from Lark inlining)
         if isinstance(tree, Token):
             if tree.type == "IDENT":
-                return self._lower_name(str(tree), target)
+                return self._lower_name(str(tree), target, hint)
             if tree.type == "NUMBER":
-                return self._emit_const(_bv_const(int(str(tree))), target)
+                return self._emit_const(int(str(tree)), target, hint)
             raise ValueError(f"unexpected token type: {tree.type}")
 
         name = tree.data
 
         # Table-driven binary ops
         if name in _BINOPS:
-            return self._lower_binop(
-                tree, _BINOPS[name], target, out_dtype_fn=lambda d: d
-            )
+            return self._lower_binop(tree, _BINOPS[name], target, hint)
 
         # Table-driven n-ary ops (unary / implies / ternary)
         if name in _NARY_OPS:
-            return self._lower_nary(tree, _NARY_OPS[name], target)
+            return self._lower_nary(tree, _NARY_OPS[name], target, hint)
 
         # Table-driven method dispatch
         if name in _METHODS:
-            return getattr(self, _METHODS[name])(tree, target)
+            return getattr(self, _METHODS[name])(tree, target, hint)
 
         if name == "var_ref":
-            return self._lower_name(str(tree.children[0]), target)
+            return self._lower_name(str(tree.children[0]), target, hint)
         if name == "int_lit":
-            return self._emit_const(_bv_const(int(str(tree.children[0]))), target)
+            return self._emit_const(int(str(tree.children[0])), target, hint)
         if name in ("true_lit", "false_lit"):
-            # Boolean literals live in BV<1>; the parser's `_DEFAULT_INT_BW`
-            # fallback would otherwise widen them to BV<32>.
-            w = self._fresh(target, BitVec(1, [1, 1]))
-            self.terms.append(
-                Term(_bv_const(1 if name == "true_lit" else 0), [w])
-            )
+            w = self._fresh(target, Bool(_SCALAR))
+            self.terms.append(Term(_const_op(name == "true_lit", w.dtype), [w]))
             return self._enforce(w, target)
 
         # Fallback: descend into single child
         if tree.children:
-            return self.lower(tree.children[0], target)
+            return self.lower(tree.children[0], target, hint)
         raise ValueError(f"unexpected empty tree: {tree.data}")
+
+    def _lower_pair(self, left_tree, right_tree, hint=None):
+        """Lower two operands, a number literal taking its sort from the other."""
+        if _is_literal(left_tree) and not _is_literal(right_tree):
+            right = self.lower(right_tree, hint=hint)
+            return self.lower(left_tree, hint=right.dtype), right
+        left = self.lower(left_tree, hint=hint)
+        return left, self.lower(right_tree, hint=left.dtype)
+
+    # --- operations, for booleans and for words -----------------------------
+
+    def _emit(self, op, sort, inputs, target=None) -> Wire:
+        w = self._fresh(target, sort)
+        self.terms.append(Term(op, [w], inputs))
+        return w
+
+    def _binary_op(self, name: str, left: Wire, right: Wire, target=None) -> Wire:
+        sort = left.dtype
+        dom = [left.dtype, right.dtype]
+        match sort:
+            case Bool():
+                if name == "Xnor":  # x <-> y is x = y
+                    return self._emit(_bl.Eq(dom), sort, [left, right], target)
+                return self._emit(getattr(_bl, name)(dom), sort, [left, right], target)
+            case Int() if name in ("Add", "Sub", "Mul", "Div", "Mod"):
+                return self._emit(getattr(_ii, name)(dom), sort, [left, right], target)
+            case Word():
+                signed = self._is_signed(left) or self._is_signed(right)
+                if name == "Div":
+                    op = (_ws.Div if signed else _wu.Div)(dom)
+                elif name == "Mod":
+                    op = (_ws.Rem if signed else _wu.Rem)(dom)
+                else:
+                    op = getattr(_ww, name)(dom)
+                return self._emit(op, sort, [left, right], target)
+        raise TypeError(f"no {name} on {sort}")
 
     # --- binary ops ---------------------------------------------------------
 
-    def _lower_binop(
-            self, tree: Tree, op_map: dict, target: Wire | None, *, out_dtype_fn=None
-    ) -> Wire:
+    def _lower_binop(self, tree: Tree, op_map: dict, target: Wire | None, hint=None) -> Wire:
         children = tree.children
-        left = self.lower(children[0])
+        if len(children) == 1:  # an operand alone, with no operator
+            return self.lower(children[0], target, hint)
+        left, rhs = self._lower_pair(children[0], children[2], hint)
         i = 1
-        while i < len(children):
+        while True:
             op_tok = str(children[i])
-            rhs = self.lower(children[i + 1])
-            itype = _bv_op(op_map[op_tok])
             out = target if i + 2 >= len(children) else None
-            out_dtype = (
-                out_dtype_fn(left.dtype) if (out_dtype_fn and out is None) else None
-            )
-            w = self._fresh(out, out_dtype)
-            self.terms.append(Term(itype, [w], [left, rhs]))
+            w = self._binary_op(op_map[op_tok], left, rhs, out)
             self._propagate_type(w, left, rhs)
             left = w
             i += 2
+            if i >= len(children):
+                break
+            rhs = self.lower(children[i + 1], hint=left.dtype)
         return self._enforce(left, target)
 
-    # --- comparison ops (sign-aware) ----------------------------------------
+    # --- comparison ops (sign-aware): write booleans ------------------------
 
-    def _cmp_itype(self, op_tok: str, left: Wire):
-        if op_tok in _CMP_FIXED:
-            return _bv_op(_CMP_FIXED[op_tok])
-        prefix = "S" if self._is_signed(left) else "U"
-        return _bv_op(prefix + _CMP_ORDERED[op_tok])
+    def _compare(self, op_tok: str, left: Wire, right: Wire, target=None) -> Wire:
+        out = Bool(_SCALAR)
+        dom = [left.dtype, right.dtype]
+        match left.dtype:
+            case Bool():
+                if op_tok not in _CMP_FIXED:
+                    raise TypeError(f"no ordering {op_tok} on booleans")
+                op = getattr(_bl, _CMP_FIXED[op_tok])(dom)
+                return self._emit(op, out, [left, right], target)
+            case Word():
+                if op_tok in _CMP_FIXED:
+                    op = getattr(_ww, _CMP_FIXED[op_tok])(dom)
+                elif self._is_signed(left) or self._is_signed(right):
+                    op = getattr(_ws, _CMP_ORDERED[op_tok])(dom)
+                else:
+                    op = getattr(_wu, _CMP_ORDERED[op_tok])(dom)
+                return self._emit(op, out, [left, right], target)
+        raise TypeError(f"no comparison on {left.dtype}")
 
-    def _lower_cmp(self, tree: Tree, target: Wire | None) -> Wire:
+    def _lower_cmp(self, tree: Tree, target: Wire | None, hint=None) -> Wire:
         children = tree.children
-        left = self.lower(children[0])
+        if len(children) == 1:  # an operand alone, with no comparison
+            return self.lower(children[0], target, hint)
+        left, rhs = self._lower_pair(children[0], children[2])
         i = 1
-        while i < len(children):
-            op_tok = str(children[i])
-            rhs = self.lower(children[i + 1])
-            itype = self._cmp_itype(op_tok, left)
+        while True:
             out = target if i + 2 >= len(children) else None
-            w = self._fresh(out, BitVec(1, [1, 1]))
-            self.terms.append(Term(itype, [w], [left, rhs]))
-            left = w
+            left = self._compare(str(children[i]), left, rhs, out)
             i += 2
+            if i >= len(children):
+                break
+            rhs = self.lower(children[i + 1], hint=left.dtype)
         return self._enforce(left, target)
 
     # --- n-ary (unary / implies / ternary) ----------------------------------
 
-    def _lower_nary(self, tree: Tree, op_name: str, target: Wire | None) -> Wire:
-        inputs = [
-            self.lower(c)
-            for c in tree.children
-            if not (isinstance(c, Token) and c.type in _OP_TOKENS)
-        ]
-        itype = _bv_op(op_name)
-        # Ite: output matches then-branch (inputs[1]); others match first input
-        out_dtype = (
-            inputs[1].dtype
-            if (op_name == "Ite" and len(inputs) >= 2)
-            else inputs[0].dtype
-        )
-        w = self._fresh(target, out_dtype)
-        self.terms.append(Term(itype, [w], inputs))
+    def _lower_nary(self, tree: Tree, op_name: str, target: Wire | None, hint=None) -> Wire:
+        trees = [c for c in tree.children if not (isinstance(c, Token) and c.type in _OP_TOKENS)]
+        if op_name == "Ite":
+            cond = self._as_bool(self.lower(trees[0]))
+            hint = target.dtype if target is not None else hint
+            then_w, else_w = self._lower_pair(trees[1], trees[2], hint)
+            return self._ite(cond, then_w, else_w, target)
+        if op_name == "Implies":  # x -> y is (not x) or y
+            a, b = self._lower_pair(trees[0], trees[1], hint)
+            return self._binary_op("Or", self._not(a), b, target)
+        x = self.lower(trees[0], hint=target.dtype if target is not None else hint)
+        match op_name, x.dtype:
+            case "Not", _:
+                return self._enforce(self._not(x), target)
+            case "Neg", Word():
+                return self._enforce(self._emit(_ww.Neg(x.dtype), x.dtype, [x]), target)
+            case "Abs", Word():
+                return self._enforce(self._emit(_ws.Abs(x.dtype), x.dtype, [x]), target)
+        raise TypeError(f"no {op_name} on {x.dtype}")
+
+    def _not(self, x: Wire) -> Wire:
+        match x.dtype:
+            case Bool():
+                return self._emit(_bl.Not(x.dtype), x.dtype, [x])
+            case Word():
+                return self._emit(_ww.Not(x.dtype), x.dtype, [x])
+        raise TypeError(f"no Not on {x.dtype}")
+
+    def _ite(self, cond: Wire, then_w: Wire, else_w: Wire, target=None) -> Wire:
+        dom = [cond.dtype, then_w.dtype, else_w.dtype]
+        match then_w.dtype:
+            case Bool():
+                op = _bl.Ite(dom)
+            case Word():
+                op = _ww.Ite(dom)
+            case other:
+                raise TypeError(f"no Ite on {other}")
+        w = self._emit(op, then_w.dtype, [cond, then_w, else_w], target)
+        self._propagate_type(w, then_w, else_w)
         return self._enforce(w, target)
+
+    def _as_bool(self, w: Wire) -> Wire:
+        """A condition as a boolean: a 1-bit word `x` as `bool(x)`."""
+        match w.dtype:
+            case Bool():
+                return w
+            case Word(1):
+                return self._bool_of_word1(w)
+        raise TypeError(f"a condition must be a boolean, got {w.dtype}")
+
+    def _bool_of_word1(self, w: Wire) -> Wire:
+        """`bool(x)` of a word `x`: its lowest bit, `Extract(0, 0, x) = 1`."""
+        s = list(w.dtype.shape)
+        bit = self._emit(_ww.Extract(0, 0, w.dtype), Word(1, s), [w])
+        one = self._emit(_const_op(1, Word(1, s)), Word(1, s), [])
+        return self._emit(_ww.Eq([Word(1, s), Word(1, s)]), Bool(s), [bit, one])
 
     # --- builtin_call -------------------------------------------------------
 
-    def _lower_builtin(self, tree: Tree, target: Wire | None) -> Wire:
+    def _lower_builtin(self, tree: Tree, target: Wire | None, hint=None) -> Wire:
         fn_name = str(tree.children[0])
         exprs = [
             c
@@ -507,58 +585,63 @@ class _Lowerer:
         ]
         arg_w = self.lower(exprs[0])
 
-        if fn_name in _BUILTIN_MAP:
-            itype = _BUILTIN_MAP[fn_name]()
-            out_dtype = _builtin_out_dtype(fn_name, arg_w.dtype)
+        if fn_name == "bool":
+            w = self._as_bool(arg_w) if isinstance(arg_w.dtype, Bool) else self._bool_of_word1(arg_w)
+        elif fn_name == "word1":
+            # a boolean as a 1-bit word: if b then 1 else 0
+            one = self._emit(_const_op(1, Word(1, _SCALAR)), Word(1, _SCALAR), [])
+            zero = self._emit(_const_op(0, Word(1, _SCALAR)), Word(1, _SCALAR), [])
+            cond = self._as_bool(arg_w)
+            op = _ww.Ite([cond.dtype, one.dtype, zero.dtype])
+            w = self._emit(op, Word(1, _SCALAR), [cond, one, zero])
+        elif fn_name in ("signed", "unsigned"):
+            w = self._emit(Skip(arg_w.dtype), arg_w.dtype, [arg_w])
+            self._wire_types[id(w)] = _SMVType(w.dtype, signed=(fn_name == "signed"))
         elif fn_name == "extend":
             extra = int(str(_peel(exprs[1])))
-            in_bw = _bw(arg_w.dtype)
-            out_bw = in_bw + extra
-            itype = BV.Extend(extra=extra)
-            out_dtype = BitVec(out_bw, [1, 1])
+            width = _bw(arg_w.dtype)
+            op = (_ws.Extend if self._is_signed(arg_w) else _wu.Extend)(extra, arg_w.dtype)
+            w = self._emit(op, Word(width + extra, _SCALAR), [arg_w])
+            self._propagate_type(w, arg_w)
         else:
             raise ValueError(f"unknown builtin: {fn_name}")
-
-        w = self._fresh(target, out_dtype)
-        self.terms.append(Term(itype, [w], [arg_w]))
-        if fn_name in ("signed", "unsigned"):
-            self._wire_types[id(w)] = _SMVType(w.dtype, signed=(fn_name == "signed"))
         return self._enforce(w, target)
 
     # --- case..esac ---------------------------------------------------------
 
-    def _lower_case(self, tree: Tree, target: Wire | None) -> Wire:
+    def _lower_case(self, tree: Tree, target: Wire | None, hint=None) -> Wire:
         branches = [
             c for c in tree.children if isinstance(c, Tree) and c.data == "case_branch"
         ]
-        return self._lower_case_rec(branches, 0, target)
+        hint = target.dtype if target is not None else hint
+        return self._lower_case_rec(branches, 0, target, hint)
 
-    def _lower_case_rec(self, branches, idx, target):
+    def _lower_case_rec(self, branches, idx, target, hint):
         if idx >= len(branches):
-            return self._emit_const(_bv_const(0), target)
+            return self._emit_const(0, target, hint)
         cond_tree, val_tree = branches[idx].children
         if idx == len(branches) - 1:
-            return self.lower(val_tree, target)
-        cond = self.lower(cond_tree)
-        then_w = self.lower(val_tree)
-        else_w = self._lower_case_rec(branches, idx + 1, None)
-        w = self._fresh(target, then_w.dtype)
-        self.terms.append(Term(BV.Ite(), [w], [cond, then_w, else_w]))
-        return self._enforce(w, target)
+            return self.lower(val_tree, target, hint)
+        cond = self._as_bool(self.lower(cond_tree))
+        then_w = self.lower(val_tree, hint=hint)
+        else_w = self._lower_case_rec(branches, idx + 1, None, then_w.dtype)
+        return self._ite(cond, then_w, else_w, target)
 
     # --- next(expr) ---------------------------------------------------------
 
-    def _lower_next(self, tree: Tree, target: Wire | None) -> Wire:
+    def _lower_next(self, tree: Tree, target: Wire | None, hint=None) -> Wire:
         inner = tree.children[0]
         name = _extract_name(_peel(inner))
         if name and name in self.name_map:
-            _, next_w = self.name_map[name]
+            next_w = X(self.name_map[name])
+            if name in self.var_types:
+                self._wire_types[id(next_w)] = self.var_types[name]
             return self._enforce(next_w, target)
-        return self.lower(inner, target)
+        return self.lower(inner, target, hint)
 
     # --- word literal -------------------------------------------------------
 
-    def _lower_word_lit(self, tree: Tree, target: Wire | None) -> Wire:
+    def _lower_word_lit(self, tree: Tree, target: Wire | None, hint=None) -> Wire:
         lit_tok = str(tree.children[0])
         # Parse e.g. "0ud16_0" or "0sd32_300"
         signed = lit_tok[1] == "s"
@@ -567,37 +650,34 @@ class _Lowerer:
         width = int(rest[:upos])
         value = int(rest[upos + 1:])
 
-        if signed and value < 0:
-            value = value + (1 << width)
-        dtype = BitVec(width, [1, 1])
+        dtype = Word(width, _SCALAR)
         w = Wire(dtype)
         self._wire_types[id(w)] = _SMVType(dtype, signed=signed)
-        # Word literals produce a BV constant, not an LIA Const.
-        self.terms.append(Term(_bv_const(value), [w]))
+        self.terms.append(Term(_const_op(value, dtype), [w]))
         return self._maybe_bit_select(tree, w, 1, target)
 
     # --- paren_expr ---------------------------------------------------------
 
-    def _lower_paren(self, tree: Tree, target: Wire | None) -> Wire:
+    def _lower_paren(self, tree: Tree, target: Wire | None, hint=None) -> Wire:
         inner = self.lower(
-            tree.children[0], target if len(tree.children) == 1 else None
+            tree.children[0], target if len(tree.children) == 1 else None, hint
         )
         return self._maybe_bit_select(tree, inner, 1, target)
 
     # --- name (ident / define / enum) ---------------------------------------
 
-    def _lower_name(self, name: str, target: Wire | None) -> Wire:
+    def _lower_name(self, name: str, target: Wire | None, hint=None) -> Wire:
         # Check DEFINE
         if name in self.defines:
             if name in self._expanding:
                 raise ValueError(f"circular DEFINE: {name}")
             self._expanding.add(name)
-            result = self.lower(self.defines[name], target)
+            result = self.lower(self.defines[name], target, hint)
             self._expanding.discard(name)
             return result
         # Check enum
         if name in self.enum_values:
-            return self._emit_const(_bv_const(self.enum_values[name]), target)
+            return self._emit_const(self.enum_values[name], target, hint)
         # Wire lookup
         if name in self.name_map:
             var = self.name_map[name]
@@ -607,7 +687,7 @@ class _Lowerer:
             return self._enforce(w, target)
         # Unknown name — emit zero with warning
         warnings.warn(f"undeclared variable '{name}', defaulting to 0")
-        return self._emit_const(_bv_const(0), target)
+        return self._emit_const(0, target, hint)
 
     # --- helpers ------------------------------------------------------------
 
@@ -627,17 +707,18 @@ class _Lowerer:
     def _fresh(self, target: Wire | None, dtype=None) -> Wire:
         if target is not None:
             return target
-        return Wire(dtype if dtype is not None else BitVec(_DEFAULT_INT_BW, [1, 1]))
+        return Wire(dtype if dtype is not None else Word(_DEFAULT_INT_BW, _SCALAR))
 
-    def _emit_const(self, itype, target: Wire | None) -> Wire:
-        out_dtype = _const_out_dtype(itype)
-        w = self._fresh(target, out_dtype)
-        self.terms.append(Term(itype, [w]))
+    def _emit_const(self, value: int, target: Wire | None, hint=None) -> Wire:
+        """A number literal, of the sort of the target, or else of the hint, or else an
+        integer, as SMV's integer constants are."""
+        w = self._fresh(target, hint if hint is not None else Int(_SCALAR))
+        self.terms.append(Term(_const_op(value, w.dtype), [w]))
         return self._enforce(w, target)
 
     def _enforce(self, wire: Wire, target: Wire | None) -> Wire:
         if target is not None and target != wire:
-            self.terms.append(Term(BV.Id(), [target], [wire]))
+            self.terms.append(Term(Skip(wire.dtype), [target], [wire]))
             t = self._smv_type(wire)
             if t is not None:
                 self._wire_types[id(target)] = t
@@ -654,9 +735,9 @@ class _Lowerer:
         ):
             bs = tree.children[idx]
             high, low = int(str(bs.children[0])), int(str(bs.children[1]))
-            out_dtype = BitVec(high - low + 1, [1, 1])
-            w = self._fresh(target, out_dtype)
-            self.terms.append(Term(BV.BitSelect(high=high, low=low), [w], [base_w]))
+            op = _ww.Extract(high, low, base_w.dtype)
+            w = self._fresh(target, Word(high - low + 1, _SCALAR))
+            self.terms.append(Term(op, [w], [base_w]))
             return self._enforce(w, target)
         return self._enforce(base_w, target)
 
@@ -697,14 +778,14 @@ def _build_module(
         if init_expr is not None:
             init_low.lower(init_expr, X(var))
         else:
-            init_low.terms.append(Term(_bv_const(0), [X(var)]))
+            init_low.terms.append(Term(_const_op(0, var.dtype), [X(var)]))
 
         # --- UPDATE ---
         next_expr = d.next_assigns.get(name)
         if next_expr is not None:
             update_low.lower(next_expr, X(var))
         else:
-            update_low.terms.append(Term(BV.Id(), [X(var)], [var]))
+            update_low.terms.append(Term(Skip(var.dtype), [X(var)], [var]))
 
     # Build obs_pairs: all variables (state + ivar)
     obs_pairs = [name_map[n] for n, _ in all_decls]

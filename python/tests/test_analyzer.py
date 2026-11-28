@@ -11,7 +11,11 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from reactor.gym import Env
-from reactor import NonLinearError, TheoryError, Bool, Real, Int, BitVec
+from reactor import TheoryError
+from reactor.bool import Bool
+from reactor.real import Real
+from reactor.int import Int
+from reactor import Havoc
 
 
 # ── boilerplate ───────────────────────────────────────────────────
@@ -252,8 +256,8 @@ class _Power(_MinEnv):
 
 
 @pytest.mark.xfail(
-    raises=NonLinearError,
-    reason="power operator (**) is non-linear in LIA/LRA; needs a non-linear theory",
+    raises=TheoryError,
+    reason="power operator (**) is not supported by any theory",
     strict=True,
 )
 def test_power_operator():
@@ -332,16 +336,9 @@ class _Untraced(_MinEnv):
 
 
 def test_untraced_call():
-    from reactor import LRA
-
     e = _wrap(_Untraced())  # real env runs the function via delegation
-    labels = []
-    for atom in e.atoms:
-        for t in list(atom.update):
-            match t.itype:
-                case LRA.Uninterpreted(name):
-                    labels.append(name)
-    assert any('(...)' in lbl for lbl in labels), "expected an Uninterpreted term"
+    havocs = [t for atom in e.atoms for t in list(atom.update) if isinstance(t.itype, Havoc)]
+    assert havocs, "expected a Havoc term for the untraced call"
     e.reset();
     e.step(0)
     assert e.x == 2.0

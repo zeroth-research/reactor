@@ -3,9 +3,13 @@ import torch
 import inspect
 import gymnasium as gym
 
-from ..reactor import Module, Wire, LIA, BV, X, Var
-from ..sort import Sort, Bool, Real, Int, BitVec
-from ..builder import builder_for, _normalize_shape, _shape
+from ..reactor import Module, Wire, X, Var
+from ..real import Real
+from ..int import Int
+from ..bool import Bool
+from ..word import Word
+from ..zero import Real0
+from ..builder import builder_for, number_sort
 from ..analyzer import (
     convert_method,
     classify_attrs,
@@ -22,21 +26,21 @@ from ..eval import eval_itype, read_wire, getattr_wire
 # ============================================================================
 
 
-def space_to_dtype(space, theory, is_action: bool) -> Sort:
-    """Convert a gym.spaces.Space to a Sort for the given theory (always 2-D)."""
+def space_to_dtype(space, number, is_action: bool) -> Real | Int | Bool | Word | Real0:
+    """Convert a gym.spaces.Space to a Sort, with numbers of the sort family `number`
+    (Real, Int or Word; always 2-D)."""
     if isinstance(space, gym.spaces.Discrete):
         n = space.n
-        if theory is BV:
+        if number is Word:
             bits = max(1, int(math.ceil(math.log2(n + 1))))
-            return BitVec(bits, [1, 1])
+            return Word(bits, [1, 1])
         if is_action:
             return Real([1, n])
-        return Int([1, 1]) if theory is LIA else Real([1, 1])
+        return number_sort(number)([1, 1])
     elif isinstance(space, gym.spaces.Box):
-        shape = _normalize_shape(list(space.shape))
-        if theory is BV:
-            return BitVec(32, shape)
-        return Int(shape) if theory is LIA else Real(shape)
+        # a scalar or a vector is a matrix of one row, as `torch.atleast_2d` makes it
+        shape = list(space.shape)
+        return number_sort(number)([1] * (2 - len(shape)) + shape)
     elif isinstance(space, gym.spaces.MultiBinary):
         return Bool([1, space.n])
     else:
@@ -57,7 +61,7 @@ def _normalize_attrs(attrs, prvt_names):
     """
     if attrs is None:
         return {}
-    if isinstance(attrs, Sort):
+    if isinstance(attrs, Real | Int | Bool | Word | Real0):
         return {name: attrs for name in prvt_names}
     if isinstance(attrs, dict):
         unknown = set(attrs) - set(prvt_names)
@@ -75,7 +79,7 @@ def _normalize_attrs(attrs, prvt_names):
 def _resolve_attr_wire(name, spec):
     """Turn an `attrs` override (a Sort, or a (latched, next) wire pair) into a
     validated [latched, next] wire pair."""
-    if isinstance(spec, Sort):
+    if isinstance(spec, Real | Int | Bool | Word | Real0):
         return wire_pair(spec)
     is_var = (
         isinstance(spec, Var)
@@ -111,7 +115,7 @@ def _to_wire_shape(t: torch.Tensor, wire) -> torch.Tensor:
 
     Symbolic ops (e.g. Linear/Transpose) expect 2-D operands; the real env emits
     flat 1-D obs, so conform it to the declared wire shape for downstream atoms."""
-    shape = _shape(wire.dtype)
+    shape = wire.dtype.shape
     if t.numel() == int(torch.tensor(shape).prod().item()):
         return t.reshape(shape)
     return _ensure_1d(t)
@@ -122,7 +126,7 @@ def _to_wire_shape(t: torch.Tensor, wire) -> torch.Tensor:
 # ============================================================================
 
 
-def _extract_env_module(env_instance, theory=None, **kwargs):
+def _extract_env_module(env_instance, number=Real, **kwargs):
     """Analyze a gym.Env instance and extract a symbolic Module.
 
     If env_instance is wrapped (e.g. TimeLimit from gym.make), the raw inner
@@ -148,11 +152,11 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
         p for p in inspect.signature(env_cls.step).parameters if p != "self"
     )
 
-    _builder = builder_for(theory)
+    _builder = builder_for(number)
 
-    action_dtype = space_to_dtype(env_instance.action_space, theory, is_action=True)
+    action_dtype = space_to_dtype(env_instance.action_space, number, is_action=True)
     observation_dtype = space_to_dtype(
-        env_instance.observation_space, theory, is_action=False
+        env_instance.observation_space, number, is_action=False
     )
 
     # Reset so runtime-created attrs (e.g. self.state) are populated, then
@@ -213,11 +217,11 @@ def _extract_env_module(env_instance, theory=None, **kwargs):
 
     reset_terms = convert_method(
         env_cls.reset, wires, reset_result, cls=env_cls,
-        theory=theory, static_attrs=static_attrs,
+        builder=_builder, static_attrs=static_attrs,
     )
     step_terms = convert_method(
         env_cls.step, wires, step_result, cls=env_cls,
-        theory=theory, static_attrs=static_attrs,
+        builder=_builder, static_attrs=static_attrs,
     )
 
     # Add defaults for reward/terminated/truncated in init block
@@ -274,7 +278,7 @@ class Env(Module, gym.Wrapper):
         Env(module1, module2)               → compose + pure symbolic
         Env(..., interpret=True)            → run every atom through the IR interpreter
                                               (no real-env delegation)
-        Env(..., theory=LIA|BV|LRA)         → select the term theory (default LRA)
+        Env(..., number=Real|Int|Word)      → the numeric sort of the env (default Real)
         Env(gym_env, attrs=...)             → declare the private-state sorts/wires
                                               (required when the env has private state):
                                               a Sort for all, or {name: Sort | (latched, next)}
@@ -283,7 +287,7 @@ class Env(Module, gym.Wrapper):
 
     def __new__(cls, *args, **kwargs):
         interpret = kwargs.pop("interpret", False)
-        theory = kwargs.pop("theory", None)
+        number = kwargs.pop("number", Real)
         raw_envs = []
         modules = []
         backing_env = None
@@ -313,7 +317,7 @@ class Env(Module, gym.Wrapper):
 
         if len(raw_envs) == 1:
             gym_env = raw_envs[0]
-            extracted = _extract_env_module(gym_env, theory=theory, **kwargs)
+            extracted = _extract_env_module(gym_env, number=number, **kwargs)
             wire_names = extracted.pop("_wire_names", {})
             env_module = Module.__new__(Module, **extracted)
             env_ctrl_ids = {w for w in env_module.atoms[0].ctrl}

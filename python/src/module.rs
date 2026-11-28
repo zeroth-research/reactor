@@ -4,17 +4,23 @@ use pyo3::exceptions::{PyException, PyIndexError, PyTypeError};
 use pyo3::types::{PyDict, PyTuple};
 use std::borrow::Cow;
 use std::collections::HashMap;
-use theory::any::{Combinatorial, Differential, Sequential, Sort};
+use theory::Any;
 
-#[pyclass(subclass, frozen)]
+#[pyclass(module = "reactor", subclass, frozen)]
 pub(crate) struct Module {
-    pub(crate) base: reactive::Module<Combinatorial, Sequential, Differential, Sort>,
+    pub(crate) base: reactive::Module<Op, Op, Op, Any>,
 }
+
+// SAFETY: the operations of the module may hold `tch::Tensor`s, which are not
+// `Sync`, as libtorch tensors are pointers. Nothing here mutates them: they
+// are only read and shallow-cloned, and libtorch counts the references to a
+// tensor atomically, as for the classes of `theory::torch`.
+unsafe impl Sync for Module {}
 
 impl Module {
     fn partially_observable<A>(atoms: A, hide: &Bound<'_, PyAny>) -> PyResult<Self>
     where
-        A: IntoIterator<Item = reactive::Atom<Combinatorial, Sequential, Differential, Sort>>,
+        A: IntoIterator<Item = reactive::Atom<Op, Op, Op, Any>>,
     {
         let hide = Hide::try_from(hide)?;
         let module = reactive::Module::partially_observable(atoms, hide.as_fn());
@@ -24,7 +30,7 @@ impl Module {
 
     fn observable<A>(atoms: A) -> PyResult<Self>
     where
-        A: IntoIterator<Item = reactive::Atom<Combinatorial, Sequential, Differential, Sort>>,
+        A: IntoIterator<Item = reactive::Atom<Op, Op, Op, Any>>,
     {
         let module = reactive::Module::observable(atoms);
         module.map(Into::into).map_err(PyException::new_err)
@@ -51,7 +57,7 @@ impl Module {
                 Err(PyTypeError::new_err(
                     "positional arguments take atoms or modules",
                 ))
-            } else if args.get_item(0)?.downcast::<Atom>().is_ok() {
+            } else if args.get_item(0)?.cast::<Atom>().is_ok() {
                 // a sequence of atoms builds a single module
                 let atoms: Vec<_> = try_iter_borrow::<Atom>(args)?.collect::<PyResult<_>>()?;
                 let atoms = atoms.iter().map(|a| a.base().clone());
@@ -136,7 +142,7 @@ impl Module {
         assign: &Bound<'_, PyAny>,
         hide: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
-        let assign = try_term_iter_cloned::<Combinatorial>(&assign)?;
+        let assign = try_term_iter_cloned::<Op>(&assign)?;
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
         if let Some(hide) = hide {
             let atom =
@@ -373,8 +379,8 @@ impl Module {
     }
 }
 
-impl From<reactive::Module<Combinatorial, Sequential, Differential, Sort>> for Module {
-    fn from(base: reactive::Module<Combinatorial, Sequential, Differential, Sort>) -> Self {
+impl From<reactive::Module<Op, Op, Op, Any>> for Module {
+    fn from(base: reactive::Module<Op, Op, Op, Any>) -> Self {
         Self { base }
     }
 }
@@ -398,14 +404,14 @@ enum ModuleInterfaceType {
     Obs,
     Ctrl,
 }
-#[pyclass(sequence)]
+#[pyclass(module = "reactor", sequence)]
 struct ModuleInterface {
     module: Py<Module>,
     interface: ModuleInterfaceType,
 }
 
 impl ModuleInterface {
-    fn base(&self) -> &reactive::Interface<Sort> {
+    fn base(&self) -> &reactive::Interface<Any> {
         let module = &self.module.get().base;
         match self.interface {
             ModuleInterfaceType::Extl => module.extl(),
@@ -425,7 +431,7 @@ impl ModuleInterface {
     fn __getitem__(&self, index: usize) -> PyResult<Var> {
         self.base()
             .nth(index)
-            .map(|v| Var::from(*v))
+            .map(|v| Var::from(v.clone()))
             .ok_or(PyIndexError::new_err("index out of bounds"))
     }
 
@@ -466,7 +472,7 @@ impl ModuleInterface {
     }
 }
 
-#[pyclass(sequence)]
+#[pyclass(module = "reactor", sequence)]
 struct ModuleAtoms {
     module: Py<Module>,
 }

@@ -1,346 +1,103 @@
-"""Type stubs for the `reactor.reactor` native extension (theory_pyo3).
+"""Type stubs for the `reactor.reactor` native extension.
 
 They support type checking (mypy) and editor hints only, with no runtime effect, and
-are maintained by hand: PyO3 does not generate stubs, so adding a theory or an op means
-updating this file too (see https://pyo3.rs/v0.29.0/python-typing-hints).
+are maintained by hand: PyO3 does not generate stubs (see
+https://pyo3.rs/v0.29.0/python-typing-hints).
 
-The runtime API is the per-theory IR: `Sort` (Bool/Int/Real/BitVec), the per-theory
-op enums `LRA` / `LIA` / `BV` (complex enums: each variant is its own subclass,
-payloads are read via `match`/unpacking), and the structural layer `Wire` / `Var` /
-`Term` / `Atom` / `Module`. A `Var` bundles the latched, next (`X(v)`), and
-derivative (`d(v)`) wires of a state variable and stands for its latched wire
-wherever a wire is expected.
+The extension holds the structural layer `Wire` / `Var` / `Term` / `Atom` / `Module`;
+the structural operations `Havoc` and `Skip`, which belong to no theory; and the
+namespaces of the sorts and the other operations, mirroring the `theory` crate: `zero`
+holds the singleton sort `Real0`, shared by all theories, and the operation `Zero`
+writing its only value; `real`, `int`, `bool` and `word` (with `word.signed` and
+`word.unsigned`, each with `.broadcast`, the choice of whole matrices by a scalar
+condition, and `bool` with `.reduce`, the conjunction and disjunction of the entries along
+an axis), and `enum` and `event`, hold the sort of each theory (`real.Real([rows,
+cols])`, `word.Word(width, [rows, cols])`, `enum.Enum(values)`, and `event.Event()`, a
+new event, each its own sort) and its
+operations, each built from the parameters its sorts do not determine, then its domain,
+a single sort bare and several as a list, and optionally its codomain, which must
+agree (`real.Add([x, y])`, `word.Extract(i, j, x)`); an operation that reads nothing is
+built from its codomain (`real.Zero(x)`, `Havoc(x)`), except `zero.Zero()`, whose
+codomain, the singleton sort, carries no information. Its getters `dom` and `cod` give
+the sorts of its domain and codomain as tuples, `(x,)` for one and `()` for none, and
+match the same way:
+`case real.Neg([x]):`. The sorts and operations of
+the namespaces are typed loosely here, as `Sort` and `Op`: a stub file cannot describe
+the nested namespaces of a single extension module. A `Var` bundles the latched, next
+(`X(v)`), and derivative (`d(v)`) wires of a state variable and stands for its latched
+wire wherever a wire is expected.
 """
 
-from torch import Tensor as TorchTensor
-from typing import Callable, Iterable, Mapping, Sequence, override
+import builtins
+from types import ModuleType
+from typing import Any, Callable, Iterable, Mapping, Sequence, override
 
 # A `hide` argument selects the variables to make private: a predicate over
 # variables, or any iterable of them (preferably a set); None hides nothing.
-type Hide = Callable[[Var], bool] | Iterable[Var] | None
+type Hide = Callable[[Var], builtins.bool] | Iterable[Var] | None
 
+# A sort, of one of the namespaces, and an operation, `Havoc`, `Skip` or of one of the
+# namespaces.
+type Sort = Any
+type Op = Any
 
-# ---------------------------------------------------------------------------
-# Sorts
-# ---------------------------------------------------------------------------
+# The namespaces of the sorts and operations; `int` and `bool` shadow the builtins here,
+# which this stub names `builtins.int` and `builtins.bool`.
+zero: ModuleType
+real: ModuleType
+int: ModuleType
+bool: ModuleType
+word: ModuleType
+enum: ModuleType
+event: ModuleType
 
-# `reactor.sort` shadows `Sort` with an ABC and registers the extension's enum
-# against it, so the variants present as plain subclasses of `Sort`.
-class Sort:
-    @override
-    def __eq__(self, other: object) -> bool: ...
 
-    @override
-    def __hash__(self) -> int: ...
+class Havoc:
+    """The nondeterministic choice of a value of the sort `cod`, reading nothing."""
 
-    @override
-    def __str__(self) -> str: ...
+    def __init__(self, cod: Sort) -> None: ...
 
-    @override
-    def __repr__(self) -> str: ...
+    @property
+    def dom(self) -> tuple[()]: ...
 
+    @property
+    def cod(self) -> tuple[Sort]: ...
 
-class Bool(Sort):
-    def __init__(self, shape: list[int]) -> None: ...
 
+class Skip:
+    """The identity of the sort `dom`, whose codomain `cod`, when given, must be it."""
 
-class Int(Sort):
-    def __init__(self, shape: list[int]) -> None: ...
+    def __init__(self, dom: Sort, cod: Sort | None = None) -> None: ...
 
+    @property
+    def dom(self) -> tuple[Sort]: ...
 
-class Real(Sort):
-    def __init__(self, shape: list[int]) -> None: ...
+    @property
+    def cod(self) -> tuple[Sort]: ...
 
-
-class BitVec(Sort):
-    def __init__(self, width: int, shape: list[int]) -> None: ...
-
-
-# ---------------------------------------------------------------------------
-# Theory op enums (each variant is a subclass; construct e.g. `LRA.Add()`)
-# ---------------------------------------------------------------------------
-
-class LRA:
-    class Real(LRA):
-        def __init__(self, tensor: TorchTensor) -> None: ...
-
-    class Bool(LRA):
-        def __init__(self, tensor: TorchTensor) -> None: ...
-
-    class And(LRA):
-        def __init__(self) -> None: ...
-
-    class Or(LRA):
-        def __init__(self) -> None: ...
-
-    class Xor(LRA):
-        def __init__(self) -> None: ...
-
-    class Not(LRA):
-        def __init__(self) -> None: ...
-
-    class Le(LRA):
-        def __init__(self) -> None: ...
-
-    class Lt(LRA):
-        def __init__(self) -> None: ...
-
-    class Ge(LRA):
-        def __init__(self) -> None: ...
-
-    class Gt(LRA):
-        def __init__(self) -> None: ...
-
-    class Eq(LRA):
-        def __init__(self) -> None: ...
-
-    class Ne(LRA):
-        def __init__(self) -> None: ...
-
-    class Linear(LRA):
-        def __init__(self, a: TorchTensor, b: TorchTensor) -> None: ...
-
-    class Add(LRA):
-        def __init__(self) -> None: ...
-
-    class Sub(LRA):
-        def __init__(self) -> None: ...
-
-    class ReLU(LRA):
-        def __init__(self) -> None: ...
-
-    class Argmax(LRA):
-        def __init__(self) -> None: ...
-
-    class Min(LRA):
-        def __init__(self) -> None: ...
-
-    class Max(LRA):
-        def __init__(self) -> None: ...
-
-    class Transpose(LRA):
-        def __init__(self) -> None: ...
-
-    class Ite(LRA):
-        def __init__(self) -> None: ...
-
-    class Id(LRA):
-        def __init__(self) -> None: ...
-
-    class Uninterpreted(LRA):
-        def __init__(self, name: str) -> None: ...
-
-    class BoolZerograd(LRA):  # unstable
-        def __init__(self, shape: list[int]) -> None: ...
-
-    class RealZerograd(LRA):  # unstable
-        def __init__(self, shape: list[int]) -> None: ...
-
-    class AnyBool(LRA):
-        def __init__(self, shape: list[int]) -> None: ...
-
-    class AnyReal(LRA):
-        def __init__(self, shape: list[int]) -> None: ...
-
-
-class LIA:
-    class Int(LIA):
-        def __init__(self, tensor: TorchTensor) -> None: ...
-
-    class Bool(LIA):
-        def __init__(self, tensor: TorchTensor) -> None: ...
-
-    class And(LIA):
-        def __init__(self) -> None: ...
-
-    class Or(LIA):
-        def __init__(self) -> None: ...
-
-    class Xor(LIA):
-        def __init__(self) -> None: ...
-
-    class Not(LIA):
-        def __init__(self) -> None: ...
-
-    class Le(LIA):
-        def __init__(self) -> None: ...
-
-    class Lt(LIA):
-        def __init__(self) -> None: ...
-
-    class Ge(LIA):
-        def __init__(self) -> None: ...
-
-    class Gt(LIA):
-        def __init__(self) -> None: ...
-
-    class Eq(LIA):
-        def __init__(self) -> None: ...
-
-    class Ne(LIA):
-        def __init__(self) -> None: ...
-
-    class Linear(LIA):
-        def __init__(self, a: TorchTensor, b: TorchTensor) -> None: ...
-
-    class Add(LIA):
-        def __init__(self) -> None: ...
-
-    class Sub(LIA):
-        def __init__(self) -> None: ...
-
-    class ReLU(LIA):
-        def __init__(self) -> None: ...
-
-    class Argmax(LIA):
-        def __init__(self) -> None: ...
-
-    class Min(LIA):
-        def __init__(self) -> None: ...
-
-    class Max(LIA):
-        def __init__(self) -> None: ...
-
-    class Transpose(LIA):
-        def __init__(self) -> None: ...
-
-    class Ite(LIA):
-        def __init__(self) -> None: ...
-
-    class Id(LIA):
-        def __init__(self) -> None: ...
-
-    class Uninterpreted(LIA):
-        def __init__(self, name: str) -> None: ...
-
-    class AnyInt(LIA):
-        def __init__(self, shape: list[int]) -> None: ...
-
-    class AnyBool(LIA):
-        def __init__(self, shape: list[int]) -> None: ...
-
-
-class BV:
-    class Const(BV):
-        def __init__(self, tensor: TorchTensor) -> None: ...
-
-    class Add(BV):
-        def __init__(self) -> None: ...
-
-    class Sub(BV):
-        def __init__(self) -> None: ...
-
-    class Mul(BV):
-        def __init__(self) -> None: ...
-
-    class UDiv(BV):
-        def __init__(self) -> None: ...
-
-    class SDiv(BV):
-        def __init__(self) -> None: ...
-
-    class UMod(BV):
-        def __init__(self) -> None: ...
-
-    class SMod(BV):
-        def __init__(self) -> None: ...
-
-    class Neg(BV):
-        def __init__(self) -> None: ...
-
-    class Abs(BV):
-        def __init__(self) -> None: ...
-
-    class MatMul(BV):
-        def __init__(self) -> None: ...
-
-    class And(BV):
-        def __init__(self) -> None: ...
-
-    class Or(BV):
-        def __init__(self) -> None: ...
-
-    class Xor(BV):
-        def __init__(self) -> None: ...
-
-    class Not(BV):
-        def __init__(self) -> None: ...
-
-    class ULe(BV):
-        def __init__(self) -> None: ...
-
-    class ULt(BV):
-        def __init__(self) -> None: ...
-
-    class UGe(BV):
-        def __init__(self) -> None: ...
-
-    class UGt(BV):
-        def __init__(self) -> None: ...
-
-    class SLe(BV):
-        def __init__(self) -> None: ...
-
-    class SLt(BV):
-        def __init__(self) -> None: ...
-
-    class SGe(BV):
-        def __init__(self) -> None: ...
-
-    class SGt(BV):
-        def __init__(self) -> None: ...
-
-    class Eq(BV):
-        def __init__(self) -> None: ...
-
-    class Ne(BV):
-        def __init__(self) -> None: ...
-
-    class Ite(BV):
-        def __init__(self) -> None: ...
-
-    class Id(BV):
-        def __init__(self) -> None: ...
-
-    class BVToBool(BV):
-        def __init__(self) -> None: ...
-
-    class BitSelect(BV):
-        def __init__(self, *, high: int, low: int) -> None: ...
-
-    class Extend(BV):
-        def __init__(self, *, extra: int) -> None: ...
-
-    class Uninterpreted(BV):
-        def __init__(self, name: str) -> None: ...
-
-
-# ---------------------------------------------------------------------------
-# Wires / Variables / Terms
-# ---------------------------------------------------------------------------
 
 class Wire:
     def __init__(self, dtype: Sort) -> None: ...
 
     @property
-    def id(self) -> int: ...
+    def id(self) -> builtins.int: ...
 
     @property
     def dtype(self) -> Sort: ...
 
     @override
-    def __eq__(self, other: object) -> bool: ...
+    def __eq__(self, other: object) -> builtins.bool: ...
 
-    def __lt__(self, other: Wire) -> bool: ...
+    def __lt__(self, other: Wire) -> builtins.bool: ...
 
-    def __le__(self, other: Wire) -> bool: ...
+    def __le__(self, other: Wire) -> builtins.bool: ...
 
-    def __gt__(self, other: Wire) -> bool: ...
+    def __gt__(self, other: Wire) -> builtins.bool: ...
 
-    def __ge__(self, other: Wire) -> bool: ...
+    def __ge__(self, other: Wire) -> builtins.bool: ...
 
     @override
-    def __hash__(self) -> int: ...
+    def __hash__(self) -> builtins.int: ...
 
     @override
     def __repr__(self) -> str: ...
@@ -357,24 +114,24 @@ class Var:
     def __init__(self, dtype: Sort) -> None: ...
 
     @property
-    def id(self) -> int: ...
+    def id(self) -> builtins.int: ...
 
     @property
     def dtype(self) -> Sort: ...
 
     @override
-    def __eq__(self, other: object) -> bool: ...
+    def __eq__(self, other: object) -> builtins.bool: ...
 
-    def __lt__(self, other: Var | Wire) -> bool: ...
+    def __lt__(self, other: Var | Wire) -> builtins.bool: ...
 
-    def __le__(self, other: Var | Wire) -> bool: ...
+    def __le__(self, other: Var | Wire) -> builtins.bool: ...
 
-    def __gt__(self, other: Var | Wire) -> bool: ...
+    def __gt__(self, other: Var | Wire) -> builtins.bool: ...
 
-    def __ge__(self, other: Var | Wire) -> bool: ...
+    def __ge__(self, other: Var | Wire) -> builtins.bool: ...
 
     @override
-    def __hash__(self) -> int: ...
+    def __hash__(self) -> builtins.int: ...
 
     @override
     def __str__(self) -> str: ...
@@ -393,20 +150,26 @@ def d(var: Var) -> Wire:
     ...
 
 
+def T(sort: Sort) -> Sort:
+    """The tangent sort: the sort of the rate of change of the values of `sort`, one
+    degree higher for a real, and the singleton `zero.Real0()` for a discrete sort."""
+    ...
+
+
 class Term:
     @staticmethod
     def function(
-            itype: LRA | LIA | BV,
+            itype: Op,
             write: Sequence[Wire | Var],
             read: Sequence[Wire | Var],
     ) -> Term: ...
 
     @staticmethod
-    def constant(itype: LRA | LIA | BV, write: Sequence[Wire | Var]) -> Term: ...
+    def constant(itype: Op, write: Sequence[Wire | Var]) -> Term: ...
 
     def __init__(
             self,
-            itype: LRA | LIA | BV,
+            itype: Op,
             write: Sequence[Wire | Var],
             read: Sequence[Wire | Var] | None = None,
     ) -> None: ...
@@ -418,7 +181,7 @@ class Term:
     def read(self) -> Sequence[Wire]: ...
 
     @property
-    def itype(self) -> LRA | LIA | BV: ...
+    def itype(self) -> Op: ...
 
     @override
     def __str__(self) -> str: ...
@@ -615,9 +378,9 @@ class Module:
     @property
     def ctrl(self) -> Sequence[Var]: ...
 
-    def closed(self) -> bool: ...
+    def closed(self) -> builtins.bool: ...
 
-    def open(self) -> bool: ...
+    def open(self) -> builtins.bool: ...
 
     def with_varnames(self, names: Mapping[Var, str]) -> str: ...
 

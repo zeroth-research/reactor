@@ -2,44 +2,32 @@ import inspect
 import torch.nn as nn
 
 from ..reactor import Module as _BaseModule, X
-from ..sort import Real
-from ..builder import builder_for
+from ..real import Real
+from ..int import Int
+from ..builder import builder_for, number_sort
 from ..analyzer import convert_method, resolve_wire
 
 
-def _numeric_sort(theory, n):
-    """The theory's numeric vector sort of width `n` (LRA/None -> Real, LIA -> Int,
-    BV -> BitVec32), derived the same way gym and dsl derive their interface sorts."""
-    return builder_for(theory)._numeric_wire([1, n]).dtype
+def _numeric_sort(number, n):
+    """The numeric row-vector sort of width `n`, of the sort family `number`."""
+    return number_sort(number)([1, n])
 
 
-def _is_float_sort(sort) -> bool:
-    match sort:
-        case Real(_):
-            return True
-    return False
-
-
-def _validate_theory_supports_nn(theory):
-    """A neural module needs the matrix ops a `Linear`+`ReLU` net compiles to. LRA and
-    LIA provide them; BV does not (no Transpose/Linear), so reject it with a clear error
-    rather than a deep AttributeError from the builder."""
-    ns = builder_for(theory)._ns
-    missing = [op for op in ("Transpose", "Linear", "ReLU") if not hasattr(ns, op)]
-    if missing:
-        tname = getattr(theory, "__name__", "LRA")
+def _validate_number_supports_nn(number):
+    """A neural module compiles to `Linear`, `Transpose` and `ReLU`, which only reals and
+    integers have; reject any other numeric sort with a clear error."""
+    if number not in (Real, Int):
+        name = getattr(number, "__name__", repr(number))
         raise NotImplementedError(
-            f"theory {tname} does not support neural modules (missing ops: "
-            f"{', '.join(missing)}); use LRA or LIA"
+            f"neural modules need real or integer numbers, got {name}; use Real or Int"
         )
 
 
-def _validate_weight_dtypes(live_layers, theory):
-    """Weights are used as-is (no coercion), so their dtype must match the theory:
-    floating-point for Real (LRA), integer for Int/BitVec (LIA/BV). Raise otherwise."""
-    want_float = _is_float_sort(_numeric_sort(theory, 1))
+def _validate_weight_dtypes(live_layers, number):
+    """Weights are used as-is (no coercion), so their dtype must match the numeric sort:
+    floating-point for Real, integer for Int. Raise otherwise."""
+    want_float = number is Real
     kind = "floating-point" if want_float else "integer"
-    tname = getattr(theory, "__name__", "LRA")
     for name, layer in live_layers.items():
         for attr in ("weight", "bias"):
             t = getattr(layer, attr, None)
@@ -47,13 +35,13 @@ def _validate_weight_dtypes(live_layers, theory):
                 continue
             if t.is_floating_point() != want_float:
                 raise TypeError(
-                    f"theory {tname} expects {kind} weights, but layer "
+                    f"{number.__name__} numbers need {kind} weights, but layer "
                     f"'{name or '<root>'}'.{attr} has dtype {t.dtype}; "
-                    f"quantise/cast the network to match the theory"
+                    f"quantise/cast the network to match"
                 )
 
 
-def _extract_nn_module(nn_instance, theory=None, combinatorial=False, **kwargs):
+def _extract_nn_module(nn_instance, number=Real, combinatorial=False, **kwargs):
     """Analyze an nn.Module instance and extract a symbolic Module.
 
     Uses live tensor references for weight/bias so that training updates
@@ -92,11 +80,11 @@ def _extract_nn_module(nn_instance, theory=None, combinatorial=False, **kwargs):
     obs_size = layer_list[0][0]
     qval_size = layer_list[-1][1]
 
-    _validate_theory_supports_nn(theory)
-    _validate_weight_dtypes(live_layers, theory)
+    _validate_number_supports_nn(number)
+    _validate_weight_dtypes(live_layers, number)
 
-    extl = resolve_wire("extl", _numeric_sort(theory, obs_size), user_extl)
-    ctrl = resolve_wire("ctrl", _numeric_sort(theory, qval_size), user_ctrl)
+    extl = resolve_wire("extl", _numeric_sort(number, obs_size), user_extl)
+    ctrl = resolve_wire("ctrl", _numeric_sort(number, qval_size), user_ctrl)
 
     layer_out_features = {name: out for name, (_, out) in layers.items()}
 
@@ -107,7 +95,7 @@ def _extract_nn_module(nn_instance, theory=None, combinatorial=False, **kwargs):
         in_wire, other = (X(extl), extl) if read_next else (extl, X(extl))
         return convert_method(
             nn_cls.forward, {obs_param: [in_wire, other]}, [X(ctrl)], cls=nn_cls,
-            layers=layer_out_features, live_layers=live_layers, theory=theory,
+            layers=layer_out_features, live_layers=live_layers, builder=builder_for(number),
         )
 
     if combinatorial:
@@ -128,14 +116,14 @@ class Module(_BaseModule, nn.Module):
         from reactor.torch import Module
 
         wrapped = Module(nn_module_instance)                    # sequential, V(s)
-        wrapped = Module(nn_module_instance, theory=LIA)         # integer (e.g. quantised) net
+        wrapped = Module(nn_module_instance, number=Int)         # integer (e.g. quantised) net
         wrapped = Module(nn_module_instance, combinatorial=True) # combinatorial, V(s')
         wrapped.parameters()   # returns original nn.Module parameters
         wrapped(x)             # runs forward pass via original nn.Module
         wrapped.atoms          # symbolic module structure
 
-    ``theory`` selects the term theory / interface sorts (LRA -> Real, LIA -> Int;
-    BV is unsupported for neural modules). ``combinatorial`` selects whether
+    ``number`` selects the numeric sort of the interface and the weights, ``Real``
+    (default) or ``Int``. ``combinatorial`` selects whether
     ``forward`` becomes a sequential atom over the latched input (``False``,
     default) or a combinatorial atom over the next input (``True``).
 
@@ -143,15 +131,15 @@ class Module(_BaseModule, nn.Module):
     because the Linear op holds a reference to the live weight tensors.
     """
 
-    def __new__(cls, nn_module, theory=None, combinatorial=False, **kwargs):
+    def __new__(cls, nn_module, number=Real, combinatorial=False, **kwargs):
         if not isinstance(nn_module, nn.Module):
             raise TypeError(f"Expected nn.Module, got {type(nn_module)}")
         parts = _extract_nn_module(
-            nn_module, theory=theory, combinatorial=combinatorial, **kwargs
+            nn_module, number=number, combinatorial=combinatorial, **kwargs
         )
         return _BaseModule.__new__(cls, **parts)
 
-    def __init__(self, nn_module, theory=None, combinatorial=False, **kwargs):
+    def __init__(self, nn_module, number=Real, combinatorial=False, **kwargs):
         nn.Module.__init__(self)
         self.inner = nn_module
 

@@ -1,3 +1,4 @@
+use crate::Op;
 use crate::term::{Term, TermInterfaceType};
 use crate::var::Var;
 use crate::wire::Wire;
@@ -6,15 +7,21 @@ use pyo3::exceptions::{PyException, PyIndexError};
 use pyo3::prelude::*;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use theory::any::{Any, Combinatorial, Differential, Sequential, Sort};
+use theory::Any;
 
-#[pyclass(frozen)]
+#[pyclass(module = "reactor", frozen)]
 pub(crate) struct Atom {
-    base: reactive::Atom<Combinatorial, Sequential, Differential, Sort>,
+    base: reactive::Atom<Op, Op, Op, Any>,
 }
 
-impl From<reactive::Atom<Combinatorial, Sequential, Differential, Sort>> for Atom {
-    fn from(base: reactive::Atom<Combinatorial, Sequential, Differential, Sort>) -> Self {
+// SAFETY: the operations of the atom may hold `tch::Tensor`s, which are not
+// `Sync`, as libtorch tensors are pointers. Nothing here mutates them: they
+// are only read and shallow-cloned, and libtorch counts the references to a
+// tensor atomically, as for the classes of `theory::torch`.
+unsafe impl Sync for Atom {}
+
+impl From<reactive::Atom<Op, Op, Op, Any>> for Atom {
+    fn from(base: reactive::Atom<Op, Op, Op, Any>) -> Self {
         Self { base }
     }
 }
@@ -153,7 +160,7 @@ impl Atom {
     #[staticmethod]
     fn combinatorial(vars: &Bound<'_, PyAny>, assign: &Bound<'_, PyAny>) -> PyResult<Self> {
         let vars: Vec<_> = try_var_iter_cloned(vars)?.collect();
-        let assign = try_term_iter_cloned::<Combinatorial>(&assign)?;
+        let assign = try_term_iter_cloned::<Op>(&assign)?;
 
         match reactive::Atom::combinatorial(vars.iter(), assign) {
             Ok(base) => Ok(base.into()),
@@ -217,7 +224,7 @@ impl Atom {
 }
 
 impl Atom {
-    pub(crate) fn base(&self) -> &reactive::Atom<Combinatorial, Sequential, Differential, Sort> {
+    pub(crate) fn base(&self) -> &reactive::Atom<Op, Op, Op, Any> {
         &self.base
     }
 
@@ -235,14 +242,14 @@ enum AtomInterfaceType {
     Await,
 }
 
-#[pyclass(sequence)]
+#[pyclass(module = "reactor", sequence)]
 struct AtomInterface {
     atom: Py<Atom>,
     interface: AtomInterfaceType,
 }
 
 impl AtomInterface {
-    fn base(&self) -> &reactive::Interface<theory::any::Sort> {
+    fn base(&self) -> &reactive::Interface<Any> {
         let atom = &self.atom.get().base;
         match self.interface {
             AtomInterfaceType::Read => atom.read(),
@@ -260,7 +267,7 @@ impl AtomInterface {
     fn __getitem__(&self, index: usize) -> PyResult<Var> {
         self.base()
             .nth(index)
-            .map(|v| Var::from(*v))
+            .map(|v| Var::from(v.clone()))
             .ok_or(PyIndexError::new_err("index out of bounds"))
     }
 
@@ -308,14 +315,14 @@ enum BlockType {
     Delay,
 }
 
-#[pyclass(sequence, frozen)]
+#[pyclass(module = "reactor", sequence, frozen)]
 pub(crate) struct AtomBlock {
     atom: Py<Atom>,
     block: BlockType,
 }
 
 // impl AtomBlock {
-//     fn base(&self) -> &dataflow::diagram::Block<Sequential, Sort> {
+//     fn base(&self) -> &dataflow::diagram::Block<Sequential, Any> {
 //         let atom = &self.atom.get().base;
 //         match self.block {
 //             BlockType::Init => atom.init(),
@@ -357,10 +364,10 @@ impl AtomBlock {
 
     fn __getitem__(&self, index: usize) -> PyResult<Term> {
         let atom = &self.atom.get().base;
-        let item: Option<dataflow::diagram::Term<Any, Sort>> = match self.block {
-            BlockType::Init => atom.init().get(index).cloned().map(Into::into),
-            BlockType::Update => atom.update().get(index).cloned().map(Into::into),
-            BlockType::Delay => atom.delay().get(index).cloned().map(Into::into),
+        let item: Option<dataflow::diagram::Term<Op, Any>> = match self.block {
+            BlockType::Init => atom.init().get(index).cloned(),
+            BlockType::Update => atom.update().get(index).cloned(),
+            BlockType::Delay => atom.delay().get(index).cloned(),
         };
         item.map(Into::into)
             .ok_or(PyIndexError::new_err("index out of bounds"))
@@ -376,14 +383,14 @@ impl AtomBlock {
     }
 }
 
-#[pyclass(sequence)]
+#[pyclass(module = "reactor", sequence)]
 struct AtomBlockInterface {
     block: Py<AtomBlock>,
     interface: TermInterfaceType,
 }
 
 impl AtomBlockInterface {
-    fn base(&self) -> &[dataflow::diagram::Wire<theory::any::Sort>] {
+    fn base(&self) -> &[dataflow::diagram::Wire<Any>] {
         let atom = &self.block.get().atom.get().base;
         match (&self.block.get().block, &self.interface) {
             (BlockType::Init, TermInterfaceType::Read) => atom.init().read(),

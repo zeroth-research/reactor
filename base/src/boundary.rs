@@ -63,9 +63,28 @@ impl<G> Mono<G> {
         Self(Vec::new())
     }
 
+    /// Whether it is the unit type `I`: the empty tuple, of no base types. A
+    /// product type is never the empty type `0`, so it has no `is_zero`.
+    pub fn is_unit(&self) -> bool {
+        self.0.is_empty()
+    }
+
     /// The base types of the tuple, in order.
     pub fn iter(&self) -> std::slice::Iter<'_, G> {
         self.0.iter()
+    }
+
+    /// The base types of the tuple, in order, as a slice: so that a tuple of
+    /// a given length can be matched by a slice pattern, as `[x, y]`.
+    pub fn as_slice(&self) -> &[G] {
+        &self.0
+    }
+
+    /// The tuple type with `f` applied to each base type, in order. With
+    /// `f = H::from`, this converts the base types, which a `From` impl
+    /// between monomials cannot do, as it would overlap with `From<T> for T`.
+    pub fn map<H>(self, f: impl FnMut(G) -> H) -> Mono<H> {
+        Mono(self.0.into_iter().map(f).collect())
     }
 }
 
@@ -94,10 +113,51 @@ impl<G> FromIterator<G> for Mono<G> {
     }
 }
 
+/// Creates a [`Mono`] from its base types, with the same forms as [`vec!`]:
+///
+/// - `mono![]` is the unit type `I`;
+/// - `mono![x, y, z]` is the tuple type `x ⊗ y ⊗ z`, in order;
+/// - `mono![x; n]` is the tuple type `x ⊗ … ⊗ x` of `n` copies of `x`,
+///   which must implement [`Clone`].
+#[macro_export]
+macro_rules! mono {
+    () => {
+        $crate::boundary::Mono::unit()
+    };
+    ($elem:expr; $n:expr) => {
+        <$crate::boundary::Mono<_> as ::core::iter::FromIterator<_>>::from_iter(
+            ::std::vec![$elem; $n],
+        )
+    };
+    ($($x:expr),+ $(,)?) => {
+        <$crate::boundary::Mono<_> as ::core::iter::FromIterator<_>>::from_iter(
+            [$($x),+],
+        )
+    };
+}
+
 /// A product type is a sum type with a single variant.
 impl<G> From<Mono<G>> for Poly<G> {
     fn from(m: Mono<G>) -> Self {
         Self(vec![m])
+    }
+}
+
+/// A sum type of a single variant is that product type. Any other sum type,
+/// of several variants or of none, the empty type `0`, is the error.
+///
+/// The error gives the sum type back, as `TryFrom<Vec<T>>` for arrays gives
+/// back the vector: the conversion owns its input, which would otherwise be
+/// lost, and there is only one way to fail. It is no [`std::error::Error`].
+impl<G> TryFrom<Poly<G>> for Mono<G> {
+    type Error = Poly<G>;
+
+    fn try_from(mut p: Poly<G>) -> Result<Self, Self::Error> {
+        if p.0.len() == 1 {
+            Ok(p.0.pop().expect("one variant"))
+        } else {
+            Err(p)
+        }
     }
 }
 
@@ -141,12 +201,37 @@ impl<G> Poly<G> {
     pub fn unit() -> Self {
         Self(vec![Mono::unit()])
     }
+
+    /// Whether it is the empty type `0`: the sum with no variants.
+    pub fn is_zero(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Whether it is the unit type `I`: a single variant, the empty tuple.
+    pub fn is_unit(&self) -> bool {
+        matches!(self.0.as_slice(), [m] if m.is_unit())
+    }
 }
 
 impl<G> Poly<G> {
     /// The variants of the sum, each a product type, in order.
     pub fn iter(&self) -> std::slice::Iter<'_, Mono<G>> {
         self.0.iter()
+    }
+
+    /// The variants of the sum, each a product type, in order, as a slice: so
+    /// that a sum of a given number of variants can be matched by a slice
+    /// pattern, as `[m]`.
+    pub fn as_slice(&self) -> &[Mono<G>] {
+        &self.0
+    }
+
+    /// The sum type with `f` applied to each base type of each variant, in
+    /// order. With `f = H::from`, this converts the base types, which a
+    /// `From` impl between polynomials cannot do, as it would overlap with
+    /// `From<T> for T`.
+    pub fn map<H>(self, mut f: impl FnMut(G) -> H) -> Poly<H> {
+        Poly(self.0.into_iter().map(|m| m.map(&mut f)).collect())
     }
 }
 
@@ -245,6 +330,41 @@ impl<G> std::iter::Sum for Poly<G> {
 }
 
 /// Prints the base types joined by `⊗`, or `I` for the unit type.
+/// A product type is the Python tuple of its base types, in order: `x ⊗ y`
+/// is `(x, y)`, and the unit `I` the empty tuple `()`.
+#[cfg(feature = "pyo3")]
+impl<'py, G> pyo3::IntoPyObject<'py> for Mono<G>
+where
+    G: pyo3::IntoPyObject<'py>,
+{
+    type Target = pyo3::types::PyTuple;
+    type Output = pyo3::Bound<'py, pyo3::types::PyTuple>;
+    type Error = pyo3::PyErr;
+
+    fn into_pyobject(self, py: pyo3::Python<'py>) -> Result<Self::Output, Self::Error> {
+        pyo3::types::PyTuple::new(py, self.0)
+    }
+}
+
+/// A sum type is the Python tuple of its variants, in order, each the tuple
+/// of a product type, as a product type is: `(x ⊗ y) ⊕ z` is
+/// `((x, y), (z,))`, the unit `I` is `((),)`, and the empty type `0` the
+/// empty tuple `()`. Python's operators on tuples, which concatenate and
+/// repeat them, are not the operations of the types.
+#[cfg(feature = "pyo3")]
+impl<'py, G> pyo3::IntoPyObject<'py> for Poly<G>
+where
+    G: pyo3::IntoPyObject<'py>,
+{
+    type Target = pyo3::types::PyTuple;
+    type Output = pyo3::Bound<'py, pyo3::types::PyTuple>;
+    type Error = pyo3::PyErr;
+
+    fn into_pyobject(self, py: pyo3::Python<'py>) -> Result<Self::Output, Self::Error> {
+        pyo3::types::PyTuple::new(py, self.0)
+    }
+}
+
 impl<G: std::fmt::Display> std::fmt::Display for Mono<G> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.0.is_empty() {

@@ -1,0 +1,2307 @@
+//! Tests for the matrix theories, one module per theory, and their operations
+//! in `Op`.
+
+use base::differentiable::T;
+use theory::real::Real;
+
+/// The tangent `T` applied `n` times to `s`: the real matrices of degree `n`
+/// above it.
+fn tangent(n: u8, s: Real) -> Real {
+    (0..n).fold(s, |s, _| T(s))
+}
+
+/// Tests for `Op` and the logics.
+mod op {
+    use super::tangent;
+    use base::boundary::{Boundary, Poly};
+    use base::differentiable::T;
+    use theory::*;
+
+    /// A tensor carrying its shape only, enough to compute boundaries.
+    #[derive(Debug)]
+    struct Mat([usize; 2]);
+
+    impl Matrix for Mat {
+        fn shape(&self) -> [usize; 2] {
+            self.0
+        }
+    }
+
+    // The operations and logics, instantiated with `Mat`; these shadow the
+    // generic ones of `theory::matrix`.
+    type Op = theory::Op<Mat>;
+    #[allow(clippy::upper_case_acronyms)]
+    type NRA = theory::NRA<Mat>;
+    #[allow(clippy::upper_case_acronyms)]
+    type NIA = theory::NIA<Mat>;
+    #[allow(clippy::upper_case_acronyms)]
+    type LRA = theory::LRA<Mat>;
+    #[allow(clippy::upper_case_acronyms)]
+    type LIA = theory::LIA<Mat>;
+    type Prop = theory::Prop<Mat>;
+    type BV = theory::BV<Mat>;
+
+    fn real(op: impl Into<real::NRA<Mat>>) -> Op {
+        Op::Real(op.into())
+    }
+
+    fn int(op: impl Into<int::NIA<Mat>>) -> Op {
+        Op::Int(op.into())
+    }
+
+    fn boolean(op: impl Into<bool::Prop<Mat>>) -> Op {
+        Op::Bool(op.into())
+    }
+
+    fn word(op: impl Into<word::BV<Mat>>) -> Op {
+        Op::Word(op.into())
+    }
+
+    #[test]
+    fn any_boundary_is_each_operations_boundary_in_sort() {
+        let op = real(
+            real::MatMul::with_dom([
+                real::Real::new_unchecked([2, 3]),
+                real::Real::new_unchecked([3, 4]),
+            ])
+            .unwrap(),
+        );
+        let dom: Poly<Any> = base::mono![
+            real::Real::new_unchecked([2, 3]).into(),
+            real::Real::new_unchecked([3, 4]).into()
+        ]
+        .into();
+        let cod: Poly<Any> = base::mono![real::Real::new_unchecked([2, 4]).into()].into();
+        assert_eq!(op.dom(), dom);
+        assert_eq!(op.cod(), cod);
+
+        let op = int(int::Transpose::with_dom([int::Int::new_unchecked([2, 3]); 1]).unwrap());
+        let cod: Poly<Any> = base::mono![int::Int::new_unchecked([3, 2]).into()].into();
+        assert_eq!(op.cod(), cod);
+
+        let op = boolean(bool::Not::with_dom([bool::Bool::new_unchecked([2, 3]); 1]).unwrap());
+        let dom: Poly<Any> = base::mono![bool::Bool::new_unchecked([2, 3]).into()].into();
+        assert_eq!(op.dom(), dom);
+    }
+
+    #[test]
+    fn data_operations_take_their_shape_from_their_tensors() {
+        let c =
+            real(real::Num::with_cod(Mat([2, 3]), [real::Real::new_unchecked([2, 3])]).unwrap());
+        assert_eq!(c.dom(), Poly::unit());
+        let cod: Poly<Any> = base::mono![real::Real::new_unchecked([2, 3]).into()].into();
+        assert_eq!(c.cod(), cod);
+
+        // `A` of shape `[2, 3]` and `B` of shape `[2, 4]` take `[3, 4]` to `[2, 4]`
+        let l =
+            int(
+                int::Affine::with_dom(Mat([2, 3]), Mat([2, 4]), [int::Int::new_unchecked([3, 4])])
+                    .unwrap(),
+            );
+        let dom: Poly<Any> = base::mono![int::Int::new_unchecked([3, 4]).into()].into();
+        let cod: Poly<Any> = base::mono![int::Int::new_unchecked([2, 4]).into()].into();
+        assert_eq!(l.dom(), dom);
+        assert_eq!(l.cod(), cod);
+
+        let w =
+            word(word::Num::with_cod(Mat([1, 2]), [word::Word::new(8, [1, 2]).unwrap()]).unwrap());
+        let cod: Poly<Any> = base::mono![word::Word::new_unchecked(8, [1, 2]).into()].into();
+        assert_eq!(w.cod(), cod);
+
+        // constants are linear
+        assert!(LRA::try_from(c).is_ok());
+        assert!(LIA::try_from(l).is_ok());
+    }
+
+    #[test]
+    fn data_operations_check_their_tensors() {
+        // `B` must have the rows of `A`
+        assert!(
+            real::Affine::with_dom(
+                Mat([2, 3]),
+                Mat([3, 4]),
+                [real::Real::new_unchecked([3, 4])]
+            )
+            .is_err()
+        );
+        assert!(
+            int::Affine::with_dom(Mat([2, 3]), Mat([3, 4]), [int::Int::new_unchecked([3, 4])])
+                .is_err()
+        );
+        // and neither may be empty, though the sort they read is not
+        assert!(
+            real::Affine::with_dom(
+                Mat([0, 3]),
+                Mat([0, 4]),
+                [real::Real::new_unchecked([3, 4])]
+            )
+            .is_err()
+        );
+        assert!(int::Linear::with_dom(Mat([0, 3]), [int::Int::new_unchecked([3, 4])]).is_err());
+        assert!(real::Linear::with_cod(Mat([2, 0]), [real::Real::new_unchecked([2, 4])]).is_err());
+        assert!(bool::Truth::new(Mat([0, 2])).is_err());
+
+        // a constant word has the shape of its tensor
+        assert!(word::Num::with_cod(Mat([1, 2]), [word::Word::new(8, [2, 1]).unwrap()]).is_err());
+        let w = word::Word::new(8, [1, 2]).unwrap();
+        let cod: Poly<Words> = base::mono![w.into()].into();
+        assert_eq!(word::Num::with_cod(Mat([1, 2]), [w]).unwrap().cod(), cod);
+    }
+
+    #[test]
+    fn data_operations_read_their_tensors() {
+        let c = real::Num::with_cod(Mat([2, 3]), [real::Real::new_unchecked([2, 3])]).unwrap();
+        assert_eq!(c.tensor().0, [2, 3]);
+        let l = int::Affine::with_dom(Mat([2, 3]), Mat([2, 4]), [int::Int::new_unchecked([3, 4])])
+            .unwrap();
+        assert_eq!(l.a().0, [2, 3]);
+        assert_eq!(l.b().0, [2, 4]);
+    }
+
+    #[test]
+    fn theories_mark_their_linear_operations() {
+        assert!(
+            real::LRA::try_from(real::NRA::<Mat>::from(
+                real::Add::with_dom([real::Real::new_unchecked([2, 3]); 2]).unwrap()
+            ))
+            .is_ok()
+        );
+        assert!(
+            real::LRA::try_from(real::NRA::<Mat>::from(
+                real::Lt::with_dom([real::Real::new_unchecked([2, 3]); 2]).unwrap()
+            ))
+            .is_ok()
+        );
+        assert!(
+            real::LRA::try_from(real::NRA::<Mat>::from(
+                real::Mul::with_dom([real::Real::new_unchecked([2, 3]); 2]).unwrap()
+            ))
+            .is_err()
+        );
+        assert!(
+            real::LRA::try_from(real::NRA::<Mat>::from(
+                real::MatMul::with_dom([
+                    real::Real::new_unchecked([2, 3]),
+                    real::Real::new_unchecked([3, 4])
+                ])
+                .unwrap()
+            ))
+            .is_err()
+        );
+        assert!(
+            int::LIA::try_from(int::NIA::<Mat>::from(
+                int::Mod::with_dom([int::Int::new_unchecked([2, 3]); 2]).unwrap()
+            ))
+            .is_err()
+        );
+        assert!(
+            int::LIA::try_from(int::NIA::<Mat>::from(
+                int::ReLU::with_dom([int::Int::new_unchecked([2, 3]); 1]).unwrap()
+            ))
+            .is_ok()
+        );
+
+        // negation and absolute value are linear
+        assert!(
+            real::LRA::try_from(real::NRA::<Mat>::from(
+                real::Neg::with_dom([real::Real::new_unchecked([2, 3]); 1]).unwrap()
+            ))
+            .is_ok()
+        );
+        assert!(
+            int::LIA::try_from(int::NIA::<Mat>::from(
+                int::Neg::with_dom([int::Int::new_unchecked([2, 3]); 1]).unwrap()
+            ))
+            .is_ok()
+        );
+        assert!(
+            int::LIA::try_from(int::NIA::<Mat>::from(
+                int::Abs::with_dom([int::Int::new_unchecked([2, 3]); 1]).unwrap()
+            ))
+            .is_ok()
+        );
+        assert!(
+            real::LRA::try_from(real::NRA::<Mat>::from(
+                real::Abs::with_dom([real::Real::new_unchecked([2, 3]); 1]).unwrap()
+            ))
+            .is_ok()
+        );
+
+        // the product with a constant is linear, unlike that of two variables
+        assert!(
+            real::LRA::try_from(real::NRA::from(
+                real::Scale::with_dom(Mat([2, 3]), [real::Real::new_unchecked([2, 3])]).unwrap()
+            ))
+            .is_ok()
+        );
+        assert!(
+            int::LIA::try_from(int::NIA::from(
+                int::Scale::with_dom(Mat([2, 3]), [int::Int::new_unchecked([2, 3])]).unwrap()
+            ))
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn broadcast_ite_chooses_the_whole_matrix_by_a_scalar_condition_in_each_theory() {
+        let c: Any = bool::Bool::new_unchecked([1, 1]).into();
+        let r = real::Real::new_unchecked([4, 4]);
+        let dr = T(r);
+        let i = int::Int::new_unchecked([4, 4]);
+        let b = bool::Bool::new_unchecked([4, 4]);
+        let w = word::Word::new_unchecked(8, [4, 4]);
+        let ops: [(Op, Any); 5] = [
+            (
+                real::NRA::from(
+                    real::broadcast::Ite::with_dom([
+                        c.clone().try_into().unwrap(),
+                        r.into(),
+                        r.into(),
+                    ])
+                    .unwrap(),
+                )
+                .into(),
+                r.into(),
+            ),
+            (
+                real::NRA::from(real::broadcast::Ite::with_cod([dr]).unwrap()).into(),
+                dr.into(),
+            ),
+            (
+                int::NIA::from(
+                    int::broadcast::Ite::with_dom([
+                        c.clone().try_into().unwrap(),
+                        i.into(),
+                        i.into(),
+                    ])
+                    .unwrap(),
+                )
+                .into(),
+                i.into(),
+            ),
+            (
+                bool::Prop::from(
+                    bool::broadcast::Ite::with_dom([bool::Bool::new_unchecked([1, 1]), b, b])
+                        .unwrap(),
+                )
+                .into(),
+                b.into(),
+            ),
+            (
+                word::BV::from(
+                    word::broadcast::Ite::with_dom([
+                        c.clone().try_into().unwrap(),
+                        w.into(),
+                        w.into(),
+                    ])
+                    .unwrap(),
+                )
+                .into(),
+                w.into(),
+            ),
+        ];
+        for (op, s) in ops {
+            assert_eq!(
+                op.dom(),
+                base::mono![c.clone(), s.clone(), s.clone()].into()
+            );
+            assert_eq!(op.cod(), base::mono![s].into());
+        }
+        assert_eq!(
+            real::broadcast::Ite::with_cod([r]).unwrap().to_string(),
+            "Ite"
+        );
+        // the broadcast choice is linear
+        let op = real::broadcast::Ite::with_cod([r]).unwrap();
+        assert!(real::LRA::<Mat>::try_from(real::NRA::<Mat>::from(op)).is_ok());
+        // a condition of the shape of the branches: the pointwise choice
+        let pointwise: Reals = bool::Bool::new_unchecked([4, 4]).into();
+        assert!(real::broadcast::Ite::with_dom([pointwise, r.into(), r.into()]).is_err());
+        assert!(bool::broadcast::Ite::with_dom([b, b, b]).is_err());
+        // a condition of another shape
+        let column: Ints = bool::Bool::new_unchecked([4, 1]).into();
+        assert!(int::broadcast::Ite::with_dom([column, i.into(), i.into()]).is_err());
+        // branches of different sorts
+        let other = word::Word::new_unchecked(4, [4, 4]);
+        assert!(
+            word::broadcast::Ite::with_dom([c.clone().try_into().unwrap(), w.into(), other.into()])
+                .is_err()
+        );
+        assert!(
+            real::broadcast::Ite::with_dom([c.clone().try_into().unwrap(), r.into(), dr.into()])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn reduce_and_or_reduce_a_boolean_matrix_along_an_axis() {
+        let b = |shape| bool::Bool::new_unchecked(shape);
+        for (axis, cod) in [(0, [1, 3]), (1, [2, 1])] {
+            let and = bool::reduce::And::with_dom(axis, [b([2, 3])]).unwrap();
+            let or = bool::reduce::Or::with_dom(axis, [b([2, 3])]).unwrap();
+            for op in [boolean(and), boolean(or)] {
+                let dom: Poly<Any> = base::mono![b([2, 3]).into()].into();
+                let cod: Poly<Any> = base::mono![b(cod).into()].into();
+                assert_eq!(op.dom(), dom);
+                assert_eq!(op.cod(), cod);
+            }
+            assert_eq!(and.axis(), axis);
+            assert_eq!(and.to_string(), "And");
+            assert_eq!(or.to_string(), "Or");
+        }
+        // the reductions differ by their axis, and from the pointwise operations
+        assert_ne!(
+            bool::reduce::And::with_dom(0, [b([2, 2])]).unwrap(),
+            bool::reduce::And::with_dom(1, [b([2, 2])]).unwrap()
+        );
+        // a matrix has two axes
+        assert!(bool::reduce::And::with_dom(2, [b([2, 3])]).is_err());
+        assert!(bool::reduce::Or::with_dom(2, [b([2, 3])]).is_err());
+    }
+
+    #[test]
+    fn zero_writes_the_singleton_sort() {
+        let op = Op::Zero(theory::zero::Zero);
+        assert_eq!(op.dom(), Poly::unit());
+        let cod: Poly<Any> = base::mono![theory::zero::Real0.into()].into();
+        assert_eq!(op.cod(), cod);
+    }
+
+    #[test]
+    fn the_zero_rate_of_change_of_a_real_is_the_zero_matrix_of_its_degree() {
+        use theory::Differential;
+        // a real rate of change: the zero matrix, of its degree
+        let rate: Any = T(real::Real::new_unchecked([2, 3])).into();
+        let op = Op::zero(&rate);
+        assert!(matches!(&op, Op::Real(real::NRA::Zero(_))));
+        assert!(LRA::try_from(Op::zero(&rate)).is_ok());
+        assert_eq!(op.dom(), Poly::unit());
+        assert_eq!(op.cod(), base::mono![rate].into());
+        // the rate of change of a discrete value: the singleton
+        assert!(matches!(
+            Op::zero(&theory::zero::Real0.into()),
+            Op::Zero(theory::zero::Zero)
+        ));
+    }
+
+    #[test]
+    fn real_operations_take_the_degree_of_their_operands() {
+        let r = |shape, degree| -> Any { tangent(degree, real::Real::new_unchecked(shape)).into() };
+        let b = |shape| -> Any { bool::Bool::new_unchecked(shape).into() };
+
+        // kept by maps, choices and extrema
+        let op = real(real::Abs::with_dom([T(real::Real::new_unchecked([2, 3])); 1]).unwrap());
+        assert_eq!(op.cod(), base::mono![r([2, 3], 1)].into());
+        let op =
+            real(real::Transpose::with_dom([T(T(real::Real::new_unchecked([2, 3]))); 1]).unwrap());
+        assert_eq!(op.dom(), base::mono![r([2, 3], 2)].into());
+        assert_eq!(op.cod(), base::mono![r([3, 2], 2)].into());
+        let op = real(real::Max::with_dom([T(real::Real::new_unchecked([2, 3])); 2]).unwrap());
+        assert_eq!(op.dom(), base::mono![r([2, 3], 1); 2].into());
+        let op = real(
+            real::Ite::with_dom([
+                bool::Bool::new_unchecked([2, 3]).into(),
+                T(real::Real::new_unchecked([2, 3])).into(),
+                T(real::Real::new_unchecked([2, 3])).into(),
+            ])
+            .unwrap(),
+        );
+        assert_eq!(
+            op.dom(),
+            base::mono![b([2, 3]), r([2, 3], 1), r([2, 3], 1)].into()
+        );
+        assert_eq!(op.cod(), base::mono![r([2, 3], 1)].into());
+
+        // compared, writing booleans; an index is a plain real
+        let op = real(real::Lt::with_dom([T(real::Real::new_unchecked([2, 3])); 2]).unwrap());
+        assert_eq!(op.dom(), base::mono![r([2, 3], 1); 2].into());
+        assert_eq!(op.cod(), base::mono![b([2, 3])].into());
+        let op = real(real::Argmax::with_dom([T(real::Real::new_unchecked([2, 3])); 1]).unwrap());
+        assert_eq!(op.dom(), base::mono![r([2, 3], 1)].into());
+        assert_eq!(op.cod(), base::mono![r([1, 1], 0)].into());
+
+        // the degrees of the factors of a matrix product add up
+        let op = real(
+            real::MatMul::with_dom([
+                T(real::Real::new_unchecked([2, 3])),
+                T(real::Real::new_unchecked([3, 4])),
+            ])
+            .unwrap(),
+        );
+        assert_eq!(op.dom(), base::mono![r([2, 3], 1), r([3, 4], 1)].into());
+        assert_eq!(op.cod(), base::mono![r([2, 4], 2)].into());
+        assert!(
+            real::MatMul::with_dom([
+                tangent(u8::MAX, real::Real::new_unchecked([2, 3])),
+                T(real::Real::new_unchecked([3, 4]))
+            ])
+            .is_err()
+        );
+
+        // constants and the linear maps of a constant are of a degree too
+        let op =
+            real(real::Num::with_cod(Mat([2, 3]), [T(real::Real::new_unchecked([2, 3]))]).unwrap());
+        assert_eq!(op.cod(), base::mono![r([2, 3], 1)].into());
+        let op = real(
+            real::Scale::with_dom(Mat([2, 3]), [T(real::Real::new_unchecked([2, 3]))]).unwrap(),
+        );
+        assert_eq!(op.dom(), base::mono![r([2, 3], 1)].into());
+        let op = real(
+            real::Affine::with_dom(
+                Mat([2, 3]),
+                Mat([2, 4]),
+                [T(real::Real::new_unchecked([3, 4]))],
+            )
+            .unwrap(),
+        );
+        assert_eq!(op.dom(), base::mono![r([3, 4], 1)].into());
+        assert_eq!(op.cod(), base::mono![r([2, 4], 1)].into());
+    }
+
+    #[test]
+    fn division_takes_off_the_degree_of_the_divisor_and_is_partial() {
+        let r = |degree| -> Any { tangent(degree, real::Real::new_unchecked([2, 3])).into() };
+        let op = real(
+            real::Div::with_dom([
+                T(T(real::Real::new_unchecked([2, 3]))),
+                T(real::Real::new_unchecked([2, 3])),
+            ])
+            .unwrap(),
+        );
+        assert_eq!(op.dom(), base::mono![r(2), r(1)].into());
+        assert_eq!(op.cod(), base::mono![r(1)].into());
+        let x = real::Real::new_unchecked([2, 3]);
+        assert_eq!(
+            real::Div::with_dom([x; 2]).unwrap().cod(),
+            base::mono![x].into()
+        );
+        // a negative degree is not defined
+        assert!(
+            real::Div::with_dom([
+                real::Real::new_unchecked([2, 3]),
+                T(real::Real::new_unchecked([2, 3]))
+            ])
+            .is_err()
+        );
+        assert!(
+            real::Div::with_dom([
+                T(real::Real::new_unchecked([2, 3])),
+                T(real::Real::new_unchecked([2, 3]))
+            ])
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn negation_keeps_the_degree_of_reals() {
+        let op = real(real::Neg::with_dom([T(real::Real::new_unchecked([2, 3])); 1]).unwrap());
+        let sort: Poly<Any> = base::mono![T(real::Real::new_unchecked([2, 3])).into()].into();
+        assert_eq!(op.dom(), sort);
+        assert_eq!(op.cod(), sort);
+        let x = real::Real::new_unchecked([2, 3]);
+        assert_eq!(
+            real::Neg::with_dom([x; 1]).unwrap().cod(),
+            base::mono![x].into()
+        );
+    }
+
+    #[test]
+    fn scale_maps_matrices_of_the_shape_of_its_constant() {
+        let op =
+            real(real::Scale::with_dom(Mat([2, 3]), [real::Real::new_unchecked([2, 3])]).unwrap());
+        let shape: Poly<Any> = base::mono![real::Real::new_unchecked([2, 3]).into()].into();
+        assert_eq!(op.dom(), shape);
+        assert_eq!(op.cod(), shape);
+        assert_eq!(
+            real::Scale::with_dom(Mat([2, 3]), [real::Real::new_unchecked([2, 3])])
+                .unwrap()
+                .tensor()
+                .0,
+            [2, 3]
+        );
+    }
+
+    #[test]
+    fn logics_cast_to_and_from_any() {
+        // operations wrap into their logic, and logics into `Op`
+        let lra = LRA::Real(
+            real::Add::with_dom([real::Real::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .into(),
+        );
+        assert!(matches!(
+            Op::from(lra),
+            Op::Real(real::NRA::Add(op)) if op == real::Add::with_dom([real::Real::new_unchecked([2, 3]); 2]).unwrap()
+        ));
+        let lia = LIA::Int(
+            int::Sub::with_dom([int::Int::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .into(),
+        );
+        assert!(matches!(
+            Op::from(lia),
+            Op::Int(int::NIA::Sub(op)) if op == int::Sub::with_dom([int::Int::new_unchecked([2, 3]); 2]).unwrap()
+        ));
+
+        // `Op` casts down to the logics holding the operation only
+        assert!(
+            LRA::try_from(real(
+                real::ReLU::with_dom([real::Real::new_unchecked([2, 3]); 1]).unwrap()
+            ))
+            .is_ok()
+        );
+        assert!(
+            LIA::try_from(real(
+                real::ReLU::with_dom([real::Real::new_unchecked([2, 3]); 1]).unwrap()
+            ))
+            .is_err()
+        );
+        assert!(
+            LIA::try_from(int(int::ReLU::with_dom(
+                [int::Int::new_unchecked([2, 3]); 1]
+            )
+            .unwrap()))
+            .is_ok()
+        );
+
+        // boolean operations are in every logic
+        let op = || boolean(bool::And::with_dom([bool::Bool::new_unchecked([2, 3]); 2]).unwrap());
+        assert!(Prop::try_from(op()).is_ok());
+        assert!(NRA::try_from(op()).is_ok());
+        assert!(NIA::try_from(op()).is_ok());
+        assert!(LRA::try_from(op()).is_ok());
+        assert!(LIA::try_from(op()).is_ok());
+        assert!(BV::try_from(op()).is_ok());
+
+        // `Prop` holds the boolean operations only
+        assert!(
+            Prop::try_from(real(
+                real::Add::with_dom([real::Real::new_unchecked([2, 3]); 2]).unwrap()
+            ))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn linear_logics_hold_the_linear_operations_only() {
+        // `Mul`, `Div`, `Mod` and `MatMul` are in neither linear logic
+        assert!(
+            LRA::try_from(real(
+                real::MatMul::with_dom([
+                    real::Real::new_unchecked([2, 3]),
+                    real::Real::new_unchecked([3, 4])
+                ])
+                .unwrap()
+            ))
+            .is_err()
+        );
+        assert!(
+            LRA::try_from(real(
+                real::Mul::with_dom([real::Real::new_unchecked([2, 3]); 2]).unwrap()
+            ))
+            .is_err()
+        );
+        assert!(
+            LRA::try_from(real(
+                real::Div::with_dom([real::Real::new_unchecked([2, 3]); 2]).unwrap()
+            ))
+            .is_err()
+        );
+        assert!(
+            LIA::try_from(int(int::MatMul::with_dom([
+                int::Int::new_unchecked([2, 3]),
+                int::Int::new_unchecked([3, 4])
+            ])
+            .unwrap()))
+            .is_err()
+        );
+        assert!(
+            LIA::try_from(int(int::Mul::with_dom(
+                [int::Int::new_unchecked([2, 3]); 2]
+            )
+            .unwrap()))
+            .is_err()
+        );
+        assert!(
+            LIA::try_from(int(int::Div::with_dom(
+                [int::Int::new_unchecked([2, 3]); 2]
+            )
+            .unwrap()))
+            .is_err()
+        );
+        assert!(
+            LIA::try_from(int(int::Mod::with_dom(
+                [int::Int::new_unchecked([2, 3]); 2]
+            )
+            .unwrap()))
+            .is_err()
+        );
+
+        // but they are in the non-linear ones
+        assert!(
+            NRA::try_from(real(
+                real::MatMul::with_dom([
+                    real::Real::new_unchecked([2, 3]),
+                    real::Real::new_unchecked([3, 4])
+                ])
+                .unwrap()
+            ))
+            .is_ok()
+        );
+        assert!(
+            NRA::try_from(real(
+                real::Div::with_dom([real::Real::new_unchecked([2, 3]); 2]).unwrap()
+            ))
+            .is_ok()
+        );
+        assert!(
+            NIA::try_from(int(int::Mod::with_dom(
+                [int::Int::new_unchecked([2, 3]); 2]
+            )
+            .unwrap()))
+            .is_ok()
+        );
+
+        // comparisons are linear
+        assert!(
+            LRA::try_from(real(
+                real::Lt::with_dom([real::Real::new_unchecked([2, 3]); 2]).unwrap()
+            ))
+            .is_ok()
+        );
+        assert!(
+            LIA::try_from(int(
+                int::Ge::with_dom([int::Int::new_unchecked([2, 3]); 2]).unwrap()
+            ))
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn non_linear_logics_hold_their_theory_only() {
+        assert!(
+            NRA::try_from(int(int::Add::with_dom(
+                [int::Int::new_unchecked([2, 3]); 2]
+            )
+            .unwrap()))
+            .is_err()
+        );
+        assert!(
+            NIA::try_from(real(
+                real::Add::with_dom([real::Real::new_unchecked([2, 3]); 2]).unwrap()
+            ))
+            .is_err()
+        );
+        assert!(
+            NRA::try_from(word(
+                word::Add::with_dom([word::Word::new(8, [2, 3]).unwrap(); 2]).unwrap()
+            ))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn logics_embed_into_larger_logics() {
+        let lra = LRA::Real(
+            real::Sub::with_dom([real::Real::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .into(),
+        );
+        assert!(matches!(
+            NRA::from(lra),
+            NRA::Real(real::NRA::Sub(op)) if op == real::Sub::with_dom([real::Real::new_unchecked([2, 3]); 2]).unwrap()
+        ));
+        let lia = LIA::Int(
+            int::Max::with_dom([int::Int::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .into(),
+        );
+        assert!(matches!(
+            NIA::from(lia),
+            NIA::Int(int::NIA::Max(op)) if op == int::Max::with_dom([int::Int::new_unchecked([2, 3]); 2]).unwrap()
+        ));
+
+        let prop = || {
+            Prop::Bool(
+                bool::Or::with_dom([bool::Bool::new_unchecked([2, 3]); 2])
+                    .unwrap()
+                    .into(),
+            )
+        };
+        assert!(matches!(
+            NRA::from(prop()),
+            NRA::Bool(bool::Prop::Or(op)) if op == bool::Or::with_dom([bool::Bool::new_unchecked([2, 3]); 2]).unwrap()
+        ));
+        assert!(matches!(NIA::from(prop()), NIA::Bool(_)));
+        assert!(matches!(LRA::from(prop()), LRA::Bool(_)));
+        assert!(matches!(LIA::from(prop()), LIA::Bool(_)));
+        assert!(matches!(BV::from(prop()), BV::Bool(_)));
+    }
+
+    #[test]
+    fn bv_holds_word_and_boolean_operations() {
+        assert!(
+            BV::try_from(word(
+                word::signed::Div::with_dom([word::Word::new(8, [2, 3]).unwrap(); 2]).unwrap()
+            ))
+            .is_ok()
+        );
+        assert!(
+            BV::try_from(word(
+                word::unsigned::Lt::with_dom([word::Word::new(8, [2, 3]).unwrap(); 2]).unwrap()
+            ))
+            .is_ok()
+        );
+        assert!(
+            BV::try_from(word(
+                word::Concat::with_dom([
+                    word::Word::new(8, [2, 3]).unwrap(),
+                    word::Word::new(4, [2, 3]).unwrap()
+                ])
+                .unwrap()
+            ))
+            .is_ok()
+        );
+        assert!(
+            BV::try_from(int(int::Add::with_dom(
+                [int::Int::new_unchecked([2, 3]); 2]
+            )
+            .unwrap()))
+            .is_err()
+        );
+        assert!(
+            BV::try_from(real(
+                real::Add::with_dom([real::Real::new_unchecked([2, 3]); 2]).unwrap()
+            ))
+            .is_err()
+        );
+
+        // word operations are in none of the other logics
+        assert!(
+            LIA::try_from(word(
+                word::Add::with_dom([word::Word::new(8, [2, 3]).unwrap(); 2]).unwrap()
+            ))
+            .is_err()
+        );
+        assert!(
+            Prop::try_from(word(
+                word::Not::with_dom([word::Word::new(8, [2, 3]).unwrap(); 1]).unwrap()
+            ))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn word_ops_have_their_boundary_in_sort() {
+        let op = word(word::Add::with_dom([word::Word::new(8, [2, 3]).unwrap(); 2]).unwrap());
+        let w: Any = word::Word::new_unchecked(8, [2, 3]).into();
+        let dom: Poly<Any> = base::mono![w.clone(), w.clone()].into();
+        let cod: Poly<Any> = base::mono![w].into();
+        assert_eq!(op.dom(), dom);
+        assert_eq!(op.cod(), cod);
+
+        // comparisons write the booleans of `bool`
+        let op =
+            word(word::signed::Lt::with_dom([word::Word::new(8, [2, 3]).unwrap(); 2]).unwrap());
+        let cod: Poly<Any> = base::mono![bool::Bool::new_unchecked([2, 3]).into()].into();
+        assert_eq!(op.dom(), dom);
+        assert_eq!(op.cod(), cod);
+
+        // signed and unsigned operations are distinct operations
+        assert!(matches!(
+            word::BV::<Mat>::from(
+                word::signed::Div::with_dom([word::Word::new(8, [2, 3]).unwrap(); 2]).unwrap()
+            ),
+            word::BV::SDiv(_)
+        ));
+        assert!(matches!(
+            word::BV::<Mat>::from(
+                word::unsigned::Div::with_dom([word::Word::new(8, [2, 3]).unwrap(); 2]).unwrap()
+            ),
+            word::BV::UDiv(_)
+        ));
+    }
+
+    #[test]
+    fn comparisons_read_numbers_and_write_booleans() {
+        let op = int(int::Lt::with_dom([int::Int::new_unchecked([2, 3]); 2]).unwrap());
+        let i: Any = int::Int::new_unchecked([2, 3]).into();
+        let dom: Poly<Any> = base::mono![i.clone(), i].into();
+        let cod: Poly<Any> = base::mono![bool::Bool::new_unchecked([2, 3]).into()].into();
+        assert_eq!(op.dom(), dom);
+        assert_eq!(op.cod(), cod);
+    }
+}
+
+/// Tests for `bool`.
+mod bool {
+    use base::boundary::{Boundary, Poly};
+    use base::mono;
+    use theory::bool::Bool;
+    use theory::bool::*;
+
+    fn one(s: Bool) -> Poly<Bool> {
+        mono![s].into()
+    }
+
+    fn two(s: Bool) -> Poly<Bool> {
+        mono![s, s].into()
+    }
+
+    /// A matrix carrying its shape only, enough to compute boundaries.
+    #[derive(Debug, PartialEq)]
+    struct Mat([usize; 2]);
+
+    impl theory::Matrix for Mat {
+        fn shape(&self) -> [usize; 2] {
+            self.0
+        }
+    }
+
+    #[test]
+    fn a_truth_writes_the_booleans_of_the_shape_of_its_tensor() {
+        let op = Truth::new(Mat([2, 3])).unwrap();
+        assert_eq!(op.dom(), Poly::unit());
+        assert_eq!(op.cod(), one(Bool::new_unchecked([2, 3])));
+        assert_eq!(op.tensor(), &Mat([2, 3]));
+        // the same as given its codomain
+        let given = Truth::with_cod(Mat([2, 3]), [Bool::new_unchecked([2, 3])]).unwrap();
+        assert_eq!(given.cod(), op.cod());
+        assert!(Truth::with_cod(Mat([2, 3]), [Bool::new_unchecked([3, 2])]).is_err());
+    }
+
+    #[test]
+    fn pointwise_boundaries() {
+        let b = Bool::new_unchecked([2, 3]);
+        assert_eq!(
+            And::with_dom([Bool::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .dom(),
+            two(b)
+        );
+        assert_eq!(
+            And::with_dom([Bool::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .cod(),
+            one(b)
+        );
+        assert_eq!(
+            Or::with_dom([Bool::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .dom(),
+            two(b)
+        );
+        assert_eq!(
+            Xor::with_dom([Bool::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .cod(),
+            one(b)
+        );
+        assert_eq!(
+            Not::with_dom([Bool::new_unchecked([2, 3]); 1])
+                .unwrap()
+                .dom(),
+            one(b)
+        );
+        assert_eq!(
+            Not::with_dom([Bool::new_unchecked([2, 3]); 1])
+                .unwrap()
+                .cod(),
+            one(b)
+        );
+        assert_eq!(
+            Eq::with_dom([Bool::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .dom(),
+            two(b)
+        );
+        assert_eq!(
+            Eq::with_dom([Bool::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .cod(),
+            one(b)
+        );
+        assert_eq!(
+            Ne::with_dom([Bool::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .dom(),
+            two(b)
+        );
+        assert_eq!(
+            Ne::with_dom([Bool::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .cod(),
+            one(b)
+        );
+    }
+
+    #[test]
+    fn ops_display_their_name() {
+        assert_eq!(
+            And::with_dom([Bool::new_unchecked([1, 1]); 2])
+                .unwrap()
+                .to_string(),
+            "And"
+        );
+        assert_eq!(
+            Not::with_dom([Bool::new_unchecked([1, 1]); 1])
+                .unwrap()
+                .to_string(),
+            "Not"
+        );
+        assert_eq!(
+            Eq::with_dom([Bool::new_unchecked([1, 1]); 2])
+                .unwrap()
+                .to_string(),
+            "Eq"
+        );
+        assert_eq!(
+            Ne::with_dom([Bool::new_unchecked([1, 1]); 2])
+                .unwrap()
+                .to_string(),
+            "Ne"
+        );
+    }
+}
+
+/// Tests for `int`.
+mod int {
+    use base::boundary::{Boundary, Poly};
+    use base::mono;
+    use theory::int::*;
+    use theory::{Ints, bool::Bool, int::Int};
+
+    fn one(s: Int) -> Poly<Int> {
+        mono![s].into()
+    }
+
+    fn two(s: Int) -> Poly<Int> {
+        mono![s, s].into()
+    }
+
+    #[test]
+    fn pointwise_boundaries() {
+        let r = Int::new_unchecked([2, 3]);
+        assert_eq!(
+            Add::with_dom([Int::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .dom(),
+            two(r)
+        );
+        assert_eq!(
+            Add::with_dom([Int::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .cod(),
+            one(r)
+        );
+        assert_eq!(
+            Sub::with_dom([Int::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .dom(),
+            two(r)
+        );
+        assert_eq!(
+            Mul::with_dom([Int::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .dom(),
+            two(r)
+        );
+        assert_eq!(
+            Mul::with_dom([Int::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .cod(),
+            one(r)
+        );
+        assert_eq!(
+            Div::with_dom([Int::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .dom(),
+            two(r)
+        );
+        assert_eq!(
+            Div::with_dom([Int::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .cod(),
+            one(r)
+        );
+        assert_eq!(
+            Mod::with_dom([Int::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .dom(),
+            two(r)
+        );
+        assert_eq!(
+            Mod::with_dom([Int::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .cod(),
+            one(r)
+        );
+        assert_eq!(
+            Min::with_dom([Int::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .dom(),
+            two(r)
+        );
+        assert_eq!(
+            Max::with_dom([Int::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .cod(),
+            one(r)
+        );
+        assert_eq!(
+            ReLU::with_dom([Int::new_unchecked([2, 3]); 1])
+                .unwrap()
+                .dom(),
+            one(r)
+        );
+        assert_eq!(
+            ReLU::with_dom([Int::new_unchecked([2, 3]); 1])
+                .unwrap()
+                .cod(),
+            one(r)
+        );
+    }
+
+    #[test]
+    fn transpose_swaps_shape() {
+        let t = Transpose::with_dom([Int::new_unchecked([2, 3]); 1]).unwrap();
+        assert_eq!(t.dom(), one(Int::new_unchecked([2, 3])));
+        assert_eq!(t.cod(), one(Int::new_unchecked([3, 2])));
+    }
+
+    #[test]
+    fn matmul_contracts_inner_size() {
+        let p = MatMul::with_dom([Int::new_unchecked([2, 3]), Int::new_unchecked([3, 4])]).unwrap();
+        let dom: Poly<Int> = mono![Int::new_unchecked([2, 3]), Int::new_unchecked([3, 4])].into();
+        assert_eq!(p.dom(), dom);
+        assert_eq!(p.cod(), one(Int::new_unchecked([2, 4])));
+    }
+
+    #[test]
+    fn matmul_checks_inner_size() {
+        assert!(
+            MatMul::with_dom([Int::new_unchecked([2, 3]), Int::new_unchecked([4, 5])]).is_err()
+        );
+        let p = MatMul::with_dom([Int::new_unchecked([2, 3]), Int::new_unchecked([3, 4])]).unwrap();
+        assert_eq!(p.cod(), mono![Int::new_unchecked([2, 4])].into());
+    }
+
+    #[test]
+    fn shapes_are_never_empty() {
+        // a matrix of no entries is the zero space, `Real0`, not a sort of its own
+        for shape in [[0, 3], [2, 0], [0, 0]] {
+            assert!(Int::new(shape).is_err());
+        }
+        assert!(Int::new([1, 1]).is_ok());
+    }
+
+    #[test]
+    #[should_panic(expected = "at least one row and one column")]
+    fn the_unchecked_constructor_panics_on_an_empty_shape() {
+        Int::new_unchecked([0, 3]);
+    }
+
+    #[test]
+    fn ops_display_their_name() {
+        assert_eq!(
+            Add::with_dom([Int::new_unchecked([1, 1]); 2])
+                .unwrap()
+                .to_string(),
+            "Add"
+        );
+        assert_eq!(
+            Mul::with_dom([Int::new_unchecked([1, 1]); 2])
+                .unwrap()
+                .to_string(),
+            "Mul"
+        );
+        assert_eq!(
+            Div::with_dom([Int::new_unchecked([1, 1]); 2])
+                .unwrap()
+                .to_string(),
+            "Div"
+        );
+        assert_eq!(
+            Mod::with_dom([Int::new_unchecked([1, 1]); 2])
+                .unwrap()
+                .to_string(),
+            "Mod"
+        );
+        assert_eq!(
+            ReLU::with_dom([Int::new_unchecked([1, 1]); 1])
+                .unwrap()
+                .to_string(),
+            "ReLU"
+        );
+        assert_eq!(
+            Transpose::with_dom([Int::new_unchecked([1, 1]); 1])
+                .unwrap()
+                .to_string(),
+            "Transpose"
+        );
+    }
+    #[test]
+    fn comparisons_write_booleans() {
+        let x: Ints = Int::new_unchecked([2, 3]).into();
+        let b: Ints = Bool::new_unchecked([2, 3]).into();
+        let dom: Poly<Ints> = mono![x, x].into();
+        let cod: Poly<Ints> = mono![b].into();
+        for (d, c) in [
+            (
+                Lt::with_dom([Int::new_unchecked([2, 3]); 2]).unwrap().dom(),
+                Lt::with_dom([Int::new_unchecked([2, 3]); 2]).unwrap().cod(),
+            ),
+            (
+                Le::with_dom([Int::new_unchecked([2, 3]); 2]).unwrap().dom(),
+                Le::with_dom([Int::new_unchecked([2, 3]); 2]).unwrap().cod(),
+            ),
+            (
+                Gt::with_dom([Int::new_unchecked([2, 3]); 2]).unwrap().dom(),
+                Gt::with_dom([Int::new_unchecked([2, 3]); 2]).unwrap().cod(),
+            ),
+            (
+                Ge::with_dom([Int::new_unchecked([2, 3]); 2]).unwrap().dom(),
+                Ge::with_dom([Int::new_unchecked([2, 3]); 2]).unwrap().cod(),
+            ),
+            (
+                Eq::with_dom([Int::new_unchecked([2, 3]); 2]).unwrap().dom(),
+                Eq::with_dom([Int::new_unchecked([2, 3]); 2]).unwrap().cod(),
+            ),
+            (
+                Ne::with_dom([Int::new_unchecked([2, 3]); 2]).unwrap().dom(),
+                Ne::with_dom([Int::new_unchecked([2, 3]); 2]).unwrap().cod(),
+            ),
+        ] {
+            assert_eq!(d, dom);
+            assert_eq!(c, cod);
+        }
+        assert_eq!(
+            Le::with_dom([Int::new_unchecked([1, 1]); 2])
+                .unwrap()
+                .to_string(),
+            "Le"
+        );
+        assert_eq!(
+            Ne::with_dom([Int::new_unchecked([1, 1]); 2])
+                .unwrap()
+                .to_string(),
+            "Ne"
+        );
+    }
+}
+
+/// Tests for `real`.
+mod real {
+    use super::tangent;
+    use base::boundary::{Boundary, Poly};
+    use base::differentiable::T;
+    use base::mono;
+    use theory::real::*;
+    use theory::{Reals, bool::Bool, real::Real};
+
+    fn one(s: Real) -> Poly<Real> {
+        mono![s].into()
+    }
+
+    fn two(s: Real) -> Poly<Real> {
+        mono![s, s].into()
+    }
+
+    #[test]
+    fn pointwise_boundaries() {
+        let r = Real::new_unchecked([2, 3]);
+        assert_eq!(
+            Add::with_dom([Real::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .dom(),
+            two(r)
+        );
+        assert_eq!(
+            Add::with_dom([Real::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .cod(),
+            one(r)
+        );
+        assert_eq!(
+            Sub::with_dom([Real::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .dom(),
+            two(r)
+        );
+        assert_eq!(
+            Mul::with_dom([Real::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .dom(),
+            two(r)
+        );
+        assert_eq!(
+            Mul::with_dom([Real::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .cod(),
+            one(r)
+        );
+        assert_eq!(
+            Div::with_dom([Real::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .dom(),
+            two(r)
+        );
+        assert_eq!(
+            Div::with_dom([Real::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .cod(),
+            one(r)
+        );
+        assert_eq!(
+            Min::with_dom([Real::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .dom(),
+            two(r)
+        );
+        assert_eq!(
+            Max::with_dom([Real::new_unchecked([2, 3]); 2])
+                .unwrap()
+                .cod(),
+            one(r)
+        );
+        assert_eq!(
+            ReLU::with_dom([Real::new_unchecked([2, 3]); 1])
+                .unwrap()
+                .dom(),
+            one(r)
+        );
+        assert_eq!(
+            ReLU::with_dom([Real::new_unchecked([2, 3]); 1])
+                .unwrap()
+                .cod(),
+            one(r)
+        );
+    }
+
+    #[test]
+    fn transpose_swaps_shape() {
+        let t = Transpose::with_dom([Real::new_unchecked([2, 3]); 1]).unwrap();
+        assert_eq!(t.dom(), one(Real::new_unchecked([2, 3])));
+        assert_eq!(t.cod(), one(Real::new_unchecked([3, 2])));
+    }
+
+    #[test]
+    fn matmul_contracts_inner_size() {
+        let p =
+            MatMul::with_dom([Real::new_unchecked([2, 3]), Real::new_unchecked([3, 4])]).unwrap();
+        let dom: Poly<Real> =
+            mono![Real::new_unchecked([2, 3]), Real::new_unchecked([3, 4])].into();
+        assert_eq!(p.dom(), dom);
+        assert_eq!(p.cod(), one(Real::new_unchecked([2, 4])));
+    }
+
+    #[test]
+    fn matmul_checks_inner_size() {
+        assert!(
+            MatMul::with_dom([Real::new_unchecked([2, 3]), Real::new_unchecked([4, 5])]).is_err()
+        );
+        let p =
+            MatMul::with_dom([Real::new_unchecked([2, 3]), Real::new_unchecked([3, 4])]).unwrap();
+        assert_eq!(p.cod(), mono![Real::new_unchecked([2, 4])].into());
+    }
+
+    #[test]
+    fn mul_adds_the_degrees_of_its_factors() {
+        let r = |d| tangent(d, Real::new_unchecked([2, 3]));
+        let rates = Mul::with_dom([
+            T(Real::new_unchecked([2, 3])),
+            T(Real::new_unchecked([2, 3])),
+        ])
+        .unwrap();
+        assert_eq!(rates.dom(), two(r(1)));
+        assert_eq!(rates.cod(), one(r(2)));
+        let scaled =
+            Mul::with_dom([T(Real::new_unchecked([2, 3])), Real::new_unchecked([2, 3])]).unwrap();
+        let dom: Poly<Real> = mono![r(1), r(0)].into();
+        assert_eq!(scaled.dom(), dom);
+        assert_eq!(scaled.cod(), one(r(1)));
+        assert_eq!(
+            Mul::with_dom([Real::new_unchecked([2, 3]); 2]).unwrap(),
+            Mul::with_dom([Real::new_unchecked([2, 3]), Real::new_unchecked([2, 3])]).unwrap()
+        );
+    }
+
+    #[test]
+    fn mul_checks_the_degree_of_its_product() {
+        assert!(
+            Mul::with_dom([
+                tangent(u8::MAX, Real::new_unchecked([2, 3])),
+                T(Real::new_unchecked([2, 3]))
+            ])
+            .is_err()
+        );
+        assert!(
+            Mul::with_dom([
+                tangent(u8::MAX, Real::new_unchecked([2, 3])),
+                Real::new_unchecked([2, 3])
+            ])
+            .is_ok()
+        );
+        assert_eq!(
+            Mul::with_dom([T(Real::new_unchecked([2, 3])), Real::new_unchecked([2, 3])])
+                .unwrap()
+                .cod(),
+            mono![T(Real::new_unchecked([2, 3]))].into()
+        );
+    }
+
+    #[test]
+    fn sums_keep_the_degree_of_their_terms() {
+        let r = T(Real::new_unchecked([2, 3]));
+        assert_eq!(
+            Add::with_dom([T(Real::new_unchecked([2, 3])); 2])
+                .unwrap()
+                .dom(),
+            two(r)
+        );
+        assert_eq!(
+            Add::with_dom([T(Real::new_unchecked([2, 3])); 2])
+                .unwrap()
+                .cod(),
+            one(r)
+        );
+        assert_eq!(
+            Sub::with_dom([T(Real::new_unchecked([2, 3])); 2])
+                .unwrap()
+                .dom(),
+            two(r)
+        );
+        assert_eq!(
+            Sub::with_dom([T(Real::new_unchecked([2, 3])); 2])
+                .unwrap()
+                .cod(),
+            one(r)
+        );
+        assert_eq!(
+            Add::with_dom([Real::new_unchecked([2, 3]); 2]).unwrap(),
+            Add::with_dom([Real::new_unchecked([2, 3]); 2]).unwrap()
+        );
+    }
+
+    #[test]
+    fn shapes_are_never_empty() {
+        // a matrix of no entries is the zero space, `Real0`, not a sort of its own
+        for shape in [[0, 3], [2, 0], [0, 0]] {
+            assert!(Real::new(shape).is_err());
+        }
+        assert!(Real::new([1, 1]).is_ok());
+    }
+
+    #[test]
+    #[should_panic(expected = "at least one row and one column")]
+    fn the_unchecked_constructor_panics_on_an_empty_shape() {
+        Real::new_unchecked([0, 3]);
+    }
+
+    #[test]
+    fn ops_display_their_name() {
+        assert_eq!(
+            Add::with_dom([Real::new_unchecked([1, 1]); 2])
+                .unwrap()
+                .to_string(),
+            "Add"
+        );
+        assert_eq!(
+            Mul::with_dom([Real::new_unchecked([1, 1]); 2])
+                .unwrap()
+                .to_string(),
+            "Mul"
+        );
+        assert_eq!(
+            Div::with_dom([Real::new_unchecked([1, 1]); 2])
+                .unwrap()
+                .to_string(),
+            "Div"
+        );
+        assert_eq!(
+            ReLU::with_dom([Real::new_unchecked([1, 1]); 1])
+                .unwrap()
+                .to_string(),
+            "ReLU"
+        );
+        assert_eq!(
+            Transpose::with_dom([Real::new_unchecked([1, 1]); 1])
+                .unwrap()
+                .to_string(),
+            "Transpose"
+        );
+    }
+    #[test]
+    fn comparisons_write_booleans() {
+        let x: Reals = Real::new_unchecked([2, 3]).into();
+        let b: Reals = Bool::new_unchecked([2, 3]).into();
+        let dom: Poly<Reals> = mono![x, x].into();
+        let cod: Poly<Reals> = mono![b].into();
+        for (d, c) in [
+            (
+                Lt::with_dom([Real::new_unchecked([2, 3]); 2])
+                    .unwrap()
+                    .dom(),
+                Lt::with_dom([Real::new_unchecked([2, 3]); 2])
+                    .unwrap()
+                    .cod(),
+            ),
+            (
+                Le::with_dom([Real::new_unchecked([2, 3]); 2])
+                    .unwrap()
+                    .dom(),
+                Le::with_dom([Real::new_unchecked([2, 3]); 2])
+                    .unwrap()
+                    .cod(),
+            ),
+            (
+                Gt::with_dom([Real::new_unchecked([2, 3]); 2])
+                    .unwrap()
+                    .dom(),
+                Gt::with_dom([Real::new_unchecked([2, 3]); 2])
+                    .unwrap()
+                    .cod(),
+            ),
+            (
+                Ge::with_dom([Real::new_unchecked([2, 3]); 2])
+                    .unwrap()
+                    .dom(),
+                Ge::with_dom([Real::new_unchecked([2, 3]); 2])
+                    .unwrap()
+                    .cod(),
+            ),
+            (
+                Eq::with_dom([Real::new_unchecked([2, 3]); 2])
+                    .unwrap()
+                    .dom(),
+                Eq::with_dom([Real::new_unchecked([2, 3]); 2])
+                    .unwrap()
+                    .cod(),
+            ),
+            (
+                Ne::with_dom([Real::new_unchecked([2, 3]); 2])
+                    .unwrap()
+                    .dom(),
+                Ne::with_dom([Real::new_unchecked([2, 3]); 2])
+                    .unwrap()
+                    .cod(),
+            ),
+        ] {
+            assert_eq!(d, dom);
+            assert_eq!(c, cod);
+        }
+        assert_eq!(
+            Le::with_dom([Real::new_unchecked([1, 1]); 2])
+                .unwrap()
+                .to_string(),
+            "Le"
+        );
+        assert_eq!(
+            Ne::with_dom([Real::new_unchecked([1, 1]); 2])
+                .unwrap()
+                .to_string(),
+            "Ne"
+        );
+    }
+}
+
+/// Tests for the sorts of the matrix theories and their subsets.
+mod sort {
+    use base::differentiable::T;
+    use theory::zero::Real0;
+    use theory::*;
+    use theory::{bool::Bool, int::Int, real::Real, word::Word};
+
+    #[test]
+    fn real_shape_and_display() {
+        let r = Real::new_unchecked([2, 3]);
+        assert_eq!(r.shape(), [2, 3]);
+        assert_eq!(r.to_string(), "Real([2, 3])");
+    }
+
+    #[test]
+    fn real_tangent_raises_degree() {
+        let r = Real::new_unchecked([2, 3]);
+        assert_eq!(T(r).degree(), 1);
+        assert_eq!(T(r).shape(), [2, 3]);
+        assert_eq!(T(T(r)).degree(), 2);
+        assert_eq!(T(r).to_string(), "T(Real([2, 3]))");
+        assert_eq!(T(T(r)).to_string(), "T^2(Real([2, 3]))");
+    }
+
+    #[test]
+    fn int_shape_and_display() {
+        let r = Int::new_unchecked([2, 3]);
+        assert_eq!(r.shape(), [2, 3]);
+        assert_eq!(r.to_string(), "Int([2, 3])");
+    }
+
+    #[test]
+    fn int_tangent_is_trivial() {
+        assert_eq!(T(Int::new_unchecked([2, 3])), Real0);
+        assert_eq!(T(T(Int::new_unchecked([2, 3]))), Real0);
+    }
+
+    #[test]
+    fn bool_shape_and_display() {
+        let b = Bool::new_unchecked([2, 3]);
+        assert_eq!(b.shape(), [2, 3]);
+        assert_eq!(b.to_string(), "Bool([2, 3])");
+    }
+
+    #[test]
+    fn bool_tangent_is_trivial() {
+        assert_eq!(T(Bool::new_unchecked([2, 3])), Real0);
+        assert_eq!(T(T(Bool::new_unchecked([2, 3]))), Real0);
+    }
+
+    #[test]
+    fn word_width_shape_and_display() {
+        let x = Word::new(8, [2, 3]).unwrap();
+        assert_eq!(x.width(), 8);
+        assert_eq!(x.shape(), [2, 3]);
+        assert_eq!(x.to_string(), "Word8([2, 3])");
+    }
+
+    #[test]
+    fn word_has_positive_width() {
+        assert_eq!(
+            Word::new(0, [2, 3]),
+            Err(theory::Error("words have at least one bit".to_string()))
+        );
+        assert!(Word::new(1, [2, 3]).is_ok());
+    }
+
+    #[test]
+    fn word_new_unchecked_builds_positive_widths() {
+        assert_eq!(
+            Word::new_unchecked(8, [2, 3]),
+            Word::new(8, [2, 3]).unwrap()
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "words have at least one bit")]
+    fn word_new_unchecked_panics_on_zero_width() {
+        Word::new_unchecked(0, [2, 3]);
+    }
+
+    #[test]
+    fn words_display_their_sort() {
+        let x = Word::new_unchecked(8, [2, 3]);
+        assert_eq!(Words::from(x), Words::Word(x));
+        assert_eq!(Words::from(x).to_string(), "Word8([2, 3])");
+        assert_eq!(
+            Words::from(Bool::new_unchecked([2, 3])).to_string(),
+            "Bool([2, 3])"
+        );
+        assert_eq!(Words::from(Real0).to_string(), "Real0()");
+    }
+
+    #[test]
+    fn word_tangent_is_trivial() {
+        assert_eq!(T(Word::new_unchecked(8, [2, 3])), Real0);
+        assert_eq!(T(Words::from(Word::new_unchecked(8, [2, 3]))), Real0);
+        assert_eq!(T(Words::from(Bool::new_unchecked([2, 3]))), Real0);
+    }
+
+    #[test]
+    fn zero_tangent_is_itself() {
+        assert_eq!(T(Real0), Real0);
+    }
+
+    #[test]
+    fn zero_display() {
+        assert_eq!(Real0.to_string(), "Real0()");
+    }
+
+    #[test]
+    fn tangent_is_each_sorts_tangent() {
+        let r = Real::new_unchecked([2, 3]);
+        assert_eq!(T(Any::from(r)), Any::Real(T(r)));
+        assert_eq!(T(Any::from(Int::new_unchecked([2, 3]))), Any::Zero(Real0));
+        assert_eq!(T(Any::from(Bool::new_unchecked([2, 3]))), Any::Zero(Real0));
+        assert_eq!(
+            T(Any::from(Word::new_unchecked(8, [2, 3]))),
+            Any::Zero(Real0)
+        );
+        assert_eq!(T(Any::from(Real0)), Any::Zero(Real0));
+    }
+
+    #[test]
+    fn subsets_hold_the_tangents_of_their_sorts() {
+        let sorts = [
+            Any::Real(Real::new_unchecked([2, 3])),
+            Any::Int(Int::new_unchecked([2, 3])),
+            Any::Bool(Bool::new_unchecked([2, 3])),
+            Any::Word(Word::new_unchecked(8, [2, 3])),
+            Any::Zero(Real0),
+        ];
+        for s in sorts {
+            if Bools::try_from(s.clone()).is_ok() {
+                assert!(Bools::try_from(T(s.clone())).is_ok());
+            }
+            if Reals::try_from(s.clone()).is_ok() {
+                assert!(Reals::try_from(T(s.clone())).is_ok());
+            }
+            if Ints::try_from(s.clone()).is_ok() {
+                assert!(Ints::try_from(T(s.clone())).is_ok());
+            }
+            if Nums::try_from(s.clone()).is_ok() {
+                assert!(Nums::try_from(T(s.clone())).is_ok());
+            }
+            if Words::try_from(s.clone()).is_ok() {
+                assert!(Words::try_from(T(s.clone())).is_ok());
+            }
+        }
+    }
+
+    #[test]
+    fn subsets_cast_to_and_from_any() {
+        let r = Real::new_unchecked([2, 3]);
+        let i = Int::new_unchecked([2, 3]);
+        let b = Bool::new_unchecked([2, 3]);
+        let w = Word::new_unchecked(8, [2, 3]);
+
+        // each sort casts up from the subsets that hold it
+        assert_eq!(Any::from(Reals::from(r)), Any::Real(r));
+        assert_eq!(Any::from(Ints::from(i)), Any::Int(i));
+        assert_eq!(Any::from(Nums::from(r)), Any::Real(r));
+        assert_eq!(Any::from(Nums::from(i)), Any::Int(i));
+        assert_eq!(Any::from(Words::from(w)), Any::Word(w));
+
+        // and down to them only
+        assert_eq!(Words::try_from(Any::Word(w)).ok(), Some(Words::Word(w)));
+        assert!(Words::try_from(Any::Real(r)).is_err());
+        assert!(Reals::try_from(Any::Int(i)).is_err());
+        assert!(Ints::try_from(Any::Real(r)).is_err());
+        assert!(Nums::try_from(Any::Word(w)).is_err());
+
+        // every subset holds the booleans and `Real0`
+        for s in [Any::Bool(b), Any::Zero(Real0)] {
+            assert!(Bools::try_from(s.clone()).is_ok());
+            assert!(Reals::try_from(s.clone()).is_ok());
+            assert!(Ints::try_from(s.clone()).is_ok());
+            assert!(Nums::try_from(s.clone()).is_ok());
+            assert!(Words::try_from(s.clone()).is_ok());
+        }
+
+        // `Bools` holds only those
+        assert!(Bools::try_from(Any::Real(r)).is_err());
+        assert!(Bools::try_from(Any::Int(i)).is_err());
+        assert!(Bools::try_from(Any::Word(w)).is_err());
+    }
+}
+
+/// Tests for `word`.
+mod word {
+    use base::boundary::{Boundary, Poly};
+    use base::mono;
+    use theory::word::*;
+    use theory::{Words, bool::Bool, word::Word};
+
+    fn w(width: usize, shape: [usize; 2]) -> Words {
+        Word::new(width, shape).unwrap().into()
+    }
+
+    fn b(shape: [usize; 2]) -> Words {
+        Bool::new_unchecked(shape).into()
+    }
+
+    fn one(s: Words) -> Poly<Words> {
+        mono![s].into()
+    }
+
+    fn two(s: Words) -> Poly<Words> {
+        mono![s, s].into()
+    }
+
+    #[test]
+    fn pointwise_boundaries_preserve_width() {
+        let x = w(8, [2, 3]);
+        assert_eq!(
+            Add::with_dom([Word::new(8, [2, 3]).unwrap(); 2])
+                .unwrap()
+                .dom(),
+            two(x)
+        );
+        assert_eq!(
+            Add::with_dom([Word::new(8, [2, 3]).unwrap(); 2])
+                .unwrap()
+                .cod(),
+            one(x)
+        );
+        assert_eq!(
+            Xnor::with_dom([Word::new(8, [2, 3]).unwrap(); 2])
+                .unwrap()
+                .cod(),
+            one(x)
+        );
+        assert_eq!(
+            Neg::with_dom([Word::new(8, [2, 3]).unwrap(); 1])
+                .unwrap()
+                .dom(),
+            one(x)
+        );
+        assert_eq!(
+            Not::with_dom([Word::new(8, [2, 3]).unwrap(); 1])
+                .unwrap()
+                .cod(),
+            one(x)
+        );
+        assert_eq!(
+            RotateLeft::with_dom(3, [Word::new(8, [2, 3]).unwrap(); 1])
+                .unwrap()
+                .dom(),
+            one(x)
+        );
+        assert_eq!(
+            RotateRight::with_dom(3, [Word::new(8, [2, 3]).unwrap(); 1])
+                .unwrap()
+                .cod(),
+            one(x)
+        );
+        assert_eq!(
+            signed::Div::with_dom([Word::new(8, [2, 3]).unwrap(); 2])
+                .unwrap()
+                .dom(),
+            two(x)
+        );
+        assert_eq!(
+            signed::Mod::with_dom([Word::new(8, [2, 3]).unwrap(); 2])
+                .unwrap()
+                .cod(),
+            one(x)
+        );
+        assert_eq!(
+            unsigned::Rem::with_dom([Word::new(8, [2, 3]).unwrap(); 2])
+                .unwrap()
+                .cod(),
+            one(x)
+        );
+        assert_eq!(
+            unsigned::Shr::with_dom([Word::new(8, [2, 3]).unwrap(); 2])
+                .unwrap()
+                .dom(),
+            two(x)
+        );
+    }
+
+    #[test]
+    fn comparisons_write_booleans() {
+        let x = w(8, [2, 3]);
+        assert_eq!(
+            Eq::with_dom([Word::new(8, [2, 3]).unwrap(); 2])
+                .unwrap()
+                .dom(),
+            two(x)
+        );
+        assert_eq!(
+            Eq::with_dom([Word::new(8, [2, 3]).unwrap(); 2])
+                .unwrap()
+                .cod(),
+            one(b([2, 3]))
+        );
+        assert_eq!(
+            Ne::with_dom([Word::new(8, [2, 3]).unwrap(); 2])
+                .unwrap()
+                .cod(),
+            one(b([2, 3]))
+        );
+        assert_eq!(
+            signed::Lt::with_dom([Word::new(8, [2, 3]).unwrap(); 2])
+                .unwrap()
+                .dom(),
+            two(x)
+        );
+        assert_eq!(
+            signed::Lt::with_dom([Word::new(8, [2, 3]).unwrap(); 2])
+                .unwrap()
+                .cod(),
+            one(b([2, 3]))
+        );
+        assert_eq!(
+            unsigned::Ge::with_dom([Word::new(8, [2, 3]).unwrap(); 2])
+                .unwrap()
+                .cod(),
+            one(b([2, 3]))
+        );
+    }
+
+    #[test]
+    fn width_changing_boundaries() {
+        assert_eq!(
+            Extract::with_dom(7, 4, [Word::new(16, [2, 3]).unwrap(); 1])
+                .unwrap()
+                .dom(),
+            one(w(16, [2, 3]))
+        );
+        assert_eq!(
+            Extract::with_dom(7, 4, [Word::new(16, [2, 3]).unwrap(); 1])
+                .unwrap()
+                .cod(),
+            one(w(4, [2, 3]))
+        );
+        assert_eq!(
+            Extract::with_dom(0, 0, [Word::new(8, [1, 1]).unwrap(); 1])
+                .unwrap()
+                .cod(),
+            one(w(1, [1, 1]))
+        );
+
+        let dom: Poly<Words> = mono![w(8, [2, 3]), w(4, [2, 3])].into();
+        assert_eq!(
+            Concat::with_dom([Word::new(8, [2, 3]).unwrap(), Word::new(4, [2, 3]).unwrap()])
+                .unwrap()
+                .dom(),
+            dom
+        );
+        assert_eq!(
+            Concat::with_dom([Word::new(8, [2, 3]).unwrap(), Word::new(4, [2, 3]).unwrap()])
+                .unwrap()
+                .cod(),
+            one(w(12, [2, 3]))
+        );
+
+        assert_eq!(
+            unsigned::Extend::with_dom(8, [Word::new(8, [2, 3]).unwrap(); 1])
+                .unwrap()
+                .cod(),
+            one(w(16, [2, 3]))
+        );
+        assert_eq!(
+            signed::Extend::with_dom(24, [Word::new(8, [2, 3]).unwrap(); 1])
+                .unwrap()
+                .cod(),
+            one(w(32, [2, 3]))
+        );
+        assert_eq!(
+            Repeat::with_dom(3, [Word::new(4, [2, 3]).unwrap(); 1])
+                .unwrap()
+                .cod(),
+            one(w(12, [2, 3]))
+        );
+    }
+
+    #[test]
+    fn ops_display_their_name_and_indices() {
+        assert_eq!(
+            Add::with_dom([Word::new(8, [1, 1]).unwrap(); 2])
+                .unwrap()
+                .to_string(),
+            "Add"
+        );
+        assert_eq!(
+            Ne::with_dom([Word::new(8, [1, 1]).unwrap(); 2])
+                .unwrap()
+                .to_string(),
+            "Ne"
+        );
+        assert_eq!(
+            Extract::with_dom(7, 4, [Word::new(8, [1, 1]).unwrap(); 1])
+                .unwrap()
+                .to_string(),
+            "Extract[7:4]"
+        );
+        assert_eq!(
+            RotateLeft::with_dom(3, [Word::new(8, [1, 1]).unwrap(); 1])
+                .unwrap()
+                .to_string(),
+            "RotateLeft(3)"
+        );
+        assert_eq!(
+            Repeat::with_dom(2, [Word::new(8, [1, 1]).unwrap(); 1])
+                .unwrap()
+                .to_string(),
+            "Repeat(2)"
+        );
+        assert_eq!(
+            signed::Div::with_dom([Word::new(8, [1, 1]).unwrap(); 2])
+                .unwrap()
+                .to_string(),
+            "SDiv"
+        );
+        assert_eq!(
+            unsigned::Div::with_dom([Word::new(8, [1, 1]).unwrap(); 2])
+                .unwrap()
+                .to_string(),
+            "UDiv"
+        );
+        assert_eq!(
+            signed::Shr::with_dom([Word::new(8, [1, 1]).unwrap(); 2])
+                .unwrap()
+                .to_string(),
+            "AShr"
+        );
+        assert_eq!(
+            unsigned::Shr::with_dom([Word::new(8, [1, 1]).unwrap(); 2])
+                .unwrap()
+                .to_string(),
+            "LShr"
+        );
+        assert_eq!(
+            signed::Ge::with_dom([Word::new(8, [1, 1]).unwrap(); 2])
+                .unwrap()
+                .to_string(),
+            "SGe"
+        );
+        assert_eq!(
+            signed::Extend::with_dom(8, [Word::new(8, [1, 1]).unwrap(); 1])
+                .unwrap()
+                .to_string(),
+            "SignExtend(8)"
+        );
+        assert_eq!(
+            unsigned::Extend::with_dom(8, [Word::new(8, [1, 1]).unwrap(); 1])
+                .unwrap()
+                .to_string(),
+            "ZeroExtend(8)"
+        );
+    }
+
+    #[test]
+    fn constructors_check_their_sizes() {
+        // words have at least one bit: the sort `Word` checks it, so no
+        // operation reads or writes words of no bits
+
+        // extraction needs `j ≤ i < width`
+        assert!(Extract::with_dom(7, 0, [Word::new(8, [2, 3]).unwrap(); 1]).is_ok());
+        assert!(Extract::with_dom(8, 0, [Word::new(8, [2, 3]).unwrap(); 1]).is_err());
+        assert!(Extract::with_dom(2, 3, [Word::new(8, [2, 3]).unwrap(); 1]).is_err());
+
+        // repetition needs at least one copy
+        assert!(Repeat::with_dom(0, [Word::new(8, [2, 3]).unwrap(); 1]).is_err());
+
+        // nor shapes empty: the sort `Word` checks it too
+        assert!(Word::new(8, [0, 3]).is_err());
+        assert!(Word::new(8, [2, 0]).is_err());
+    }
+
+    #[test]
+    fn getters_read_the_parameters_that_the_boundary_does_not_determine() {
+        let e = Extract::with_dom(7, 4, [Word::new(8, [2, 3]).unwrap(); 1]).unwrap();
+        assert_eq!((e.i(), e.j()), (7, 4));
+        let r = RotateRight::with_dom(3, [Word::new(8, [2, 3]).unwrap(); 1]).unwrap();
+        assert_eq!(r.i(), 3);
+    }
+
+    /// The width of the words that an operation writes must fit a `usize`,
+    /// or its boundary could not be computed: the constructors reject the
+    /// sizes whose width overflows, and accept those whose width is
+    /// `usize::MAX` exactly.
+    #[test]
+    fn constructors_reject_widths_that_overflow() {
+        let max = usize::MAX;
+
+        // `Concat(u, v)` writes words of `u + v` bits
+        assert!(
+            Concat::with_dom([
+                Word::new(max, [1, 1]).unwrap(),
+                Word::new(1, [1, 1]).unwrap()
+            ])
+            .is_err()
+        );
+        assert_eq!(
+            Concat::with_dom([
+                Word::new(max - 1, [1, 1]).unwrap(),
+                Word::new(1, [1, 1]).unwrap()
+            ])
+            .unwrap()
+            .cod(),
+            one(w(max, [1, 1]))
+        );
+
+        // `Repeat(i, width)` writes words of `i · width` bits
+        assert!(Repeat::with_dom(max / 2 + 1, [Word::new(2, [1, 1]).unwrap(); 1]).is_err());
+        assert_eq!(
+            Repeat::with_dom(max / 2, [Word::new(2, [1, 1]).unwrap(); 1])
+                .unwrap()
+                .cod(),
+            one(w(max - 1, [1, 1]))
+        );
+
+        // `Extend(i, width)` writes words of `width + i` bits
+        assert!(signed::Extend::with_dom(1, [Word::new(max, [1, 1]).unwrap(); 1]).is_err());
+        assert!(unsigned::Extend::with_dom(max, [Word::new(1, [1, 1]).unwrap(); 1]).is_err());
+        assert_eq!(
+            unsigned::Extend::with_dom(max - 1, [Word::new(1, [1, 1]).unwrap(); 1])
+                .unwrap()
+                .cod(),
+            one(w(max, [1, 1]))
+        );
+    }
+}
+
+/// Tests for the `with_dom` constructors: each builds the operation whose
+/// domain is the one given, and fails on a domain of no instance.
+mod with_dom {
+    use base::boundary::{Boundary, Mono, Poly};
+    use base::differentiable::T;
+    use theory::*;
+    use theory::{bool::Bool, int::Int, real::Real, word::Word};
+
+    #[derive(Debug)]
+    struct Mat([usize; 2]);
+
+    impl Matrix for Mat {
+        fn shape(&self) -> [usize; 2] {
+            self.0
+        }
+    }
+
+    /// Fails unless `op` reads exactly `dom`.
+    fn reads<S, B>(op: B, dom: impl IntoIterator<Item = S>)
+    where
+        S: Clone + PartialEq + std::fmt::Debug,
+        B: Boundary<S>,
+    {
+        let expected: Poly<S> = dom.into_iter().collect::<Mono<S>>().into();
+        assert_eq!(op.dom(), expected);
+    }
+
+    fn word(width: usize, shape: [usize; 2]) -> Word {
+        Word::new_unchecked(width, shape)
+    }
+
+    #[test]
+    fn real_operations_read_their_domain() {
+        let x = T(Real::new_unchecked([2, 3]));
+        let y = T(T(Real::new_unchecked([2, 3])));
+        reads(real::Add::with_dom([x, x]).unwrap(), [x, x]);
+        reads(real::Neg::with_dom([y]).unwrap(), [y]);
+        reads(real::Transpose::with_dom([x]).unwrap(), [x]);
+        reads(real::Mul::with_dom([x, y]).unwrap(), [x, y]);
+        reads(real::Div::with_dom([y, x]).unwrap(), [y, x]);
+        let z = Real::new_unchecked([3, 4]);
+        reads(real::MatMul::with_dom([x, z]).unwrap(), [x, z]);
+        reads(real::Scale::with_dom(Mat([2, 3]), [y]).unwrap(), [y]);
+        reads(
+            real::Affine::with_dom(Mat([5, 2]), Mat([5, 3]), [x]).unwrap(),
+            [x],
+        );
+        // `A` of shape `[5, 2]` takes `x` of shape `[2, 3]` to `[5, 3]`
+        let l = real::Linear::with_dom(Mat([5, 2]), [x]).unwrap();
+        reads(real::Linear::with_dom(Mat([5, 2]), [x]).unwrap(), [x]);
+        assert_eq!(l.cod(), base::mono![T(Real::new_unchecked([5, 3]))].into());
+        let c = Bool::new_unchecked([2, 3]);
+        let dom = [c.into(), x.into(), x.into()];
+        reads(real::Ite::with_dom(dom).unwrap(), dom);
+        let cmp = real::Lt::with_dom([y, y]).unwrap();
+        assert_eq!(
+            cmp,
+            real::Lt::with_dom([T(T(Real::new_unchecked([2, 3]))); 2]).unwrap()
+        );
+    }
+
+    #[test]
+    fn real_operations_reject_domains_of_no_instance() {
+        let x = Real::new_unchecked([2, 3]);
+        let y = T(Real::new_unchecked([2, 3]));
+        let z = Real::new_unchecked([3, 2]);
+        assert!(real::Add::with_dom([x, y]).is_err());
+        assert!(real::Eq::with_dom([x, z]).is_err());
+        assert!(real::Mul::with_dom([x, z]).is_err());
+        // the degree of the divisor exceeds that of the dividend
+        assert!(real::Div::with_dom([x, y]).is_err());
+        assert!(real::MatMul::with_dom([x, x]).is_err());
+        assert!(real::Scale::with_dom(Mat([3, 2]), [x]).is_err());
+        assert!(real::Affine::with_dom(Mat([5, 2]), Mat([5, 3]), [z]).is_err());
+        assert!(real::Linear::with_dom(Mat([5, 2]), [z]).is_err());
+        let c = Bool::new_unchecked([3, 2]);
+        assert!(real::Ite::with_dom([c.into(), x.into(), x.into()]).is_err());
+        assert!(real::Ite::with_dom([x.into(), x.into(), x.into()]).is_err());
+        let e = real::Add::with_dom([x, y]).unwrap_err();
+        assert_eq!(
+            e.0,
+            "expected a domain of 2 equal sorts, got [Real([2, 3]), T(Real([2, 3]))]"
+        );
+    }
+
+    #[test]
+    fn int_operations_read_their_domain() {
+        let x = Int::new_unchecked([2, 3]);
+        let z = Int::new_unchecked([3, 1]);
+        reads(int::Mod::with_dom([x, x]).unwrap(), [x, x]);
+        reads(int::Argmax::with_dom([x]).unwrap(), [x]);
+        reads(int::MatMul::with_dom([x, z]).unwrap(), [x, z]);
+        reads(int::Scale::with_dom(Mat([2, 3]), [x]).unwrap(), [x]);
+        reads(
+            int::Affine::with_dom(Mat([4, 2]), Mat([4, 3]), [x]).unwrap(),
+            [x],
+        );
+        reads(int::Linear::with_dom(Mat([4, 2]), [x]).unwrap(), [x]);
+        assert!(int::Linear::with_dom(Mat([4, 3]), [x]).is_err());
+        let dom = [Bool::new_unchecked([2, 3]).into(), x.into(), x.into()];
+        reads(int::Ite::with_dom(dom).unwrap(), dom);
+        assert!(int::Sub::with_dom([x, z]).is_err());
+        assert!(int::MatMul::with_dom([z, x]).is_err());
+        assert!(
+            int::Ite::with_dom([Bool::new_unchecked([2, 3]).into(), x.into(), z.into()]).is_err()
+        );
+    }
+
+    #[test]
+    fn bool_operations_read_their_domain() {
+        let x = Bool::new_unchecked([1, 4]);
+        reads(bool::And::with_dom([x, x]).unwrap(), [x, x]);
+        reads(bool::Not::with_dom([x]).unwrap(), [x]);
+        reads(bool::Ite::with_dom([x, x, x]).unwrap(), [x, x, x]);
+        assert!(bool::Ite::with_dom([x, x, Bool::new_unchecked([4, 1])]).is_err());
+    }
+
+    #[test]
+    fn word_operations_read_their_domain() {
+        let x = word(8, [2, 2]);
+        let y = word(4, [2, 2]);
+        let dom = |ws: &[Word]| ws.iter().map(|&w| Words::from(w)).collect::<Vec<_>>();
+        reads(word::Add::with_dom([x, x]).unwrap(), dom(&[x, x]));
+        reads(word::Not::with_dom([x]).unwrap(), dom(&[x]));
+        reads(word::Concat::with_dom([x, y]).unwrap(), dom(&[x, y]));
+        reads(word::Extract::with_dom(5, 2, [x]).unwrap(), dom(&[x]));
+        reads(word::Repeat::with_dom(3, [y]).unwrap(), dom(&[y]));
+        reads(word::RotateLeft::with_dom(1, [x]).unwrap(), dom(&[x]));
+        reads(word::signed::Rem::with_dom([y, y]).unwrap(), dom(&[y, y]));
+        reads(word::signed::Abs::with_dom([y]).unwrap(), dom(&[y]));
+        reads(word::signed::Extend::with_dom(8, [x]).unwrap(), dom(&[x]));
+        reads(word::unsigned::Ge::with_dom([x, x]).unwrap(), dom(&[x, x]));
+        reads(word::unsigned::Extend::with_dom(8, [y]).unwrap(), dom(&[y]));
+        let ite = [Bool::new_unchecked([2, 2]).into(), x.into(), x.into()];
+        reads(word::Ite::with_dom(ite).unwrap(), ite);
+
+        assert!(word::Add::with_dom([x, y]).is_err());
+        assert!(word::Concat::with_dom([x, word(4, [2, 1])]).is_err());
+        assert!(word::Extract::with_dom(8, 2, [x]).is_err());
+        assert!(word::Repeat::with_dom(0, [x]).is_err());
+        assert!(
+            word::Ite::with_dom([Bool::new_unchecked([2, 2]).into(), x.into(), y.into()]).is_err()
+        );
+    }
+}
+
+/// Tests for the `with_cod` constructors: each builds the operation whose
+/// codomain is the one given, when the codomain determines it, and fails on
+/// a codomain of no instance.
+mod with_cod {
+    use base::boundary::{Boundary, Mono, Poly};
+    use base::differentiable::T;
+    use theory::*;
+    use theory::{bool::Bool, int::Int, real::Real, word::Word};
+
+    #[derive(Debug)]
+    struct Mat([usize; 2]);
+
+    impl Matrix for Mat {
+        fn shape(&self) -> [usize; 2] {
+            self.0
+        }
+    }
+
+    /// Fails unless `op` writes exactly `cod`.
+    fn writes<S, B>(op: B, cod: impl IntoIterator<Item = S>)
+    where
+        S: Clone + PartialEq + std::fmt::Debug,
+        B: Boundary<S>,
+    {
+        let expected: Poly<S> = cod.into_iter().collect::<Mono<S>>().into();
+        assert_eq!(op.cod(), expected);
+    }
+
+    fn word(width: usize, shape: [usize; 2]) -> Words {
+        Word::new_unchecked(width, shape).into()
+    }
+
+    #[test]
+    fn real_operations_write_their_codomain() {
+        let x = T(Real::new_unchecked([2, 3]));
+        writes(real::Zero::with_cod([x]).unwrap(), [x]);
+        writes(real::Add::with_cod([x]).unwrap(), [x]);
+        writes(real::ReLU::with_cod([x]).unwrap(), [x]);
+        writes(real::Transpose::with_cod([x]).unwrap(), [x]);
+        assert_eq!(
+            real::Transpose::with_cod([x]).unwrap(),
+            real::Transpose::with_dom([T(Real::new_unchecked([3, 2])); 1]).unwrap()
+        );
+        writes(real::Ite::with_cod([x]).unwrap(), [x.into()]);
+        writes(real::Scale::with_cod(Mat([2, 3]), [x]).unwrap(), [x]);
+        writes(
+            real::Affine::with_cod(Mat([2, 5]), Mat([2, 3]), [x]).unwrap(),
+            [x],
+        );
+        // `A` of shape `[2, 5]` writes `[2, 3]` from `[5, 3]`, of the same degree
+        let l = real::Linear::with_cod(Mat([2, 5]), [x]).unwrap();
+        writes(real::Linear::with_cod(Mat([2, 5]), [x]).unwrap(), [x]);
+        assert_eq!(l.dom(), base::mono![T(Real::new_unchecked([5, 3]))].into());
+        assert!(real::Linear::with_cod(Mat([3, 5]), [x]).is_err());
+        assert!(real::Scale::with_cod(Mat([3, 2]), [x]).is_err());
+        let e = real::Affine::with_cod(Mat([3, 5]), Mat([3, 3]), [x]).unwrap_err();
+        assert_eq!(
+            e.0,
+            "expected a codomain of 1 sort of shape [3, 3], got [T(Real([2, 3]))]"
+        );
+    }
+
+    #[test]
+    fn int_operations_write_their_codomain() {
+        let x = Int::new_unchecked([2, 3]);
+        let b = Bool::new_unchecked([2, 3]);
+        writes(int::Mod::with_cod([x]).unwrap(), [x]);
+        writes(int::Transpose::with_cod([x]).unwrap(), [x]);
+        writes(int::Ite::with_cod([x]).unwrap(), [x.into()]);
+        writes(int::Le::with_cod([b]).unwrap(), [b.into()]);
+        writes(int::Scale::with_cod(Mat([2, 3]), [x]).unwrap(), [x]);
+        writes(
+            int::Affine::with_cod(Mat([2, 4]), Mat([2, 3]), [x]).unwrap(),
+            [x],
+        );
+        assert!(int::Affine::with_cod(Mat([3, 4]), Mat([3, 3]), [x]).is_err());
+        writes(int::Linear::with_cod(Mat([2, 4]), [x]).unwrap(), [x]);
+        assert!(int::Linear::with_cod(Mat([3, 4]), [x]).is_err());
+    }
+
+    #[test]
+    fn bool_operations_write_their_codomain() {
+        let x = Bool::new_unchecked([1, 4]);
+        writes(bool::Xor::with_cod([x]).unwrap(), [x]);
+        writes(bool::Not::with_cod([x]).unwrap(), [x]);
+        writes(bool::Ite::with_cod([x]).unwrap(), [x]);
+    }
+
+    #[test]
+    fn word_operations_write_their_codomain() {
+        let w = |width| Word::new_unchecked(width, [2, 2]);
+        writes(word::Nand::with_cod([w(8)]).unwrap(), [word(8, [2, 2])]);
+        writes(word::Ite::with_cod([w(8)]).unwrap(), [word(8, [2, 2])]);
+        writes(
+            word::RotateRight::with_cod(3, [w(8)]).unwrap(),
+            [word(8, [2, 2])],
+        );
+        writes(
+            word::signed::Mod::with_cod([w(8)]).unwrap(),
+            [word(8, [2, 2])],
+        );
+        writes(
+            word::unsigned::Shr::with_cod([w(8)]).unwrap(),
+            [word(8, [2, 2])],
+        );
+
+        let repeat = word::Repeat::with_cod(3, [w(12)]).unwrap();
+        assert_eq!(
+            repeat,
+            word::Repeat::with_dom(3, [Word::new(4, [2, 2]).unwrap(); 1]).unwrap()
+        );
+        writes(repeat, [word(12, [2, 2])]);
+        assert!(word::Repeat::with_cod(5, [w(12)]).is_err());
+        assert!(word::Repeat::with_cod(0, [w(12)]).is_err());
+
+        let extend = word::signed::Extend::with_cod(3, [w(8)]).unwrap();
+        assert_eq!(
+            extend,
+            word::signed::Extend::with_dom(3, [Word::new(5, [2, 2]).unwrap(); 1]).unwrap()
+        );
+        writes(extend, [word(8, [2, 2])]);
+        let extend = word::unsigned::Extend::with_cod(3, [w(8)]).unwrap();
+        writes(extend, [word(8, [2, 2])]);
+        assert!(word::signed::Extend::with_cod(8, [w(8)]).is_err());
+        assert!(word::unsigned::Extend::with_cod(9, [w(8)]).is_err());
+    }
+}

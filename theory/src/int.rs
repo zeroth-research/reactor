@@ -1,0 +1,2168 @@
+/*!
+# Integer arithmetic
+
+Defines one type per operation on the sort [`Int`] of integer matrices. Every
+operation reads and writes integer matrices, and carries enough
+information to compute its [`Boundary`]:
+
+- [`Num`] — a constant integer matrix literal.
+- [`Scale`] — the pointwise product `C ⊙ x` with a constant integer matrix `C`.
+- [`Add`], [`Sub`] — pointwise addition and subtraction.
+- [`Mul`] — pointwise multiplication `x ⊙ y`.
+- [`Div`], [`Mod`] — pointwise Euclidean division and remainder, as
+  SMT-LIB2's `div` and `mod`.
+- [`Linear`]`(A)` — the linear map `x ↦ A·x`, with `A` a constant integer
+  matrix.
+- [`Affine`]`(A, B)` — the affine map `x ↦ A·x + B`, with `A` and `B`
+  constant integer matrices of compatible shapes.
+- [`Neg`] — the pointwise negation `x ↦ -x`.
+- [`Abs`] — the pointwise absolute value `x ↦ |x|`.
+- [`ReLU`] — the shape-preserving rectified-linear map `x ↦ max(x, 0)`.
+- [`Min`], [`Max`] — pointwise minimum and maximum.
+- [`Transpose`] — matrix transposition.
+- [`MatMul`] — the matrix product `x·y`.
+- [`Argmax`] — the index of a maximal entry, counted row by row, as a
+  `[1, 1]` matrix.
+- [`Ite`] — the pointwise choice `if c then x else y`, by a boolean matrix `c`.
+- [`broadcast::Ite`] — the choice of the whole matrices, by a scalar boolean
+  `c` of the shape `[1, 1]`.
+- [`Lt`], [`Le`], [`Gt`], [`Ge`], [`Eq`](struct@Eq), [`Ne`] — pointwise
+  comparisons, which write boolean matrices of the same shape.
+
+The comparisons are those of SMT-LIB2's `Ints` theory, `<`, `<=`, `>` and
+`>=`, together with `=` and `distinct` of the Core theory, lifted pointwise
+to matrices. As they write booleans, their boundary is in [`Ints`], the
+sorts of the theory, rather than in [`Int`].
+*/
+
+use super::bool::Bool;
+use crate::Matrix;
+use crate::zero::Real0;
+use base::boundary::Mono;
+use base::boundary::{Boundary, Poly};
+use base::differentiable::Differentiable;
+use base::mono;
+use derive_more::{Display, From};
+#[cfg(feature = "pyo3")]
+use pyo3::prelude::*;
+use std::fmt;
+use subenum::subenum;
+
+/// The sort of integer matrices with the given `[rows, cols]` shape.
+#[derive(Clone, Copy, PartialEq, Debug, Eq)]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, get_all, module = "reactor.int")
+)]
+pub struct Int {
+    shape: [usize; 2],
+}
+
+impl Int {
+    /// Integer matrices of the given shape, as [`Int::new`], but panics if
+    /// `shape` is empty.
+    pub fn new_unchecked(shape: [usize; 2]) -> Self {
+        Self::new(shape).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    pub fn shape(&self) -> [usize; 2] {
+        self.shape
+    }
+}
+
+/// Python matches an `Int` by `shape`.
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Int {
+    /// Integer matrices of the given shape; fails unless the shape has at
+    /// least one row and one column.
+    #[cfg_attr(feature = "pyo3", new)]
+    pub fn new(shape: [usize; 2]) -> Result<Self, crate::Error> {
+        crate::matrix::check_shape(shape)?;
+        Ok(Int { shape })
+    }
+
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str,) {
+        ("shape",)
+    }
+
+    /// The tangent sort `T(self)`: the sort of the rate of change of its
+    /// values.
+    #[cfg(feature = "pyo3")]
+    #[pyo3(name = "tangent")]
+    fn tangent(&self) -> Real0 {
+        Differentiable::tangent(self)
+    }
+}
+
+impl fmt::Display for Int {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let [i, j] = self.shape;
+        write!(f, "Int([{i}, {j}])")
+    }
+}
+
+/// Integers are discrete, so their tangent is trivial: the singleton sort
+/// [`Real0`].
+impl Differentiable for Int {
+    type Tangent = Real0;
+
+    fn tangent(self) -> Real0 {
+        Real0
+    }
+}
+
+/// The sorts of the theory, as in the signature of SMT-LIB2's `Ints`:
+/// int matrices, and the booleans of the Core theory, which comparisons
+/// write, together with [`Real0`]. It is the subset
+/// [`Ints`](Ints) of the sorts of all theories.
+use crate::Ints;
+
+/// A constant integer matrix literal, held in a tensor of type `T`.
+#[derive(Clone, Copy, Debug, Display)]
+#[display("{tensor}")]
+pub struct Num<T> {
+    tensor: T,
+}
+
+impl<T: Matrix> Num<T> {
+    /// The constant held in `tensor`, writing the integer matrix of `cod`; fails
+    /// unless `tensor` is of its shape.
+    pub fn with_cod(tensor: T, cod: [Int; 1]) -> Result<Self, crate::Error> {
+        let [x] = cod;
+        if tensor.shape() != x.shape() {
+            return Err(crate::unexpected_cod(
+                &format!("1 sort of the shape {:?} of the constant", tensor.shape()),
+                &cod,
+            ));
+        }
+        Ok(Num { tensor })
+    }
+
+    /// The sorts it reads: none.
+    pub(crate) fn dom(&self) -> Mono<Int> {
+        Mono::unit()
+    }
+
+    /// The sorts it writes.
+    pub(crate) fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.tensor.shape())]
+    }
+}
+
+impl<T> Num<T> {
+    /// The tensor holding the constant.
+    pub fn tensor(&self) -> &T {
+        &self.tensor
+    }
+}
+
+/// The pointwise product `x ↦ C ⊙ x` of `[m, n]` matrices with a constant
+/// `C` of shape `[m, n]`, held in a tensor of type `T`: linear in `x`, unlike
+/// [`Mul`], which multiplies two variables.
+#[derive(Clone, Copy, Debug, Display)]
+#[display("Scale({tensor})")]
+pub struct Scale<T> {
+    tensor: T,
+}
+
+impl<T: Matrix> Scale<T> {
+    /// The product with the constant held in `tensor`, reading the integer
+    /// matrix of `dom`; fails unless `tensor` is of its shape.
+    pub fn with_dom(tensor: T, dom: [Int; 1]) -> Result<Self, crate::Error> {
+        let [x] = dom;
+        if tensor.shape() != x.shape() {
+            return Err(crate::unexpected_dom(
+                &format!("1 sort of the shape {:?} of C", tensor.shape()),
+                &dom,
+            ));
+        }
+        Ok(Scale { tensor })
+    }
+
+    /// The product with the constant held in `tensor`, writing the integer
+    /// matrix of `cod`; fails unless `tensor` is of its shape.
+    pub fn with_cod(tensor: T, cod: [Int; 1]) -> Result<Self, crate::Error> {
+        let [x] = cod;
+        if tensor.shape() != x.shape() {
+            return Err(crate::unexpected_cod(
+                &format!("1 sort of the shape {:?} of C", tensor.shape()),
+                &cod,
+            ));
+        }
+        Ok(Scale { tensor })
+    }
+
+    /// The sorts it reads.
+    pub(crate) fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.tensor.shape())]
+    }
+
+    /// The sorts it writes.
+    pub(crate) fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.tensor.shape())]
+    }
+}
+
+impl<T> Scale<T> {
+    /// The tensor holding the constant `C`.
+    pub fn tensor(&self) -> &T {
+        &self.tensor
+    }
+}
+
+/// Pointwise addition `x + y` of `[m, n]` matrices.
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Add")]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
+)]
+pub struct Add {
+    shape: [usize; 2],
+}
+
+/// Pointwise subtraction `x - y` of `[m, n]` matrices.
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Sub")]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
+)]
+pub struct Sub {
+    shape: [usize; 2],
+}
+
+/// Pointwise multiplication `x ⊙ y` of `[m, n]` matrices: the Hadamard
+/// product, not the matrix product [`MatMul`].
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Mul")]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
+)]
+pub struct Mul {
+    shape: [usize; 2],
+}
+
+/// Pointwise Euclidean division `x div y` of `[m, n]` matrices: the
+/// quotient `q` such that `x = q·y + r` with `0 ≤ r < |y|`. It rounds down
+/// for positive `y` and up for negative `y`, unlike Rust's `/`, which
+/// rounds towards zero. As in SMT-LIB2, `x div 0` is unspecified.
+///
+/// SMT-LIB2: `(div x y)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Div")]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
+)]
+pub struct Div {
+    shape: [usize; 2],
+}
+
+/// Pointwise Euclidean remainder `x mod y` of `[m, n]` matrices: the `r`
+/// such that `x = (x div y)·y + r` with `0 ≤ r < |y|`, so never negative,
+/// unlike Rust's `%`. As in SMT-LIB2, `x mod 0` is unspecified.
+///
+/// SMT-LIB2: `(mod x y)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Mod")]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
+)]
+pub struct Mod {
+    shape: [usize; 2],
+}
+
+/// The linear map `x ↦ A·x`, where `A` is a constant. `A` determines the
+/// rows of `x` but not its columns, which the map holds.
+#[derive(Clone, Copy, Debug, Display)]
+#[display("Linear({a})")]
+pub struct Linear<T> {
+    a: T,
+    cols: usize,
+}
+
+impl<T: Matrix> Linear<T> {
+    /// The linear map `x ↦ A·x` reading the integer matrix `x` of `dom`;
+    /// fails unless `a` is of shape `[m, n]` and `x` of shape `[n, k]`.
+    pub fn with_dom(a: T, dom: [Int; 1]) -> Result<Self, crate::Error> {
+        let [x] = dom;
+        crate::matrix::check_shape(a.shape())?;
+        let ([_, n], [rows, k]) = (a.shape(), x.shape());
+        if rows != n {
+            return Err(crate::unexpected_dom(
+                &format!("1 sort of shape [{n}, k]"),
+                &dom,
+            ));
+        }
+        Ok(Linear { a, cols: k })
+    }
+
+    /// The linear map `x ↦ A·x` writing the integer matrix of `cod`; fails
+    /// unless `a` is of shape `[m, n]` and that matrix of shape `[m, k]`.
+    pub fn with_cod(a: T, cod: [Int; 1]) -> Result<Self, crate::Error> {
+        let [x] = cod;
+        crate::matrix::check_shape(a.shape())?;
+        let ([m, _], [rows, k]) = (a.shape(), x.shape());
+        if rows != m {
+            return Err(crate::unexpected_cod(
+                &format!("1 sort of shape [{m}, k]"),
+                &cod,
+            ));
+        }
+        Ok(Linear { a, cols: k })
+    }
+
+    /// The sorts it reads.
+    pub(crate) fn dom(&self) -> Mono<Int> {
+        let [_, n] = self.a.shape();
+        mono![Int::new_unchecked([n, self.cols])]
+    }
+
+    /// The sorts it writes.
+    pub(crate) fn cod(&self) -> Mono<Int> {
+        let [m, _] = self.a.shape();
+        mono![Int::new_unchecked([m, self.cols])]
+    }
+}
+
+impl<T> Linear<T> {
+    /// The tensor of `A`.
+    pub fn a(&self) -> &T {
+        &self.a
+    }
+}
+
+/// The affine map `x ↦ A·x + B`, where `A` and `B` are constants.
+#[derive(Clone, Copy, Debug, Display)]
+#[display("Affine({a}, {b})")]
+pub struct Affine<T> {
+    a: T,
+    b: T,
+}
+
+impl<T: Matrix> Affine<T> {
+    /// The affine map `x ↦ A·x + B` reading the integer matrix `x` of
+    /// `dom`; fails unless `a` and `b` are of shapes `[m, n]` and `[m, k]`,
+    /// and `x` of shape `[n, k]`.
+    pub fn with_dom(a: T, b: T, dom: [Int; 1]) -> Result<Self, crate::Error> {
+        let [x] = dom;
+        crate::matrix::check_affine(a.shape(), b.shape())?;
+        let op = Affine { a, b };
+        let ([_, n], [_, k]) = (op.a.shape(), op.b.shape());
+        if x.shape() != [n, k] {
+            return Err(crate::unexpected_dom(
+                &format!("1 sort of shape {:?}", [n, k]),
+                &dom,
+            ));
+        }
+        Ok(op)
+    }
+
+    /// The affine map `x ↦ A·x + B` writing the integer matrix of `cod`;
+    /// fails unless `a` and `b` are of shapes `[m, n]` and `[m, k]`, and
+    /// that matrix of shape `[m, k]`.
+    pub fn with_cod(a: T, b: T, cod: [Int; 1]) -> Result<Self, crate::Error> {
+        let [x] = cod;
+        crate::matrix::check_affine(a.shape(), b.shape())?;
+        let op = Affine { a, b };
+        if x.shape() != op.b.shape() {
+            return Err(crate::unexpected_cod(
+                &format!("1 sort of shape {:?}", op.b.shape()),
+                &cod,
+            ));
+        }
+        Ok(op)
+    }
+
+    /// The sorts it reads.
+    pub(crate) fn dom(&self) -> Mono<Int> {
+        let [_, n] = self.a.shape();
+        let [_, k] = self.b.shape();
+        mono![Int::new_unchecked([n, k])]
+    }
+
+    /// The sorts it writes.
+    pub(crate) fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.b.shape())]
+    }
+}
+
+impl<T> Affine<T> {
+    /// The tensor of `A`.
+    pub fn a(&self) -> &T {
+        &self.a
+    }
+
+    /// The tensor of `B`.
+    pub fn b(&self) -> &T {
+        &self.b
+    }
+}
+
+/// Pointwise negation `x ↦ -x` of `[m, n]` matrices.
+///
+/// SMT-LIB2: `(- x)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Neg")]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
+)]
+pub struct Neg {
+    shape: [usize; 2],
+}
+
+/// Pointwise absolute value `x ↦ |x|` of `[m, n]` matrices.
+///
+/// SMT-LIB2: `(abs x)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Abs")]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
+)]
+pub struct Abs {
+    shape: [usize; 2],
+}
+
+/// The rectified-linear map `x ↦ max(x, 0)`, applied pointwise to
+/// `[m, n]` matrices.
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("ReLU")]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
+)]
+pub struct ReLU {
+    shape: [usize; 2],
+}
+
+/// The index of a maximal entry of an `[m, n]` integer matrix, counting its
+/// entries row by row, written as a `[1, 1]` matrix of the same sort.
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Argmax")]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
+)]
+pub struct Argmax {
+    shape: [usize; 2],
+}
+
+/// Pointwise minimum `min(x, y)` of `[m, n]` matrices.
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Min")]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
+)]
+pub struct Min {
+    shape: [usize; 2],
+}
+
+/// Pointwise maximum `max(x, y)` of `[m, n]` matrices.
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Max")]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
+)]
+pub struct Max {
+    shape: [usize; 2],
+}
+
+/// Transposition `xᵀ` of `[m, n]` matrices.
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Transpose")]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
+)]
+pub struct Transpose {
+    shape: [usize; 2],
+}
+
+/// The matrix product `x·y` of an `[m, n]` matrix `x` and an `[n, k]`
+/// matrix `y`, with the shapes given as `MatMul([[m, n], [n, k]])`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("MatMul")]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
+)]
+pub struct MatMul {
+    /// The shapes `[[m, n], [n, k]]` of the factors.
+    ///
+    /// Entry `i` belongs to input `i`, as indexed in the domain of the
+    /// boundary: an array rather than one field per input, so that the
+    /// two match by position.
+    shapes: [[usize; 2]; 2],
+}
+
+/// Pointwise comparison `x < y` of `[m, n]` matrices, writing an `[m, n]`
+/// boolean matrix.
+///
+/// SMT-LIB2: `(< x y)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Lt")]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
+)]
+pub struct Lt {
+    shape: [usize; 2],
+}
+
+/// Pointwise choice `if c then x else y` between `[m, n]` integer matrices `x` and `y`,
+/// by the boolean matrix `c`, read first.
+///
+/// SMT-LIB2: `(ite c x y)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Ite")]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
+)]
+pub struct Ite {
+    shape: [usize; 2],
+}
+
+/// Pointwise comparison `x ≤ y` of `[m, n]` matrices, writing an `[m, n]`
+/// boolean matrix.
+///
+/// SMT-LIB2: `(<= x y)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Le")]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
+)]
+pub struct Le {
+    shape: [usize; 2],
+}
+
+/// Pointwise comparison `x > y` of `[m, n]` matrices, writing an `[m, n]`
+/// boolean matrix.
+///
+/// SMT-LIB2: `(> x y)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Gt")]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
+)]
+pub struct Gt {
+    shape: [usize; 2],
+}
+
+/// Pointwise comparison `x ≥ y` of `[m, n]` matrices, writing an `[m, n]`
+/// boolean matrix.
+///
+/// SMT-LIB2: `(>= x y)`.
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Ge")]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
+)]
+pub struct Ge {
+    shape: [usize; 2],
+}
+
+/// Pointwise comparison `x = y` of `[m, n]` matrices, writing an `[m, n]`
+/// boolean matrix.
+///
+/// SMT-LIB2: `(= x y)`, of the Core theory.
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Eq")]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
+)]
+pub struct Eq {
+    shape: [usize; 2],
+}
+
+/// Pointwise comparison `x ≠ y` of `[m, n]` matrices, writing an `[m, n]`
+/// boolean matrix.
+///
+/// SMT-LIB2: `(distinct x y)`, of the Core theory.
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+#[display("Ne")]
+#[cfg_attr(
+    feature = "pyo3",
+    pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int")
+)]
+pub struct Ne {
+    shape: [usize; 2],
+}
+
+/// The operations of the theory of integer arithmetic, SMT-LIB2's `Ints`,
+/// with their boundary in [`Ints`].
+///
+/// `subenum` defines [`LIA`], the linear ones: all but `Mul`, `Div`, `Mod`
+/// and `MatMul`, which multiply or divide two variables. It also generates
+/// the casts between them: `From` up to `NIA`, and `TryFrom` down from it.
+#[subenum(LIA)]
+#[derive(Clone, Copy, Debug, From, Display)]
+pub enum NIA<T> {
+    #[subenum(LIA)]
+    Num(Num<T>),
+    #[subenum(LIA)]
+    Scale(Scale<T>),
+    #[subenum(LIA)]
+    Add(Add),
+    #[subenum(LIA)]
+    Sub(Sub),
+    Mul(Mul),
+    Div(Div),
+    Mod(Mod),
+    #[subenum(LIA)]
+    Linear(Linear<T>),
+    #[subenum(LIA)]
+    Affine(Affine<T>),
+    #[subenum(LIA)]
+    ReLU(ReLU),
+    #[subenum(LIA)]
+    Abs(Abs),
+    #[subenum(LIA)]
+    Neg(Neg),
+    #[subenum(LIA)]
+    Argmax(Argmax),
+    #[subenum(LIA)]
+    Min(Min),
+    #[subenum(LIA)]
+    Max(Max),
+    #[subenum(LIA)]
+    Transpose(Transpose),
+    MatMul(MatMul),
+    #[subenum(LIA)]
+    Lt(Lt),
+    #[subenum(LIA)]
+    Ite(Ite),
+    #[subenum(LIA)]
+    BroadcastIte(broadcast::Ite),
+    #[subenum(LIA)]
+    Le(Le),
+    #[subenum(LIA)]
+    Gt(Gt),
+    #[subenum(LIA)]
+    Ge(Ge),
+    #[subenum(LIA)]
+    Eq(Eq),
+    #[subenum(LIA)]
+    Ne(Ne),
+}
+
+impl<T: Matrix> Boundary<Ints> for NIA<T> {
+    fn dom(&self) -> Poly<Ints> {
+        match self {
+            NIA::Num(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Scale(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Add(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Sub(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Mul(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Div(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Mod(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Linear(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Affine(op) => Boundary::dom(op).map(Ints::from),
+            NIA::ReLU(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Abs(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Neg(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Argmax(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Min(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Max(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Transpose(op) => Boundary::dom(op).map(Ints::from),
+            NIA::MatMul(op) => Boundary::dom(op).map(Ints::from),
+            NIA::Lt(op) => Boundary::dom(op),
+            NIA::Ite(op) => Boundary::dom(op),
+            NIA::BroadcastIte(op) => Boundary::dom(op),
+            NIA::Le(op) => Boundary::dom(op),
+            NIA::Gt(op) => Boundary::dom(op),
+            NIA::Ge(op) => Boundary::dom(op),
+            NIA::Eq(op) => Boundary::dom(op),
+            NIA::Ne(op) => Boundary::dom(op),
+        }
+    }
+
+    fn cod(&self) -> Poly<Ints> {
+        match self {
+            NIA::Num(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Scale(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Add(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Sub(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Mul(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Div(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Mod(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Linear(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Affine(op) => Boundary::cod(op).map(Ints::from),
+            NIA::ReLU(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Abs(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Neg(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Argmax(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Min(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Max(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Transpose(op) => Boundary::cod(op).map(Ints::from),
+            NIA::MatMul(op) => Boundary::cod(op).map(Ints::from),
+            NIA::Lt(op) => Boundary::cod(op),
+            NIA::Ite(op) => Boundary::cod(op),
+            NIA::BroadcastIte(op) => Boundary::cod(op),
+            NIA::Le(op) => Boundary::cod(op),
+            NIA::Gt(op) => Boundary::cod(op),
+            NIA::Ge(op) => Boundary::cod(op),
+            NIA::Eq(op) => Boundary::cod(op),
+            NIA::Ne(op) => Boundary::cod(op),
+        }
+    }
+}
+impl<T: Matrix> Boundary<Ints> for LIA<T> {
+    fn dom(&self) -> Poly<Ints> {
+        match self {
+            LIA::Num(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Scale(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Add(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Sub(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Linear(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Affine(op) => Boundary::dom(op).map(Ints::from),
+            LIA::ReLU(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Abs(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Neg(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Argmax(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Min(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Max(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Transpose(op) => Boundary::dom(op).map(Ints::from),
+            LIA::Lt(op) => Boundary::dom(op),
+            LIA::Ite(op) => Boundary::dom(op),
+            LIA::BroadcastIte(op) => Boundary::dom(op),
+            LIA::Le(op) => Boundary::dom(op),
+            LIA::Gt(op) => Boundary::dom(op),
+            LIA::Ge(op) => Boundary::dom(op),
+            LIA::Eq(op) => Boundary::dom(op),
+            LIA::Ne(op) => Boundary::dom(op),
+        }
+    }
+
+    fn cod(&self) -> Poly<Ints> {
+        match self {
+            LIA::Num(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Scale(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Add(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Sub(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Linear(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Affine(op) => Boundary::cod(op).map(Ints::from),
+            LIA::ReLU(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Abs(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Neg(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Argmax(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Min(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Max(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Transpose(op) => Boundary::cod(op).map(Ints::from),
+            LIA::Lt(op) => Boundary::cod(op),
+            LIA::Ite(op) => Boundary::cod(op),
+            LIA::BroadcastIte(op) => Boundary::cod(op),
+            LIA::Le(op) => Boundary::cod(op),
+            LIA::Gt(op) => Boundary::cod(op),
+            LIA::Ge(op) => Boundary::cod(op),
+            LIA::Eq(op) => Boundary::cod(op),
+            LIA::Ne(op) => Boundary::cod(op),
+        }
+    }
+}
+
+impl<T: Matrix> Boundary<Int> for Num<T> {
+    fn dom(&self) -> Poly<Int> {
+        Num::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        Num::cod(self).into()
+    }
+}
+
+/// The product with `C` of shape `[m, n]` maps `[m, n]` matrices to `[m, n]`
+/// matrices.
+impl<T: Matrix> Boundary<Int> for Scale<T> {
+    fn dom(&self) -> Poly<Int> {
+        Scale::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        Scale::cod(self).into()
+    }
+}
+
+impl Boundary<Int> for Add {
+    fn dom(&self) -> Poly<Int> {
+        Add::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        Add::cod(self).into()
+    }
+}
+
+impl Boundary<Int> for Sub {
+    fn dom(&self) -> Poly<Int> {
+        Sub::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        Sub::cod(self).into()
+    }
+}
+
+impl Boundary<Int> for Mul {
+    fn dom(&self) -> Poly<Int> {
+        Mul::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        Mul::cod(self).into()
+    }
+}
+
+impl Boundary<Int> for Div {
+    fn dom(&self) -> Poly<Int> {
+        Div::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        Div::cod(self).into()
+    }
+}
+
+impl Boundary<Int> for Mod {
+    fn dom(&self) -> Poly<Int> {
+        Mod::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        Mod::cod(self).into()
+    }
+}
+
+/// With `A` of shape `[m, n]`, the map takes `x` of shape `[n, k]` to a
+/// matrix of shape `[m, k]`.
+impl<T: Matrix> Boundary<Int> for Linear<T> {
+    fn dom(&self) -> Poly<Int> {
+        Linear::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        Linear::cod(self).into()
+    }
+}
+
+/// With `A` of shape `[m, n]` and `B` of shape `[m, k]`, the map takes `x`
+/// of shape `[n, k]` to a matrix of shape `[m, k]`.
+impl<T: Matrix> Boundary<Int> for Affine<T> {
+    fn dom(&self) -> Poly<Int> {
+        Affine::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        Affine::cod(self).into()
+    }
+}
+
+impl Boundary<Int> for Neg {
+    fn dom(&self) -> Poly<Int> {
+        Neg::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        Neg::cod(self).into()
+    }
+}
+
+impl Boundary<Int> for Abs {
+    fn dom(&self) -> Poly<Int> {
+        Abs::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        Abs::cod(self).into()
+    }
+}
+
+impl Boundary<Int> for ReLU {
+    fn dom(&self) -> Poly<Int> {
+        ReLU::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        ReLU::cod(self).into()
+    }
+}
+
+impl Boundary<Int> for Min {
+    fn dom(&self) -> Poly<Int> {
+        Min::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        Min::cod(self).into()
+    }
+}
+
+impl Boundary<Int> for Max {
+    fn dom(&self) -> Poly<Int> {
+        Max::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        Max::cod(self).into()
+    }
+}
+
+/// Takes a matrix of shape `[m, n]` to one of shape `[n, m]`.
+impl Boundary<Int> for Transpose {
+    fn dom(&self) -> Poly<Int> {
+        Transpose::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        Transpose::cod(self).into()
+    }
+}
+
+/// Takes matrices of shapes `[m, n]` and `[n, k]` to one of shape `[m, k]`.
+impl Boundary<Int> for MatMul {
+    fn dom(&self) -> Poly<Int> {
+        MatMul::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        MatMul::cod(self).into()
+    }
+}
+
+impl Boundary<Ints> for Lt {
+    fn dom(&self) -> Poly<Ints> {
+        Lt::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Ints> {
+        Lt::cod(self).into()
+    }
+}
+
+impl Boundary<Ints> for Le {
+    fn dom(&self) -> Poly<Ints> {
+        Le::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Ints> {
+        Le::cod(self).into()
+    }
+}
+
+impl Boundary<Ints> for Gt {
+    fn dom(&self) -> Poly<Ints> {
+        Gt::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Ints> {
+        Gt::cod(self).into()
+    }
+}
+
+impl Boundary<Ints> for Ge {
+    fn dom(&self) -> Poly<Ints> {
+        Ge::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Ints> {
+        Ge::cod(self).into()
+    }
+}
+
+impl Boundary<Ints> for Eq {
+    fn dom(&self) -> Poly<Ints> {
+        Eq::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Ints> {
+        Eq::cod(self).into()
+    }
+}
+
+impl Boundary<Ints> for Ne {
+    fn dom(&self) -> Poly<Ints> {
+        Ne::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Ints> {
+        Ne::cod(self).into()
+    }
+}
+
+impl Boundary<Int> for Argmax {
+    fn dom(&self) -> Poly<Int> {
+        Argmax::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Int> {
+        Argmax::cod(self).into()
+    }
+}
+
+impl Boundary<Ints> for Ite {
+    fn dom(&self) -> Poly<Ints> {
+        Ite::dom(self).into()
+    }
+
+    fn cod(&self) -> Poly<Ints> {
+        Ite::cod(self).into()
+    }
+}
+
+/// Extracts an operation of integer arithmetic from a Python object, trying
+/// each operation in turn: those carrying no data through their own
+/// classes, and [`Num`], [`Scale`], [`Linear`] and [`Affine`] through the extraction that the
+/// tensor type `T` provides.
+#[cfg(feature = "pyo3")]
+impl<'a, 'py, T> pyo3::FromPyObject<'a, 'py> for NIA<T>
+where
+    Num<T>: pyo3::FromPyObject<'a, 'py>,
+    Scale<T>: pyo3::FromPyObject<'a, 'py>,
+    Linear<T>: pyo3::FromPyObject<'a, 'py>,
+    Affine<T>: pyo3::FromPyObject<'a, 'py>,
+{
+    type Error = pyo3::PyErr;
+
+    fn extract(ob: pyo3::Borrowed<'a, 'py, pyo3::PyAny>) -> pyo3::PyResult<Self> {
+        use pyo3::types::PyAnyMethods;
+
+        if let Ok(op) = ob.extract::<Add>() {
+            return Ok(NIA::Add(op));
+        }
+        if let Ok(op) = ob.extract::<Sub>() {
+            return Ok(NIA::Sub(op));
+        }
+        if let Ok(op) = ob.extract::<Mul>() {
+            return Ok(NIA::Mul(op));
+        }
+        if let Ok(op) = ob.extract::<Div>() {
+            return Ok(NIA::Div(op));
+        }
+        if let Ok(op) = ob.extract::<Mod>() {
+            return Ok(NIA::Mod(op));
+        }
+        if let Ok(op) = ob.extract::<ReLU>() {
+            return Ok(NIA::ReLU(op));
+        }
+        if let Ok(op) = ob.extract::<Abs>() {
+            return Ok(NIA::Abs(op));
+        }
+        if let Ok(op) = ob.extract::<Neg>() {
+            return Ok(NIA::Neg(op));
+        }
+        if let Ok(op) = ob.extract::<Argmax>() {
+            return Ok(NIA::Argmax(op));
+        }
+        if let Ok(op) = ob.extract::<Min>() {
+            return Ok(NIA::Min(op));
+        }
+        if let Ok(op) = ob.extract::<Max>() {
+            return Ok(NIA::Max(op));
+        }
+        if let Ok(op) = ob.extract::<Transpose>() {
+            return Ok(NIA::Transpose(op));
+        }
+        if let Ok(op) = ob.extract::<MatMul>() {
+            return Ok(NIA::MatMul(op));
+        }
+        if let Ok(op) = ob.extract::<Lt>() {
+            return Ok(NIA::Lt(op));
+        }
+        if let Ok(op) = ob.extract::<Ite>() {
+            return Ok(NIA::Ite(op));
+        }
+        if let Ok(op) = ob.extract::<broadcast::Ite>() {
+            return Ok(NIA::BroadcastIte(op));
+        }
+        if let Ok(op) = ob.extract::<Le>() {
+            return Ok(NIA::Le(op));
+        }
+        if let Ok(op) = ob.extract::<Gt>() {
+            return Ok(NIA::Gt(op));
+        }
+        if let Ok(op) = ob.extract::<Ge>() {
+            return Ok(NIA::Ge(op));
+        }
+        if let Ok(op) = ob.extract::<Eq>() {
+            return Ok(NIA::Eq(op));
+        }
+        if let Ok(op) = ob.extract::<Ne>() {
+            return Ok(NIA::Ne(op));
+        }
+        if let Ok(op) = ob.extract::<Num<T>>() {
+            return Ok(NIA::Num(op));
+        }
+        if let Ok(op) = ob.extract::<Scale<T>>() {
+            return Ok(NIA::Scale(op));
+        }
+        if let Ok(op) = ob.extract::<Linear<T>>() {
+            return Ok(NIA::Linear(op));
+        }
+        if let Ok(op) = ob.extract::<Affine<T>>() {
+            return Ok(NIA::Affine(op));
+        }
+        Err(pyo3::exceptions::PyTypeError::new_err(format!(
+            "expected an operation of integer arithmetic, got {}",
+            ob.get_type()
+        )))
+    }
+}
+
+impl Add {
+    /// The operation reading the integer matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
+        let s = crate::same_sort(dom)?;
+        Ok(Add { shape: s.shape() })
+    }
+
+    /// The operation writing the integer matrix of `cod`.
+    pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Add { shape: s.shape() })
+    }
+}
+
+// The Python constructors of the operations carrying no tensor: each takes
+// its sizes positionally, in the order of its fields, the shape as a list.
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Add {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom(dom), cod)
+    }
+
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape); 2]
+    }
+
+    /// The sorts it writes, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
+    }
+}
+
+impl Sub {
+    /// The operation reading the integer matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
+        let s = crate::same_sort(dom)?;
+        Ok(Sub { shape: s.shape() })
+    }
+
+    /// The operation writing the integer matrix of `cod`.
+    pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Sub { shape: s.shape() })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Sub {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom(dom), cod)
+    }
+
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape); 2]
+    }
+
+    /// The sorts it writes, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
+    }
+}
+
+impl Mul {
+    /// The operation reading the integer matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
+        let s = crate::same_sort(dom)?;
+        Ok(Mul { shape: s.shape() })
+    }
+
+    /// The operation writing the integer matrix of `cod`.
+    pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Mul { shape: s.shape() })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Mul {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom(dom), cod)
+    }
+
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape); 2]
+    }
+
+    /// The sorts it writes, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
+    }
+}
+
+impl Div {
+    /// The operation reading the integer matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
+        let s = crate::same_sort(dom)?;
+        Ok(Div { shape: s.shape() })
+    }
+
+    /// The operation writing the integer matrix of `cod`.
+    pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Div { shape: s.shape() })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Div {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom(dom), cod)
+    }
+
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape); 2]
+    }
+
+    /// The sorts it writes, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
+    }
+}
+
+impl Mod {
+    /// The operation reading the integer matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
+        let s = crate::same_sort(dom)?;
+        Ok(Mod { shape: s.shape() })
+    }
+
+    /// The operation writing the integer matrix of `cod`.
+    pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Mod { shape: s.shape() })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Mod {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom(dom), cod)
+    }
+
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape); 2]
+    }
+
+    /// The sorts it writes, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
+    }
+}
+
+impl Neg {
+    /// The operation reading the integer matrix of `dom`.
+    pub fn with_dom(dom: [Int; 1]) -> Result<Self, crate::Error> {
+        let s = crate::same_sort(dom)?;
+        Ok(Neg { shape: s.shape() })
+    }
+
+    /// The operation writing the integer matrix of `cod`.
+    pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Neg { shape: s.shape() })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Neg {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: Int, cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom([dom]), cod)
+    }
+
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
+    }
+
+    /// The sorts it writes, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
+    }
+}
+
+impl Abs {
+    /// The operation reading the integer matrix of `dom`.
+    pub fn with_dom(dom: [Int; 1]) -> Result<Self, crate::Error> {
+        let s = crate::same_sort(dom)?;
+        Ok(Abs { shape: s.shape() })
+    }
+
+    /// The operation writing the integer matrix of `cod`.
+    pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Abs { shape: s.shape() })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Abs {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: Int, cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom([dom]), cod)
+    }
+
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
+    }
+
+    /// The sorts it writes, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
+    }
+}
+
+impl ReLU {
+    /// The operation reading the integer matrix of `dom`.
+    pub fn with_dom(dom: [Int; 1]) -> Result<Self, crate::Error> {
+        let s = crate::same_sort(dom)?;
+        Ok(ReLU { shape: s.shape() })
+    }
+
+    /// The operation writing the integer matrix of `cod`.
+    pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(ReLU { shape: s.shape() })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl ReLU {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: Int, cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom([dom]), cod)
+    }
+
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
+    }
+
+    /// The sorts it writes, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
+    }
+}
+
+impl Argmax {
+    /// The operation reading the integer matrix of `dom`.
+    pub fn with_dom(dom: [Int; 1]) -> Result<Self, crate::Error> {
+        let s = crate::same_sort(dom)?;
+        Ok(Argmax { shape: s.shape() })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Argmax {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: Int, cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom([dom]), cod)
+    }
+
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
+    }
+
+    /// The sorts it writes, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked([1, 1])]
+    }
+}
+
+impl Min {
+    /// The operation reading the integer matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
+        let s = crate::same_sort(dom)?;
+        Ok(Min { shape: s.shape() })
+    }
+
+    /// The operation writing the integer matrix of `cod`.
+    pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Min { shape: s.shape() })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Min {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom(dom), cod)
+    }
+
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape); 2]
+    }
+
+    /// The sorts it writes, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
+    }
+}
+
+impl Max {
+    /// The operation reading the integer matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
+        let s = crate::same_sort(dom)?;
+        Ok(Max { shape: s.shape() })
+    }
+
+    /// The operation writing the integer matrix of `cod`.
+    pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Max { shape: s.shape() })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Max {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom(dom), cod)
+    }
+
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape); 2]
+    }
+
+    /// The sorts it writes, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
+    }
+}
+
+impl Transpose {
+    /// The operation reading the integer matrix of `dom`.
+    pub fn with_dom(dom: [Int; 1]) -> Result<Self, crate::Error> {
+        let s = crate::same_sort(dom)?;
+        Ok(Transpose { shape: s.shape() })
+    }
+
+    /// The transposition writing the integer matrix of `cod`, reading its transpose.
+    pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        let [m, n] = s.shape();
+        Ok(Transpose { shape: [n, m] })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Transpose {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: Int, cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom([dom]), cod)
+    }
+
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        mono![Int::new_unchecked(self.shape)]
+    }
+
+    /// The sorts it writes, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        mono![Int::new_unchecked([self.shape[1], self.shape[0]])]
+    }
+}
+
+impl MatMul {
+    /// The product of the integer matrices of `dom`; fails unless the columns
+    /// of the first are the rows of the second.
+    pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
+        let [x, y] = dom;
+        let shapes = [x.shape(), y.shape()];
+        let [lhs, rhs] = shapes;
+        if lhs[1] != rhs[0] {
+            return Err(crate::Error(format!(
+                "cannot multiply a {lhs:?} matrix by a {rhs:?} matrix"
+            )));
+        }
+        Ok(MatMul { shapes })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl MatMul {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom(dom), cod)
+    }
+
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Int> {
+        let [lhs, rhs] = self.shapes;
+        mono![Int::new_unchecked(lhs), Int::new_unchecked(rhs)]
+    }
+
+    /// The sorts it writes, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Int> {
+        let [[m, _], [_, k]] = self.shapes;
+        mono![Int::new_unchecked([m, k])]
+    }
+}
+
+impl Lt {
+    /// The operation reading the integer matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
+        let s = crate::same_sort(dom)?;
+        Ok(Lt { shape: s.shape() })
+    }
+
+    /// The operation writing the boolean matrix of `cod`.
+    pub fn with_cod(cod: [Bool; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Lt { shape: s.shape() })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Lt {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom(dom), cod)
+    }
+
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Ints> {
+        mono![Int::new_unchecked(self.shape).into(); 2]
+    }
+
+    /// The sorts it writes, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Ints> {
+        mono![Bool::new_unchecked(self.shape).into()]
+    }
+}
+
+impl Ite {
+    /// The choice reading the boolean condition and the branches of `dom`;
+    /// fails unless the branches are of the same sort, and the condition of
+    /// their shape.
+    pub fn with_dom(dom: [Ints; 3]) -> Result<Self, crate::Error> {
+        match dom {
+            [Ints::Bool(c), Ints::Int(x), Ints::Int(y)] if x == y && c.shape() == x.shape() => {
+                Ok(Ite { shape: x.shape() })
+            }
+            _ => Err(crate::unexpected_dom(
+                "a condition Bool and two branches Int of its shape",
+                &dom,
+            )),
+        }
+    }
+
+    /// The operation writing the integer matrix of `cod`.
+    pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Ite { shape: s.shape() })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Ite {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Ints; 3], cod: Option<Int>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom(dom), cod)
+    }
+
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Ints> {
+        mono![
+            Bool::new_unchecked(self.shape).into(),
+            Int::new_unchecked(self.shape).into(),
+            Int::new_unchecked(self.shape).into()
+        ]
+    }
+
+    /// The sorts it writes, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Ints> {
+        mono![Int::new_unchecked(self.shape).into()]
+    }
+}
+
+impl Le {
+    /// The operation reading the integer matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
+        let s = crate::same_sort(dom)?;
+        Ok(Le { shape: s.shape() })
+    }
+
+    /// The operation writing the boolean matrix of `cod`.
+    pub fn with_cod(cod: [Bool; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Le { shape: s.shape() })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Le {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom(dom), cod)
+    }
+
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Ints> {
+        mono![Int::new_unchecked(self.shape).into(); 2]
+    }
+
+    /// The sorts it writes, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Ints> {
+        mono![Bool::new_unchecked(self.shape).into()]
+    }
+}
+
+impl Gt {
+    /// The operation reading the integer matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
+        let s = crate::same_sort(dom)?;
+        Ok(Gt { shape: s.shape() })
+    }
+
+    /// The operation writing the boolean matrix of `cod`.
+    pub fn with_cod(cod: [Bool; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Gt { shape: s.shape() })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Gt {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom(dom), cod)
+    }
+
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Ints> {
+        mono![Int::new_unchecked(self.shape).into(); 2]
+    }
+
+    /// The sorts it writes, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Ints> {
+        mono![Bool::new_unchecked(self.shape).into()]
+    }
+}
+
+impl Ge {
+    /// The operation reading the integer matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
+        let s = crate::same_sort(dom)?;
+        Ok(Ge { shape: s.shape() })
+    }
+
+    /// The operation writing the boolean matrix of `cod`.
+    pub fn with_cod(cod: [Bool; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Ge { shape: s.shape() })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Ge {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom(dom), cod)
+    }
+
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Ints> {
+        mono![Int::new_unchecked(self.shape).into(); 2]
+    }
+
+    /// The sorts it writes, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Ints> {
+        mono![Bool::new_unchecked(self.shape).into()]
+    }
+}
+
+impl Eq {
+    /// The operation reading the integer matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
+        let s = crate::same_sort(dom)?;
+        Ok(Eq { shape: s.shape() })
+    }
+
+    /// The operation writing the boolean matrix of `cod`.
+    pub fn with_cod(cod: [Bool; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Eq { shape: s.shape() })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Eq {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom(dom), cod)
+    }
+
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Ints> {
+        mono![Int::new_unchecked(self.shape).into(); 2]
+    }
+
+    /// The sorts it writes, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Ints> {
+        mono![Bool::new_unchecked(self.shape).into()]
+    }
+}
+
+impl Ne {
+    /// The operation reading the integer matrices of `dom`; fails unless they are equal.
+    pub fn with_dom(dom: [Int; 2]) -> Result<Self, crate::Error> {
+        let s = crate::same_sort(dom)?;
+        Ok(Ne { shape: s.shape() })
+    }
+
+    /// The operation writing the boolean matrix of `cod`.
+    pub fn with_cod(cod: [Bool; 1]) -> Result<Self, crate::Error> {
+        let [s] = cod;
+        Ok(Ne { shape: s.shape() })
+    }
+}
+
+#[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+impl Ne {
+    /// Python builds it from the parameters that its boundary does not determine,
+    /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+    /// writes.
+    #[cfg(feature = "pyo3")]
+    #[new]
+    #[pyo3(signature = (dom, cod = None))]
+    fn py_new(dom: [Int; 2], cod: Option<Bool>) -> Result<Self, crate::Error> {
+        crate::check_cod(Self::with_dom(dom), cod)
+    }
+
+    /// The parameters that its boundary does not determine, then its domain, when it
+    /// reads anything, and its codomain.
+    #[cfg(feature = "pyo3")]
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("dom", "cod")
+    }
+
+    /// The sorts it reads, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Ints> {
+        mono![Int::new_unchecked(self.shape).into(); 2]
+    }
+
+    /// The sorts it writes, as a tuple.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn cod(&self) -> Mono<Ints> {
+        mono![Bool::new_unchecked(self.shape).into()]
+    }
+}
+
+/// The operations of the theory that broadcast a scalar operand, of the
+/// shape `[1, 1]`, to the shape of the others; the others are in the parent
+/// module.
+pub mod broadcast {
+    use super::*;
+
+    /// Choice `if c then x else y` between whole `[m, n]` integer matrices `x` and
+    /// `y`, by the scalar boolean `c`, of the shape `[1, 1]`, read first: the
+    /// pointwise [`super::Ite`] by `c` broadcast to `[m, n]`.
+    ///
+    /// SMT-LIB2: `(ite c x y)`, by the only entry of `c`.
+    #[derive(Clone, Copy, PartialEq, Debug, Eq, Display)]
+    #[display("Ite")]
+    #[cfg_attr(
+        feature = "pyo3",
+        pyo3::pyclass(frozen, from_py_object, eq, str, module = "reactor.int.broadcast")
+    )]
+    pub struct Ite {
+        shape: [usize; 2],
+    }
+
+    impl Boundary<Ints> for Ite {
+        fn dom(&self) -> Poly<Ints> {
+            Ite::dom(self).into()
+        }
+
+        fn cod(&self) -> Poly<Ints> {
+            Ite::cod(self).into()
+        }
+    }
+
+    impl Ite {
+        /// The choice reading the scalar boolean condition and the branches of
+        /// `dom`; fails unless the condition is of the shape `[1, 1]` and the
+        /// branches of the same sort.
+        pub fn with_dom(dom: [Ints; 3]) -> Result<Self, crate::Error> {
+            match dom {
+                [Ints::Bool(c), Ints::Int(x), Ints::Int(y)] if x == y && c.shape() == [1, 1] => {
+                    Ok(Ite { shape: x.shape() })
+                }
+                _ => Err(crate::unexpected_dom(
+                    "a condition Bool([1, 1]) and two branches Int of the same sort",
+                    &dom,
+                )),
+            }
+        }
+
+        /// The choice writing the integer matrix of `cod`.
+        pub fn with_cod(cod: [Int; 1]) -> Result<Self, crate::Error> {
+            let [s] = cod;
+            Ok(Ite { shape: s.shape() })
+        }
+    }
+
+    #[cfg_attr(feature = "pyo3", cfg_eval::cfg_eval, pymethods)]
+    impl Ite {
+        /// Python builds it from the parameters that its boundary does not determine,
+        /// and its domain `dom`; its codomain `cod`, when given, must be the one it
+        /// writes.
+        #[cfg(feature = "pyo3")]
+        #[new]
+        #[pyo3(signature = (dom, cod = None))]
+        fn py_new(dom: [Ints; 3], cod: Option<Int>) -> Result<Self, crate::Error> {
+            crate::check_cod(Self::with_dom(dom), cod)
+        }
+
+        /// The parameters that its boundary does not determine, then its domain, when it
+        /// reads anything, and its codomain.
+        #[cfg(feature = "pyo3")]
+        #[classattr]
+        fn __match_args__() -> (&'static str, &'static str) {
+            ("dom", "cod")
+        }
+
+        /// The sorts it reads, as a tuple.
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn dom(&self) -> Mono<Ints> {
+            mono![
+                Bool::new_unchecked([1, 1]).into(),
+                Int::new_unchecked(self.shape).into(),
+                Int::new_unchecked(self.shape).into()
+            ]
+        }
+
+        /// The sorts it writes, as a tuple.
+        #[cfg_attr(feature = "pyo3", getter)]
+        fn cod(&self) -> Mono<Ints> {
+            mono![Int::new_unchecked(self.shape).into()]
+        }
+    }
+}

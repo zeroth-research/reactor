@@ -27,6 +27,20 @@ FEATURES := ""
 # venv's torch. If neccessary, override with `just CARGO=cargo ...` to use
 # a bare toolchain.
 CARGO := "uv run cargo"
+
+# The uv venv is uv's default `.venv` in the repo root; a machine sharing the checkout
+# with another OS points UV_PROJECT_ENVIRONMENT elsewhere in its own environment.
+#
+# The target dir is asked to plain cargo (not `uv run`, which would create a venv
+# first) from the repo root and exported as an absolute path: a relative
+# CARGO_TARGET_DIR (e.g. `target-linux`, to keep per-OS builds apart in a shared
+# checkout) then means the same dir in recipes that `cd` elsewhere.
+TARGET_DIR := `cargo metadata --no-deps --format-version 1 --offline | sed 's/.*"target_directory":"\([^"]*\)".*/\1/'`
+export CARGO_TARGET_DIR := TARGET_DIR
+# Bytecode goes in the target dir too, not in `__pycache__` next to the sources: a .pyc
+# records its source's absolute path, so one written by another host of a shared
+# checkout breaks `inspect.getsource` here. Pytest's rewritten test modules honour it too.
+export PYTHONPYCACHEPREFIX := env("PYTHONPYCACHEPREFIX", TARGET_DIR / "pycache")
 NBSTRIPOUT := "uvx nbstripout@0.9.1 --max-size 16k --drop-empty-cells"
 
 # Convert FEATURES into a flag only if set
@@ -47,7 +61,7 @@ test: rs-test py-test nb-test
 # `cargo clean` needs no torch, and running it under `uv run` would trigger a
 # sync that can fail — cleaning the repo works fine outside the virtual env.
 
-# Clean the current build (the shared cargo target directory)
+# Clean the current build (the cargo target dir)
 clean:
     cargo clean
 
@@ -62,28 +76,38 @@ rebuild: clean build
 rs-build:
     {{ CARGO }} build {{ profile_flag }} {{ features_flag }}
 
-# Build the Rust workspace with all its targets and features
+# Build the Rust workspace with all its targets and features. Split like `rs-test`:
+# `pyo3-tch` forces pyo3's `extension-module`, so no binary links libpython, and
+# only `theory` (via its build.rs) links it into its test binaries — with
+# `--all-features` the other crates' test binaries would pull in `torch` and fail to link.
 rs-build-all:
-    {{ CARGO }} build --all-targets --all-features {{ profile_flag }}
+    {{ CARGO }} build --all-targets {{ profile_flag }}
+    {{ CARGO }} build --all-targets -p theory --features torch {{ profile_flag }}
 
-# Every Rust test binary transitively links libtorch (via `theory` -> `pyo3-tch` ->
-# `torch-sys`), so they all need libtorch; and on macOS the Python interpreter's symbols at runtime.
-# `uv run` does not set up the dynamic-linker path, so we do it here, per-OS;
+# The test binaries of `theory` with `torch` link libpython and libtorch (without
+# features the workspace uses no pyo3). `uv run` does not set up the dynamic-linker path, so we
+# add both libdirs to it here, per-OS. Only a search path: on macOS, injecting libpython
+# with DYLD_INSERT_LIBRARIES would also reach the build scripts' `python -c "import torch"`
+# (torch-sys, theory), whose interpreter then crashes with a second libpython.
+# The tests that embed Python import `torch` from the venv, so its site-packages go on
+# PYTHONPATH: an embedded interpreter finds the venv on Linux through the `python3` on
+# PATH, but on macOS it starts from the test binary's own path and never sees the venv.
 
 # Run the Rust test suite (all features)
 rs-test:
     #!/usr/bin/env bash
     set -euo pipefail
     TORCH_LIB="$(uv run python -c 'import torch, os; print(os.path.join(os.path.dirname(torch.__file__), "lib"))')"
+    PY_LIB="$(uv run python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"
+    export PYTHONPATH="$(uv run python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')${PYTHONPATH:+:$PYTHONPATH}"
     if [ "$(uname)" = "Darwin" ]; then
-        export DYLD_FALLBACK_LIBRARY_PATH="$TORCH_LIB"
-        export DYLD_INSERT_LIBRARIES="$(uv run python -c 'import sysconfig, os; base = sysconfig.get_config_var("PYTHONFRAMEWORKPREFIX") or sysconfig.get_config_var("LIBDIR"); print(os.path.join(base, sysconfig.get_config_var("LDLIBRARY")))')"
+        export DYLD_FALLBACK_LIBRARY_PATH="$TORCH_LIB:$PY_LIB${DYLD_FALLBACK_LIBRARY_PATH:+:$DYLD_FALLBACK_LIBRARY_PATH}"
     else
-        export LD_LIBRARY_PATH="$TORCH_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+        export LD_LIBRARY_PATH="$TORCH_LIB:$PY_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     fi
     # Split by feature set: the `torch` feature is exclusive to `theory`, the rest of
-    # the workspace is exercised with `theory/pyo3`.
-    {{ CARGO }} test --features theory/pyo3 {{ profile_flag }}
+    # the workspace is exercised without it.
+    {{ CARGO }} test {{ profile_flag }}
     {{ CARGO }} test -p theory --features torch {{ profile_flag }}
 
 # Run clippy on the workspace on all targets and with all features (warnings are errors)

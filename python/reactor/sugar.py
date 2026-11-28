@@ -1,11 +1,12 @@
 """``reactor.sugar``: author a reactive Module by subclassing (à la ``torch.nn.Module``).
 
-Subclass ``sugar.Module``, pass a ``theory`` and the ``ctrl`` (and optional ``extl``)
+Subclass ``sugar.Module``, pass the ``ctrl`` (and optional ``extl``)
 variables — ``reactor.Var`` objects — and override any of ``init`` / ``update`` / ``delay``.
 **Instantiating the subclass *is* a base Module** — the methods run symbolically and the
 module is built in the constructor:
 
-    from reactor import LIA, Int, Var
+    from reactor import Var
+    from reactor.int import Int
     from reactor.sugar import Module
 
     class Counter(Module):
@@ -13,7 +14,7 @@ module is built in the constructor:
         def update(self, x):    return x + 1
 
     x = Var(Int([1, 1]))
-    m = Counter(theory=LIA, ctrl=(x,))      # a closed sequential base Module
+    m = Counter(ctrl=(x,))      # a closed sequential base Module
 
 The methods receive the variables **unpacked, as positional parameters**: ``init`` takes
 the ``extl`` variables, ``update`` and ``delay`` take ``ctrl`` followed by ``extl`` (all
@@ -33,7 +34,7 @@ flow, ``init`` alone constant, and none hold. For example, an open hybrid clock:
         def delay(self, x, t):    return 1 * d(t)               # continuous drift
 
     x, t = Var(Real([1, 1])), Var(Real([1, 1]))
-    m = Clock(theory=LRA, ctrl=(x,), extl=(t,))
+    m = Clock(ctrl=(x,), extl=(t,))
 
 ``ctrl`` and ``extl`` must be **ordered tuples**: their order is meaningful — it
 determines how the variables bind to the positional parameters of ``init`` / ``update``
@@ -42,7 +43,7 @@ for membership, so it can be any collection — preferably a ``set``. ``extl`` v
 are external inputs: declared but not driven here, so a module with ``extl`` is open;
 ``prvt`` hides the given variables in the built module (partially observable).
 
-Config comes from **constructor kwargs** (``theory=``, ``ctrl=``, ``extl=``, ``hide=``).
+Config comes from **constructor kwargs** (``ctrl=``, ``extl=``, ``hide=``).
 Two base-class constraints force this (both flagged for design review):
   * it cannot flow through ``super().__init__`` — the base Module is a frozen pyo3 class
     whose constructor runs at ``__new__`` (before any ``__init__``), so this builds there;
@@ -53,12 +54,17 @@ Two base-class constraints force this (both flagged for design review):
 
 import inspect
 
-from .reactor import Module as _Module, Term as _Term, X as base_X, d as base_d, Var
+import reactor as _rr
+from .reactor import Module as _Module, Term as _Term, Var, Skip, T
 
-from .expr import expr, cast, ite, relu, argmax, collecting, Expr, X as expr_X, d as expr_d  # re-exported for authoring
+from .expr import expr, cast, ite, relu, argmax, recv, Havoc, collecting, Expr, X as expr_X, d as expr_d  # re-exported for authoring
 
 # Public authoring surface: `from reactor.sugar import Module, expr, X, d, ite, cast, ...`
-__all__ = ["Module", "expr", "cast", "ite", "relu", "argmax", "Expr", "X", "d", "Var"]
+# The rate of change of a discrete variable, returned by ``delay`` for it: the operation
+# ``reactor.zero.Zero()``, reading nothing.
+from .zero import Zero
+
+__all__ = ["Module", "expr", "cast", "ite", "relu", "argmax", "recv", "Havoc", "Expr", "X", "d", "Var", "Zero"]
 
 
 def _as_tuple(r) -> tuple:
@@ -71,14 +77,14 @@ def _as_tuple(r) -> tuple:
     return (r,)
 
 
-def _build_init_block(cls, ctrl, extl, theory) -> list:
+def _build_init_block(cls, ctrl, extl) -> list:
     fn = getattr(cls, "init", None)
     if fn is None:
         return None
     nparams = len(inspect.signature(fn).parameters)
 
     # we assume all arguments are taken , otherwise it's too ambiguous
-    args = tuple(expr(v, theory=theory) for v in extl)
+    args = tuple(expr(v) for v in extl)
     if nparams != len(args) + 1:
         raise ValueError(f"init expects len(extl) == {len(args)} params, got {nparams - 1}")
 
@@ -87,19 +93,19 @@ def _build_init_block(cls, ctrl, extl, theory) -> list:
         if len(vals) != len(ctrl):
             raise ValueError(f"init expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
-            e = val if isinstance(val, Expr) else expr(val, theory=theory, sort=var.dtype)
-            terms.append(_Term(theory.Id(), [base_X(var)], [e.wire]))
+            e = val if isinstance(val, Expr) else expr(val, sort=var.dtype)
+            terms.append(_Term(Skip(var.dtype), [_rr.X(var)], [e.wire]))
         return terms
 
 
-def _build_update_block(cls, ctrl, extl, theory) -> list:
+def _build_update_block(cls, ctrl, extl) -> list:
     fn = getattr(cls, "update", None)
     if fn is None:
         return None
     nparams = len(inspect.signature(fn).parameters)
 
     # we assume all arguments are taken, otherwise it's too ambiguous
-    args = tuple(expr(v, theory=theory) for v in ctrl + extl)
+    args = tuple(expr(v) for v in ctrl + extl)
     if nparams != len(args) + 1:
         raise ValueError(f"update expects len(ctrl + extl) == {len(args)} params, got {nparams - 1}")
 
@@ -108,19 +114,19 @@ def _build_update_block(cls, ctrl, extl, theory) -> list:
         if len(vals) != len(ctrl):
             raise ValueError(f"update expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
-            e = val if isinstance(val, Expr) else expr(val, theory=theory, sort=var.dtype)
-            terms.append(_Term(theory.Id(), [base_X(var)], [e.wire]))
+            e = val if isinstance(val, Expr) else expr(val, sort=var.dtype)
+            terms.append(_Term(Skip(var.dtype), [_rr.X(var)], [e.wire]))
         return terms
 
 
-def _build_delay_block(cls, ctrl, extl, theory) -> list:
+def _build_delay_block(cls, ctrl, extl) -> list:
     fn = getattr(cls, "delay", None)
     if fn is None:
         return None
     nparams = len(inspect.signature(fn).parameters)
 
     # we assume all arguments are taken, otherwise it's too ambiguous
-    args = tuple(expr(v, theory=theory) for v in ctrl + extl)
+    args = tuple(expr(v) for v in ctrl + extl)
     if nparams != len(args) + 1:
         raise ValueError(f"delay expects len(ctrl + extl) == {len(args)} params, got {nparams - 1}")
 
@@ -129,8 +135,8 @@ def _build_delay_block(cls, ctrl, extl, theory) -> list:
         if len(vals) != len(ctrl):
             raise ValueError(f"delay expects {len(ctrl)} return values, got {len(vals)}")
         for var, val in zip(ctrl, vals):
-            e = val if isinstance(val, Expr) else expr(val, theory=theory, sort=var.dtype)
-            terms.append(_Term(theory.Id(), [base_d(var)], [e.wire]))
+            e = val if isinstance(val, Expr) else expr(val, sort=T(var.dtype))
+            terms.append(_Term(Skip(T(var.dtype)), [_rr.d(var)], [e.wire]))
         return terms
 
 
@@ -138,7 +144,7 @@ def X(var):
     if isinstance(var, Expr):
         return expr_X(var)
     elif isinstance(var, Var):
-        return base_X(var)
+        return _rr.X(var)
     else:
         raise ValueError(f"sugar.X expects Expr or Var, got {var}")
 
@@ -147,25 +153,21 @@ def d(var):
     if isinstance(var, Expr):
         return expr_d(var)
     elif isinstance(var, Var):
-        return base_d(var)
+        return _rr.d(var)
     else:
         raise ValueError(f"sugar.d expects Expr or Var, got {var}")
 
 
 class Module(_Module):
-    def __new__(cls, ctrl=(), extl=(), hide=frozenset(), theory=None):
-        if theory is None:
-            raise TypeError(f"{cls.__name__}: `theory` is a required constructor arg")
-
+    def __new__(cls, ctrl=(), extl=(), hide=frozenset()):
         ctrl = tuple(v for v in ctrl)
         extl = tuple(v for v in extl)
 
-        init = _build_init_block(cls, ctrl, extl, theory)
-        update = _build_update_block(cls, ctrl, extl, theory)
-        delay = _build_delay_block(cls, ctrl, extl, theory)
+        init = _build_init_block(cls, ctrl, extl)
+        update = _build_update_block(cls, ctrl, extl)
+        delay = _build_delay_block(cls, ctrl, extl)
 
         self = super().__new__(
             cls, init=init, update=update, delay=delay, vars=ctrl + extl, hide=hide
         )
-        self._theory = theory
         return self

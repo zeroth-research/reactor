@@ -1,7 +1,7 @@
 use super::Wire;
+use base::boundary::{Boundary, Mono, Poly};
 use std::borrow::Cow;
 use std::fmt;
-use theory::any;
 
 /// A single term corresponds to a single instruction
 /// and has an input (`read`) and output (`write`).
@@ -43,8 +43,14 @@ impl<T, S> Term<T, S> {
 // Public constructors
 //============================================================
 
-impl<T, S> Term<T, S> {
-    /// Fails if the term reads a wire it also writes.
+impl<T, S> Term<T, S>
+where
+    T: Boundary<S>,
+    S: Clone + Eq + fmt::Debug,
+{
+    /// Fails if the term reads a wire it also writes, or unless the sorts of
+    /// the wires it reads are the domain of `itype`, and those of the wires
+    /// it writes its codomain, in order.
     pub fn function<D, U, W, R>(itype: T, write: W, read: R) -> Result<Self, String>
     where
         D: Into<Wire<S>>,
@@ -59,17 +65,47 @@ impl<T, S> Term<T, S> {
             return Err("Term reads and writes the same wire".into());
         }
 
+        let dom: Poly<S> = Mono::from_iter(read.iter().map(|w| w.dtype().clone())).into();
+        if dom != itype.dom() {
+            return Err(format!(
+                "Term reads wires of sorts {dom:?}, but its instruction has domain {:?}",
+                itype.dom()
+            ));
+        }
+        let cod: Poly<S> = Mono::from_iter(write.iter().map(|w| w.dtype().clone())).into();
+        if cod != itype.cod() {
+            return Err(format!(
+                "Term writes wires of sorts {cod:?}, but its instruction has codomain {:?}",
+                itype.cod()
+            ));
+        }
+
         Ok(Self::new_unchecked(itype, write, read))
     }
 
-    /// Never fails for now (a term that reads nothing cannot read a wire it
-    /// writes), but returns a `Result` so that it may fail in the future.
+    /// Fails unless `itype` reads nothing, its domain the unit `I`, and the
+    /// sorts of the wires it writes are its codomain, in order. A term that
+    /// reads nothing cannot read a wire it writes.
     pub fn constant<D, W>(itype: T, write: W) -> Result<Self, String>
     where
         D: Into<Wire<S>>,
         W: IntoIterator<Item = D>,
     {
         let write: Vec<Wire<S>> = write.into_iter().map(Into::into).collect();
+
+        if !itype.dom().is_unit() {
+            return Err(format!(
+                "Term reads no wires, but its instruction has domain {:?}",
+                itype.dom()
+            ));
+        }
+        let cod: Poly<S> = Mono::from_iter(write.iter().map(|w| w.dtype().clone())).into();
+        if cod != itype.cod() {
+            return Err(format!(
+                "Term writes wires of sorts {cod:?}, but its instruction has codomain {:?}",
+                itype.cod()
+            ));
+        }
         Ok(Self::new_unchecked(itype, write, Vec::new()))
     }
 }
@@ -83,65 +119,13 @@ impl<T, S> Term<T, S> {
     ///
     /// Only the instruction is converted; the wires are untouched, so a term
     /// that was well-formed over `U` stays well-formed over `T` and no
-    /// re-validation is needed.
+    /// re-validation is needed, provided the embedding keeps the boundary of
+    /// each instruction, as the embeddings of the logics into `theory::Op` do.
     pub(super) fn convert<U>(term: Term<U, S>) -> Self
     where
         U: Into<T>,
     {
         Self::new_unchecked(term.itype.into(), term.write, term.read)
-    }
-
-    /// Re-types a term along a fallible theory cast (`U: TryInto<T>`),
-    /// failing exactly when the instruction does not belong to `T`.
-    ///
-    /// Only the instruction is converted; the wires are untouched, so a term
-    /// that was well-formed over `U` stays well-formed over `T` and no
-    /// re-validation is needed.
-    fn try_convert<U, E>(term: Term<U, S>) -> Result<Self, E>
-    where
-        U: TryInto<T, Error = E>,
-    {
-        let itype = term.itype.try_into()?;
-        Ok(Self::new_unchecked(itype, term.write, term.read))
-    }
-}
-
-impl From<Term<any::Combinatorial, any::Sort>> for Term<any::Any, any::Sort> {
-    fn from(term: Term<any::Combinatorial, any::Sort>) -> Self {
-        Self::convert(term)
-    }
-}
-
-impl From<Term<any::Sequential, any::Sort>> for Term<any::Any, any::Sort> {
-    fn from(term: Term<any::Sequential, any::Sort>) -> Self {
-        Self::convert(term)
-    }
-}
-
-impl From<Term<any::Differential, any::Sort>> for Term<any::Any, any::Sort> {
-    fn from(term: Term<any::Differential, any::Sort>) -> Self {
-        Self::convert(term)
-    }
-}
-
-impl TryFrom<Term<any::Any, any::Sort>> for Term<any::Combinatorial, any::Sort> {
-    type Error = String;
-    fn try_from(term: Term<any::Any, any::Sort>) -> Result<Self, Self::Error> {
-        Self::try_convert(term).map_err(|e| e.to_string())
-    }
-}
-
-impl TryFrom<Term<any::Any, any::Sort>> for Term<any::Sequential, any::Sort> {
-    type Error = String;
-    fn try_from(term: Term<any::Any, any::Sort>) -> Result<Self, Self::Error> {
-        Self::try_convert(term).map_err(|e| e.to_string())
-    }
-}
-
-impl TryFrom<Term<any::Any, any::Sort>> for Term<any::Differential, any::Sort> {
-    type Error = String;
-    fn try_from(term: Term<any::Any, any::Sort>) -> Result<Self, Self::Error> {
-        Self::try_convert(term).map_err(|e| e.to_string())
     }
 }
 

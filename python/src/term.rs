@@ -1,12 +1,18 @@
 use crate::wire::Wire;
 use crate::*;
 use pyo3::exceptions::{PyException, PyIndexError};
-use theory::any::{Any, Sort};
+use theory::Any;
 
-#[pyclass(frozen)]
+#[pyclass(module = "reactor", frozen)]
 pub(crate) struct Term {
-    base: dataflow::diagram::Term<Any, Sort>,
+    base: dataflow::diagram::Term<Op, Any>,
 }
+
+// SAFETY: the operations of the term may hold `tch::Tensor`s, which are not
+// `Sync`, as libtorch tensors are pointers. Nothing here mutates them: they
+// are only read and shallow-cloned, and libtorch counts the references to a
+// tensor atomically, as for the classes of `theory::torch`.
+unsafe impl Sync for Term {}
 
 #[pymethods]
 impl Term {
@@ -16,7 +22,7 @@ impl Term {
         write: &Bound<'_, PyAny>,
         read: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
-        let itype: Any = itype.extract()?;
+        let itype: Op = itype.extract()?;
         let write = try_wire_iter_cloned(write)?;
         let read = try_wire_iter_cloned(read)?;
 
@@ -28,7 +34,7 @@ impl Term {
 
     #[staticmethod]
     fn constant(itype: &Bound<'_, PyAny>, write: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let itype: Any = itype.extract()?;
+        let itype: Op = itype.extract()?;
         let write = try_wire_iter_cloned(write)?;
 
         match dataflow::diagram::Term::constant(itype, write) {
@@ -61,7 +67,7 @@ impl Term {
     }
 
     #[getter]
-    fn itype(&self) -> Any {
+    fn itype(&self) -> Op {
         self.base.itype().clone()
     }
 
@@ -71,7 +77,7 @@ impl Term {
 }
 
 impl Term {
-    pub(crate) fn base(&self) -> &dataflow::diagram::Term<Any, Sort> {
+    pub(crate) fn base(&self) -> &dataflow::diagram::Term<Op, Any> {
         &self.base
     }
 
@@ -84,8 +90,8 @@ impl Term {
     }
 }
 
-impl From<dataflow::diagram::Term<Any, Sort>> for Term {
-    fn from(base: dataflow::diagram::Term<Any, Sort>) -> Self {
+impl From<dataflow::diagram::Term<Op, Any>> for Term {
+    fn from(base: dataflow::diagram::Term<Op, Any>) -> Self {
         Self { base }
     }
 }
@@ -95,14 +101,14 @@ pub(crate) enum TermInterfaceType {
     Read,
     Write,
 }
-#[pyclass(sequence)]
+#[pyclass(module = "reactor", sequence)]
 struct TermInterface {
     term: Py<Term>,
     interface: TermInterfaceType,
 }
 
 impl TermInterface {
-    fn base(&self) -> &[dataflow::diagram::Wire<Sort>] {
+    fn base(&self) -> &[dataflow::diagram::Wire<Any>] {
         let base = &self.term.get().base;
         match self.interface {
             TermInterfaceType::Read => base.read(),

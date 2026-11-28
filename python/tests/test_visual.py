@@ -1,4 +1,5 @@
-from reactor import Int, LIA, Var, X
+from reactor import Var, X
+from reactor.int import Int
 from reactor.sugar import Module
 from reactor.visual.server import _serialize_module
 
@@ -13,7 +14,7 @@ class _Counter(Module):
 
 def test_serialize_module_links_vars_to_term_wires():
     v = Var(Int([1, 1]))
-    out = _serialize_module(_Counter(ctrl=(v,), theory=LIA))
+    out = _serialize_module(_Counter(ctrl=(v,)))
 
     [atom] = out["atoms"]
     ctrl_ids = {c["id"] for c in atom["ctrl"]}

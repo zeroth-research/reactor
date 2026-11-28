@@ -1,0 +1,146 @@
+/*!
+# Torch
+
+The torch backing of the operations of [`crate::matrix`]: [`Tensor`], a
+[`tch::Tensor`] whose clone shares its storage, implements
+[`crate::Matrix`], so that the operations carrying tensors hold torch
+tensors, as `real::Num<Tensor>`, and are `Clone` as the others. The Python
+`torch.Tensor` objects convert to and from them through
+[`pyo3_tch::PyTensor`], sharing their storage.
+
+The constants are Python classes of their own, one per theory, as a tensor
+alone does not tell the theory of its constant: [`real::Num`],
+[`int::Num`], [`bool::Truth`] and [`word::Num`]. Each holds, in a
+private field, a [`Tensor`] of the element kind of its theory, checked
+on construction, and [`word::Num`] its width too. A [`tch::Tensor`] is not
+`Sync`, which a Python class must be, so each class implements `Sync`
+itself, as only its own module touches the tensor. The constants of
+[`crate::matrix`] extract from the class of their theory, sharing its tensor.
+So do the pointwise products with a constant, [`real::Scale`] and
+[`int::Scale`], whose class holds the constant in the same way.
+
+The linear maps are Python classes too, [`real::Linear`] and
+[`int::Linear`], each holding, in a private field, the [`Tensor`] `A`
+of its theory, together with the sort it reads, whose columns `A` does not
+determine. So are the affine maps, [`real::Affine`] and
+[`int::Affine`], each holding, in private fields, the [`Tensor`]s `A`
+and `B` of its theory, of shapes `[m, n]` and `[m, k]`, checked on
+construction, and implementing `Sync` in the same way. The linear and
+affine maps of [`crate::real`] and [`crate::int`] extract
+from the class of their theory, sharing its tensors.
+*/
+
+pub mod bool;
+pub mod int;
+pub mod real;
+pub mod word;
+
+use pyo3::prelude::*;
+
+/// A torch tensor, as the operations carrying data hold it: a clone shares
+/// its storage, as [`tch::Tensor::shallow_clone`] does, since libtorch counts
+/// the references to a tensor. `tch::Tensor` is not `Clone` itself, as it
+/// leaves the choice between sharing and copying to its caller; here it is
+/// sharing, so that the operations holding tensors derive `Clone`.
+#[derive(Debug)]
+pub struct Tensor(pub tch::Tensor);
+
+impl Clone for Tensor {
+    fn clone(&self) -> Self {
+        Tensor(self.0.shallow_clone())
+    }
+}
+
+/// Reads as the tensor it wraps.
+impl std::ops::Deref for Tensor {
+    type Target = tch::Tensor;
+
+    fn deref(&self) -> &tch::Tensor {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Tensor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl crate::Matrix for Tensor {
+    /// The `[rows, cols]` shape of the tensor, which must be a matrix.
+    fn shape(&self) -> [usize; 2] {
+        let size = self.0.size();
+        let [rows, cols] = size[..] else {
+            panic!("expected a matrix, got a tensor of shape {size:?}")
+        };
+        [rows as usize, cols as usize]
+    }
+}
+
+/// Whether `kind` is an integer element kind.
+fn is_integer(kind: tch::Kind) -> bool {
+    matches!(
+        kind,
+        tch::Kind::Uint8 | tch::Kind::Int8 | tch::Kind::Int16 | tch::Kind::Int | tch::Kind::Int64
+    )
+}
+
+/// Fails unless `tensor` is a matrix, a tensor of two dimensions: the
+/// constants are built from matrices only, so that [`crate::Matrix::shape`]
+/// never panics on their tensors.
+fn check_matrix(tensor: &tch::Tensor) -> Result<(), crate::Error> {
+    if tensor.dim() != 2 {
+        return Err(crate::Error(format!(
+            "expected a matrix, got a tensor of shape {:?}",
+            tensor.size()
+        )));
+    }
+    Ok(())
+}
+
+/// The sort of a product holding exactly one: the domain or codomain of the
+/// operations reading or writing a single matrix. Panics for any other product.
+fn sole<S: Clone>(sorts: base::boundary::Mono<S>) -> S {
+    let [s] = sorts.as_slice() else {
+        panic!("expected a boundary of one sort");
+    };
+    s.clone()
+}
+
+/// Fails unless `a` and `b` are the matrices of an affine map `x ↦ A·x + B`:
+/// `A` of shape `[m, n]` and `B` of shape `[m, k]`.
+fn check_affine(a: &tch::Tensor, b: &tch::Tensor) -> Result<(), crate::Error> {
+    let (a, b) = (a.size(), b.size());
+    if a.len() != 2 || b.len() != 2 {
+        return Err(crate::Error(format!(
+            "expected A of shape [m, n] and B of shape [m, k], got {a:?} and {b:?}"
+        )));
+    }
+    let shape = |s: &[i64]| [s[0] as usize, s[1] as usize];
+    crate::matrix::check_affine(shape(&a), shape(&b))
+}
+
+/// Converts an operation of any theory into its Python class, through the
+/// conversion of its theory; the structural operations are classes of their
+/// own.
+impl<'py> IntoPyObject<'py> for crate::Op<Tensor> {
+    type Target = PyAny;
+    type Output = Bound<'py, PyAny>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> PyResult<Self::Output> {
+        use crate::Op;
+
+        match self {
+            Op::Real(op) => op.into_pyobject(py),
+            Op::Int(op) => op.into_pyobject(py),
+            Op::Bool(op) => op.into_pyobject(py),
+            Op::Word(op) => op.into_pyobject(py),
+            Op::Havoc(op) => op.into_pyobject(py).map(Bound::into_any),
+            Op::Skip(op) => op.into_pyobject(py).map(Bound::into_any),
+            Op::Zero(op) => op.into_pyobject(py).map(Bound::into_any),
+            Op::Enum(op) => op.into_pyobject(py),
+            Op::Event(op) => op.into_pyobject(py).map(Bound::into_any),
+        }
+    }
+}
