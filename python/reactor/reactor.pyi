@@ -19,7 +19,8 @@ a single sort bare and several as a list, and optionally its codomain, which mus
 agree (`real.Add([x, y])`, `word.Extract(i, j, x)`); an operation that reads nothing is
 built from its codomain (`real.Zero(x)`, `Havoc(x)`), except `zero.Zero()`, whose
 codomain, the singleton sort, carries no information. Its getters `dom` and `cod` give
-the sorts of its domain and codomain as tuples, `(x,)` for one, and match the same way:
+the sorts of its domain and codomain as tuples, `(x,)` for one and `()` for none, and
+match the same way:
 `case real.Neg([x]):`. The sorts and operations of
 the namespaces are typed loosely here, as `Sort` and `Op`: a stub file cannot describe
 the nested namespaces of a single extension module. A `Var` bundles the latched, next
@@ -55,6 +56,9 @@ class Havoc:
     """The nondeterministic choice of a value of the sort `cod`, reading nothing."""
 
     def __init__(self, cod: Sort) -> None: ...
+
+    @property
+    def dom(self) -> tuple[()]: ...
 
     @property
     def cod(self) -> tuple[Sort]: ...

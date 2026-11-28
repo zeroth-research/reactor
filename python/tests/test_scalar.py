@@ -95,7 +95,7 @@ def test_a_constant_is_built_from_its_value_and_codomain():
     e = Enum({"idle", "busy"})
     op = Sym("idle", e)
     assert (op.value, op.cod, str(op)) == ("idle", (e,), "idle")
-    assert not hasattr(op, "dom")
+    assert op.dom == ()
     match op:
         case Sym(value, [Enum(values)]):
             assert (value, values) == ("idle", ["busy", "idle"])

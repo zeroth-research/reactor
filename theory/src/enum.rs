@@ -432,7 +432,7 @@ pub enum Op {
 
 impl Boundary<Any> for Sym {
     fn dom(&self) -> Poly<Any> {
-        Poly::unit()
+        Sym::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Any> {
@@ -529,6 +529,12 @@ impl Sym {
     #[getter]
     fn value(&self) -> &str {
         &self.value
+    }
+
+    /// The sorts it reads, as a tuple: none.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Any> {
+        Mono::unit()
     }
 
     /// The sorts it writes, as a tuple: its enumeration.

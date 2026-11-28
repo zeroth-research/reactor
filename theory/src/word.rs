@@ -178,6 +178,11 @@ impl<T: Matrix> Num<T> {
         })
     }
 
+    /// The sorts it reads: none.
+    pub(crate) fn dom(&self) -> Mono<Words> {
+        Mono::unit()
+    }
+
     /// The sorts it writes.
     pub(crate) fn cod(&self) -> Mono<Words> {
         mono![Word::new_unchecked(self.width, self.tensor.shape()).into()]
@@ -633,7 +638,7 @@ impl<T: Matrix> Boundary<Words> for BV<T> {
 
 impl<T: Matrix> Boundary<Words> for Num<T> {
     fn dom(&self) -> Poly<Words> {
-        Poly::unit()
+        Num::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Words> {

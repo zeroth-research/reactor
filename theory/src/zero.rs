@@ -90,7 +90,7 @@ pub struct Zero;
 /// Writes the only value of the sort [`Real0`].
 impl Boundary<Real0> for Zero {
     fn dom(&self) -> Poly<Real0> {
-        Poly::unit()
+        Zero::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Real0> {
@@ -115,6 +115,12 @@ impl Zero {
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("cod",)
+    }
+
+    /// The sorts it reads, as a tuple: none.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Real0> {
+        Mono::unit()
     }
 
     /// The sorts it writes, as a tuple.

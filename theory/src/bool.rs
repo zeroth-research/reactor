@@ -121,6 +121,11 @@ impl<T: Matrix> Truth<T> {
         Ok(Truth { tensor })
     }
 
+    /// The sorts it reads: none.
+    pub(crate) fn dom(&self) -> Mono<Bool> {
+        Mono::unit()
+    }
+
     /// The sorts it writes.
     pub(crate) fn cod(&self) -> Mono<Bool> {
         mono![Bool::new_unchecked(self.tensor.shape())]
@@ -273,7 +278,7 @@ impl<T: Matrix> Boundary<Bool> for Prop<T> {
 
 impl<T: Matrix> Boundary<Bool> for Truth<T> {
     fn dom(&self) -> Poly<Bool> {
-        Poly::unit()
+        Truth::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Bool> {

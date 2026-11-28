@@ -169,6 +169,11 @@ impl<T: Matrix> Num<T> {
         })
     }
 
+    /// The sorts it reads: none.
+    pub(crate) fn dom(&self) -> Mono<Real> {
+        Mono::unit()
+    }
+
     /// The sorts it writes.
     pub(crate) fn cod(&self) -> Mono<Real> {
         mono![Real::with_degree(self.tensor.shape(), self.degree)]
@@ -897,7 +902,7 @@ impl<T: Matrix> Boundary<Reals> for LRA<T> {
 
 impl<T: Matrix> Boundary<Real> for Num<T> {
     fn dom(&self) -> Poly<Real> {
-        Poly::unit()
+        Num::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Real> {
@@ -985,7 +990,7 @@ impl<T: Matrix> Boundary<Real> for Affine<T> {
 
 impl Boundary<Real> for Zero {
     fn dom(&self) -> Poly<Real> {
-        Poly::unit()
+        Zero::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Real> {
@@ -1499,6 +1504,12 @@ impl Zero {
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("cod",)
+    }
+
+    /// The sorts it reads, as a tuple: none.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Real> {
+        Mono::unit()
     }
 
     /// The sorts it writes, as a tuple.

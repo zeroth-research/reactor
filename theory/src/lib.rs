@@ -389,7 +389,7 @@ where
 
 impl Boundary<Any> for Havoc {
     fn dom(&self) -> Poly<Any> {
-        Poly::unit()
+        Havoc::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Any> {
@@ -446,6 +446,12 @@ impl Havoc {
     #[classattr]
     fn __match_args__() -> (&'static str,) {
         ("cod",)
+    }
+
+    /// The sorts it reads, as a tuple: none.
+    #[cfg_attr(feature = "pyo3", getter)]
+    fn dom(&self) -> Mono<Any> {
+        Mono::unit()
     }
 
     /// The sorts it writes, as a tuple.

@@ -140,6 +140,11 @@ impl<T: Matrix> Num<T> {
         Ok(Num { tensor })
     }
 
+    /// The sorts it reads: none.
+    pub(crate) fn dom(&self) -> Mono<Int> {
+        Mono::unit()
+    }
+
     /// The sorts it writes.
     pub(crate) fn cod(&self) -> Mono<Int> {
         mono![Int::new_unchecked(self.tensor.shape())]
@@ -771,7 +776,7 @@ impl<T: Matrix> Boundary<Ints> for LIA<T> {
 
 impl<T: Matrix> Boundary<Int> for Num<T> {
     fn dom(&self) -> Poly<Int> {
-        Poly::unit()
+        Num::dom(self).into()
     }
 
     fn cod(&self) -> Poly<Int> {

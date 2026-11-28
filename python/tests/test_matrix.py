@@ -132,7 +132,7 @@ def test_domains_of_no_instance_raise():
         real.Scale(torch.ones(2, 3), Real([3, 2]))
 
 
-def test_nullary_operations_take_and_match_their_codomain_only():
+def test_nullary_operations_take_and_match_their_codomain_only_and_read_nothing():
     for op in [
         real.Zero(T(Real([1, 2]))),
         real.Num(torch.ones(1, 2), Real([1, 2])),
@@ -144,7 +144,7 @@ def test_nullary_operations_take_and_match_their_codomain_only():
     ]:
         assert type(op).__match_args__[-1] == "cod"
         assert "dom" not in type(op).__match_args__
-        assert not hasattr(op, "dom")
+        assert op.dom == ()
     assert real.Num(torch.ones(1, 2), T(Real([1, 2]))).cod == (T(Real([1, 2])),)
     assert word.Num(torch.ones(1, 2, dtype=torch.int64), Word(4, [1, 2])).cod == (Word(4, [1, 2]),)
     assert Havoc(Int([1, 2])).cod == (Int([1, 2]),)

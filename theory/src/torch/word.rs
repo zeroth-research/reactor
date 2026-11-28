@@ -48,6 +48,13 @@ impl Num {
         ("tensor", "cod")
     }
 
+    /// The sorts it reads, as a tuple: none.
+    #[getter]
+    fn dom(slf: &Bound<'_, Self>) -> PyResult<Mono<Words>> {
+        let op: crate::word::Num<super::Tensor> = slf.extract()?;
+        Ok(op.dom())
+    }
+
     /// The sorts it writes, as a tuple.
     #[getter]
     fn cod(slf: &Bound<'_, Self>) -> PyResult<Mono<Words>> {
